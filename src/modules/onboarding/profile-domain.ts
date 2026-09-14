@@ -92,6 +92,47 @@ export type ConnectDraft = {
   selectedMethod: OnboardingConnectionMethod;
 };
 
+export const PACE_GOALS = [
+  "TRACK_SPENDING",
+  "SPEND_LESS",
+  "BILLS",
+  "SUBSCRIPTIONS",
+  "SAVE_FOR_SOMETHING",
+  "MANAGE_TOGETHER",
+  "BETTER_HABITS",
+  "STAY_ORGANIZED",
+] as const;
+export type PaceGoal = (typeof PACE_GOALS)[number];
+
+export const PACE_PROACTIVITY = ["QUIET", "BALANCED", "PROACTIVE"] as const;
+export type PaceProactivity = (typeof PACE_PROACTIVITY)[number];
+
+export type PreferencesDraft = {
+  goals: PaceGoal[];
+  proactivity: PaceProactivity;
+};
+
+
+export const DEFAULT_ONBOARDING_PREFERENCES: PreferencesDraft = {
+  goals: ["TRACK_SPENDING"],
+  proactivity: "BALANCED",
+};
+
+
+export function isPaceGoalAvailableInWorkspace(goal: PaceGoal, workspaceType: WorkspaceType | ""): boolean {
+  return workspaceType !== "PERSONAL" || goal !== "MANAGE_TOGETHER";
+}
+
+export const onboardingPreferencesSchema = z.object({
+  goals: z
+    .array(z.enum(PACE_GOALS))
+    .min(1, "Choose at least one way Pace can help.")
+    .max(PACE_GOALS.length)
+    .refine((goals) => new Set(goals).size === goals.length, "Choose each goal only once."),
+  proactivity: z.enum(PACE_PROACTIVITY),
+});
+export type ValidatedOnboardingPreferences = z.infer<typeof onboardingPreferencesSchema>;
+
 /** The browser may only submit stable domain values, never translated labels. */
 export const connectionMethodSchema = z.enum(ONBOARDING_CONNECTION_METHODS);
 

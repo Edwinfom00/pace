@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -35,6 +36,7 @@ export const insightStatus = pgEnum("insight_status", ["ACTIVE", "READ", "DISMIS
 export const insightSource = pgEnum("insight_source", ["MONEY_ENGINE"]);
 export const notificationCadence = pgEnum("notification_cadence", ["DAILY", "WEEKLY", "MONTHLY"]);
 export const memberNotificationStatus = pgEnum("member_notification_status", ["UNREAD", "READ"]);
+export const paceProactivity = pgEnum("pace_proactivity", ["QUIET", "BALANCED", "PROACTIVE"]);
 
 /** Durable workspace facts emitted only by the deterministic Money Engine. */
 export const insights = pgTable(
@@ -81,6 +83,8 @@ export const memberNotificationPreferences = pgTable(
     weeklyEnabled: boolean("weekly_enabled").notNull().default(true),
     monthlyEnabled: boolean("monthly_enabled").notNull().default(true),
     minimumSeverity: insightSeverity("minimum_severity").notNull().default("INFO"),
+    paceGoals: text("pace_goals").array().notNull().default(sql`'{}'::text[]`),
+    proactivity: paceProactivity("proactivity").notNull().default("BALANCED"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

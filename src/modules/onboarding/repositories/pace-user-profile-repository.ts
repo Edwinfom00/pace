@@ -16,6 +16,7 @@ export interface PaceUserProfileRepository {
   ): Promise<PaceUserProfileRecord>;
   saveTogetherStep(userId: string, skipped: boolean): Promise<PaceUserProfileRecord>;
   saveConnectStep(userId: string, method: OnboardingConnectionMethod): Promise<PaceUserProfileRecord>;
+  completeOnboarding(userId: string): Promise<PaceUserProfileRecord>;
   claimOnboardingInvitationId(userId: string, candidateInvitationId: string): Promise<PaceUserProfileRecord>;
   clearOnboardingInvitationId(userId: string, invitationId: string): Promise<PaceUserProfileRecord>;
 }
@@ -162,6 +163,25 @@ export class DatabasePaceUserProfileRepository implements PaceUserProfileReposit
 
     if (!profile) {
       throw new Error("Pace user profile could not save connection preferences.");
+    }
+
+    return profile;
+  }
+
+  async completeOnboarding(userId: string): Promise<PaceUserProfileRecord> {
+    const [profile] = await db
+      .update(paceUserProfiles)
+      .set({
+        onboardingStatus: "COMPLETED",
+        onboardingStep: null,
+        onboardingCompletedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(paceUserProfiles.userId, userId))
+      .returning();
+
+    if (!profile) {
+      throw new Error("Pace user profile could not complete onboarding.");
     }
 
     return profile;

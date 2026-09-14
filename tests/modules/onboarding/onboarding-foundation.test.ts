@@ -14,6 +14,7 @@ import {
 } from "@/modules/onboarding/metadata";
 import {
   connectionMethodSchema,
+  onboardingPreferencesSchema,
   isConnectionMethodAvailable,
   suggestedWorkspaceName,
   withSelectedWorkspaceType,
@@ -33,6 +34,7 @@ import {
   ConnectionMethodUnavailableError,
   createOnboardingInvitation,
   persistConnectStep,
+  persistPreferencesStep,
   persistTogetherStep,
   persistWorkspaceStep,
   persistYourPaceStep,
@@ -52,6 +54,7 @@ import {
 } from "@/stores/onboarding-store";
 
 import { InMemoryWorkspaceRepository } from "../../support/in-memory-workspace-repository";
+import { InMemoryInsightRepository } from "../../support/in-memory-insight-repository";
 
 const actor = { userId: "user-1", email: "user@pace.test", name: "Pace User" };
 
@@ -125,6 +128,15 @@ function repository(record = profile()): PaceUserProfileRepository {
       });
       return record;
     },
+    async completeOnboarding() {
+      record = profile({
+        ...record,
+        onboardingStatus: "COMPLETED",
+        onboardingStep: null,
+        onboardingCompletedAt: new Date(),
+      });
+      return record;
+    },
     async claimOnboardingInvitationId(_userId, candidateInvitationId) {
       record = profile({
         ...record,
@@ -178,6 +190,8 @@ test("server hydration creates a typed Step 1 resume snapshot", () => {
       selectedMethod: "MANUAL",
       capabilities: { manual: true, importStatement: true, bankConnection: false, mobileMoney: false },
     },
+    preferences: { goals: ["TRACK_SPENDING"], proactivity: "BALANCED" },
+    preferencesPersisted: false,
   });
 });
 
@@ -462,6 +476,9 @@ test("Back selects a view without regressing the completed progress and workspac
     assert.ok(t("onboarding.connect.title").length > 0);
     assert.ok(t("onboarding.connect.bank.comingSoon").length > 0);
     assert.ok(t("onboarding.connect.info").length > 0);
+    assert.ok(t("onboarding.preferences.title").length > 0);
+    assert.ok(t("onboarding.preferences.goals.trackSpending.description").length > 0);
+    assert.ok(t("onboarding.preferences.proactivity.balanced.title").length > 0);
   }
 });
 
@@ -572,4 +589,139 @@ test("selection cards expose selected and unavailable semantics", () => {
   }));
   assert.match(selected, /aria-checked="true"/);
   assert.match(selected, /aria-label="Selected"/);
+
+  const checkbox = renderToStaticMarkup(createElement(PaceSelectionCard, {
+    id: "goal",
+    value: "TRACK_SPENDING",
+    selected: false,
+    icon: FiCreditCard,
+    title: "Track spending",
+    description: "Keep an eye on your money.",
+    onSelect: () => undefined,
+    selectionMode: "multiple",
+  }));
+  assert.match(checkbox, /role="checkbox"/);
+  assert.match(checkbox, /aria-checked="false"/);
+});
+
+test("preference enums require a goal, have restrained defaults, and survive a persisted draft refresh", () => {
+  assert.equal(onboardingPreferencesSchema.safeParse({ goals: [], proactivity: "BALANCED" }).success, false);
+  assert.equal(onboardingPreferencesSchema.safeParse({ goals: ["TRACK_SPENDING"], proactivity: "NOISY" }).success, false);
+  assert.equal(onboardingPreferencesSchema.safeParse({ goals: ["TRACK_SPENDING", "TRACK_SPENDING"], proactivity: "BALANCED" }).success, false);
+  assert.equal(onboardingPreferencesSchema.safeParse({ goals: ["TRACK_SPENDING", "BILLS"], proactivity: "PROACTIVE" }).success, true);
+
+  const records = new Map<string, string>();
+  const storage = createJSONStorage<OnboardingDraftState>(() => ({
+    getItem: (key) => records.get(key) ?? null,
+    setItem: (key, value) => records.set(key, value),
+    removeItem: (key) => records.delete(key),
+  }));
+  const first = createOnboardingStore({ storage, skipHydration: false });
+  assert.deepEqual(first.getState().preferences, { goals: ["TRACK_SPENDING"], proactivity: "BALANCED" });
+  first.getState().setPreferences({ goals: ["TRACK_SPENDING", "BILLS"], proactivity: "QUIET" });
+
+  const restored = createOnboardingStore({ storage, skipHydration: false });
+  assert.deepEqual(restored.getState().preferences, { goals: ["TRACK_SPENDING", "BILLS"], proactivity: "QUIET" });
+
+  const serverWins = mergeOnboardingServerSnapshot(emptyOnboardingDraft, {
+    currentStep: 5,
+    yourPace: { country: "CM", language: "en", currency: "XAF", timezone: "Africa/Douala" },
+    workspace: { type: "COUPLE", name: "House", nameManuallyEdited: true },
+    together: { skipped: true, hasExistingInvitation: false },
+    connect: {
+      selectedMethod: "MANUAL",
+      capabilities: { manual: true, importStatement: true, bankConnection: false, mobileMoney: false },
+    },
+    preferences: { goals: ["SAVE_FOR_SOMETHING"], proactivity: "PROACTIVE" },
+    preferencesPersisted: true,
+  });
+  assert.deepEqual(serverWins.preferences, { goals: ["SAVE_FOR_SOMETHING"], proactivity: "PROACTIVE" });
+});
+
+test("Step 5 persists user-scoped goals and M6 proactivity controls only after all prior steps are valid", async () => {
+  const workspaces = new InMemoryWorkspaceRepository();
+  const service = new WorkspaceService(workspaces, "test-pepper");
+  const workspace = await service.createWorkspace(actor, { name: "House", type: "COUPLE" });
+  const insights = new InMemoryInsightRepository();
+  const profiles = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: 5,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+    onboardingWorkspaceId: workspace.id,
+    onboardingSkippedSteps: [3],
+    onboardingStartingMethod: "MANUAL",
+  }));
+
+  const completed = await persistPreferencesStep(
+    actor,
+    { goals: ["TRACK_SPENDING", "MANAGE_TOGETHER"], proactivity: "QUIET" },
+    profiles,
+    service,
+    insights,
+  );
+  assert.equal(completed.profile.onboardingStatus, "COMPLETED");
+  assert.equal(completed.profile.onboardingStep, null);
+  assert.ok(completed.profile.onboardingCompletedAt);
+  assert.deepEqual(completed.preferences, { paceGoals: ["TRACK_SPENDING", "MANAGE_TOGETHER"], proactivity: "QUIET" });
+  assert.deepEqual(await insights.findPreference(workspace.id, actor.userId), {
+    workspaceId: workspace.id,
+    userId: actor.userId,
+    paceGoals: ["TRACK_SPENDING", "MANAGE_TOGETHER"],
+    proactivity: "QUIET",
+    dailyEnabled: false,
+    weeklyEnabled: true,
+    monthlyEnabled: true,
+    minimumSeverity: "WARNING",
+    createdAt: (await insights.findPreference(workspace.id, actor.userId))?.createdAt,
+    updatedAt: (await insights.findPreference(workspace.id, actor.userId))?.updatedAt,
+  });
+
+  const secondActor = { userId: "user-2", email: "other@pace.test", name: "Other Pace User" };
+  workspaces.addMembership({ workspaceId: workspace.id, userId: secondActor.userId, role: "MEMBER", invitedByUserId: actor.userId, joinedAt: new Date() });
+  const secondProfiles = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: 5,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+    onboardingWorkspaceId: workspace.id,
+    onboardingSkippedSteps: [3],
+    onboardingStartingMethod: "MANUAL",
+  }));
+  await persistPreferencesStep(secondActor, { goals: ["BILLS"], proactivity: "PROACTIVE" }, secondProfiles, service, insights);
+  assert.equal((await insights.findPreference(workspace.id, actor.userId))?.proactivity, "QUIET");
+  assert.equal((await insights.findPreference(workspace.id, secondActor.userId))?.proactivity, "PROACTIVE");
+
+  const incomplete = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: 4,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+    onboardingWorkspaceId: workspace.id,
+    onboardingStartingMethod: "MANUAL",
+  }));
+  await assert.rejects(() => persistPreferencesStep(actor, { goals: ["BILLS"], proactivity: "BALANCED" }, incomplete, service, insights));
+});
+
+test("PERSONAL Step 5 rejects MANAGE_TOGETHER even when a browser forges the enum", async () => {
+  const workspaces = new InMemoryWorkspaceRepository();
+  const service = new WorkspaceService(workspaces, "test-pepper");
+  const workspace = await service.createWorkspace(actor, { name: "Private", type: "PERSONAL" });
+  const profiles = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: 5,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+    onboardingWorkspaceId: workspace.id,
+    onboardingSkippedSteps: [3],
+    onboardingStartingMethod: "MANUAL",
+  }));
+
+  await assert.rejects(
+    () => persistPreferencesStep(actor, { goals: ["MANAGE_TOGETHER"], proactivity: "BALANCED" }, profiles, service, new InMemoryInsightRepository()),
+  );
 });

@@ -76,11 +76,11 @@ async function fixture() {
     joinedAt: now,
   });
   repository.setRecipients(firstWorkspace, [
-    { workspaceId: firstWorkspace, userId: owner.userId, language: "en", dailyEnabled: true, weeklyEnabled: true, monthlyEnabled: true, minimumSeverity: "INFO", createdAt: now, updatedAt: now },
-    { workspaceId: firstWorkspace, userId: member.userId, language: "fr", dailyEnabled: true, weeklyEnabled: true, monthlyEnabled: true, minimumSeverity: "WARNING", createdAt: now, updatedAt: now },
+    { workspaceId: firstWorkspace, userId: owner.userId, language: "en", dailyEnabled: true, weeklyEnabled: true, monthlyEnabled: true, minimumSeverity: "INFO", paceGoals: [], proactivity: "BALANCED", createdAt: now, updatedAt: now },
+    { workspaceId: firstWorkspace, userId: member.userId, language: "fr", dailyEnabled: true, weeklyEnabled: true, monthlyEnabled: true, minimumSeverity: "WARNING", paceGoals: [], proactivity: "BALANCED", createdAt: now, updatedAt: now },
   ]);
   repository.setRecipients(secondWorkspace, [
-    { workspaceId: secondWorkspace, userId: owner.userId, language: "en", dailyEnabled: true, weeklyEnabled: true, monthlyEnabled: true, minimumSeverity: "INFO", createdAt: now, updatedAt: now },
+    { workspaceId: secondWorkspace, userId: owner.userId, language: "en", dailyEnabled: true, weeklyEnabled: true, monthlyEnabled: true, minimumSeverity: "INFO", paceGoals: [], proactivity: "BALANCED", createdAt: now, updatedAt: now },
   ]);
   const transactions = [
     ledgerTransaction("previous", firstWorkspace, 100n, "2026-02-10T12:00:00.000Z"),

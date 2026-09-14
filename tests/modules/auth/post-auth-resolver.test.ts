@@ -51,6 +51,9 @@ function profile(status: PaceUserProfileRecord["onboardingStatus"]): PaceUserPro
     async saveConnectStep() {
       throw new Error("Not used by post-auth resolver tests.");
     },
+    async completeOnboarding() {
+      throw new Error("Not used by post-auth resolver tests.");
+    },
     async claimOnboardingInvitationId() {
       throw new Error("Not used by post-auth resolver tests.");
     },

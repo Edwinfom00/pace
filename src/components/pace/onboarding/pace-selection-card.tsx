@@ -17,6 +17,9 @@ type PaceSelectionCardProps = {
   badge?: { label: string; tone: "recommended" | "unavailable" | "comingSoon" };
   features?: readonly string[];
   selectedLabel?: string;
+  selectionMode?: "single" | "multiple";
+  density?: "default" | "compact";
+  iconClassName?: string;
 };
 
 
@@ -33,13 +36,18 @@ export function PaceSelectionCard({
   badge,
   features,
   selectedLabel = "Selected",
+  selectionMode = "single",
+  density = "default",
+  iconClassName,
 }: PaceSelectionCardProps) {
   const detailed = Boolean(features?.length);
-  const iconTone = disabled
+  const compact = density === "compact";
+  const defaultIconTone = disabled
     ? "bg-[#f3f6fb] text-[#9aa9c1]"
     : selected
       ? detailed ? "bg-[#e5efff] text-[#3268ed]" : "bg-[#e4eeff] text-[#4267b4]"
       : "bg-[#edf3fc] text-[#4f67a2]";
+  const iconTone = disabled ? defaultIconTone : iconClassName ?? defaultIconTone;
   const badgeTone = badge?.tone === "recommended"
     ? "bg-[#e7f0ff] text-[#2460d8]"
     : badge?.tone === "comingSoon"
@@ -53,34 +61,36 @@ export function PaceSelectionCard({
       className={`relative flex w-full rounded-xl border text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#3268ed]/20 ${
         detailed
           ? "min-h-[226px] flex-col items-stretch px-5 py-5 transition-[border-color,background-color] duration-150 sm:px-6"
-          : "min-h-28 items-center gap-5 px-6 py-4 transition-[border-color,background-color,box-shadow,transform] duration-150"
+          : compact
+            ? "min-h-[106px] items-center gap-4 px-3.5 py-3.5 transition-[border-color,background-color] duration-150 sm:px-4"
+            : "min-h-28 items-center gap-5 px-6 py-4 transition-[border-color,background-color,box-shadow,transform] duration-150"
       } ${
         disabled
           ? "cursor-not-allowed border-[#dde5f0] bg-[#fbfcfe] text-[#a0adc0]"
           : selected
-            ? detailed ? "border-[#3268ed] bg-[#f5f9ff]" : "border-[#3268ed] bg-[#f4f8ff] shadow-[0_8px_24px_rgba(50,104,237,0.07)]"
+            ? detailed ? "border-[#3268ed] bg-[#f5f9ff]" : "border-[#3268ed] bg-[#f4f8ff]"
             : "border-[#d7e1f0] bg-white hover:border-[#aebfe0] hover:bg-[#fbfdff]"
       }`}
       disabled={disabled}
       id={id}
       onClick={() => onSelect(value)}
       onKeyDown={onKeyDown}
-      role="radio"
-      tabIndex={disabled ? -1 : selected ? 0 : -1}
+      role={selectionMode === "multiple" ? "checkbox" : "radio"}
+      tabIndex={disabled ? -1 : selectionMode === "multiple" || selected ? 0 : -1}
       type="button"
     >
       <span className={detailed ? "flex min-w-0 items-start gap-4" : "contents"}>
-        <span aria-hidden className={`grid size-16 shrink-0 place-items-center ${detailed ? "rounded-2xl" : "rounded-full"} ${iconTone}`}>
-          <Icon className="size-8" />
+        <span aria-hidden className={`grid shrink-0 place-items-center ${compact ? "size-14 rounded-xl" : "size-16 " + (detailed ? "rounded-2xl" : "rounded-full")} ${iconTone}`}>
+          <Icon className={compact ? "size-7" : "size-8"} />
         </span>
         <span className={detailed ? "min-w-0 pt-1" : "min-w-0"}>
-          <span className={`block text-[19px] font-semibold leading-6 tracking-[-0.03em] ${disabled ? "text-[#95a4ba]" : "text-[#101e3b]"}`}>{title}</span>
-          <span className={`mt-1 block text-base leading-6 ${disabled ? "text-[#9caac0]" : "text-[#6079b0]"}`}>{description}</span>
+          <span className={`block font-semibold tracking-[-0.02em] ${compact ? "text-[15px] leading-5" : "text-[19px] leading-6"} ${disabled ? "text-[#95a4ba]" : "text-[#101e3b]"}`}>{title}</span>
+          <span className={`mt-1 block ${compact ? "text-[14px] leading-5" : "text-base leading-6"} ${disabled ? "text-[#9caac0]" : "text-[#6079b0]"}`}>{description}</span>
           {badge ? <span className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${badgeTone}`}>{badge.label}</span> : null}
         </span>
       </span>
       {selected ? (
-        <span aria-label={selectedLabel} className="absolute right-4 top-4 grid size-7 place-items-center rounded-full bg-[#3268ed] text-white">
+        <span aria-label={selectedLabel} className={`absolute grid place-items-center rounded-full bg-[#3268ed] text-white ${compact ? "right-3 top-3 size-5" : "right-4 top-4 size-7"}`}>
           <FiCheck aria-hidden className="size-4" strokeWidth={3} />
         </span>
       ) : null}

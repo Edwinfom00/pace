@@ -20,6 +20,12 @@ import type {
   NotificationCadence,
   NotificationRecipient,
 } from "../domain";
+import {
+  PACE_GOALS,
+  PACE_PROACTIVITY,
+  type PaceGoal,
+  type PaceProactivity,
+} from "@/modules/onboarding/profile-domain";
 
 export interface WorkspaceInsightSettings {
   readonly workspaceId: string;
@@ -36,6 +42,20 @@ export interface CreateMemberNotificationInput {
   language: string;
   payload: Record<string, string | number | boolean | null>;
   fingerprint: string;
+}
+
+function toPaceGoals(goals: readonly string[] | null | undefined): PaceGoal[] {
+  return (goals ?? []).filter((goal): goal is PaceGoal => PACE_GOALS.includes(goal as PaceGoal));
+}
+
+function toPaceProactivity(value: string | null | undefined): PaceProactivity {
+  return PACE_PROACTIVITY.includes(value as PaceProactivity) ? value as PaceProactivity : "BALANCED";
+}
+
+function toMemberNotificationPreference(
+  record: Omit<MemberNotificationPreference, "paceGoals" | "proactivity"> & { paceGoals: string[]; proactivity: string },
+): MemberNotificationPreference {
+  return { ...record, paceGoals: toPaceGoals(record.paceGoals), proactivity: toPaceProactivity(record.proactivity) };
 }
 
 export interface InsightRepository {
@@ -65,6 +85,18 @@ export interface InsightRepository {
       MemberNotificationPreference,
       "dailyEnabled" | "weeklyEnabled" | "monthlyEnabled" | "minimumSeverity"
     >,
+  ): Promise<MemberNotificationPreference>;
+  saveOnboardingPreference(
+    workspaceId: string,
+    userId: string,
+    input: {
+      goals: readonly PaceGoal[];
+      proactivity: PaceProactivity;
+      dailyEnabled: boolean;
+      weeklyEnabled: boolean;
+      monthlyEnabled: boolean;
+      minimumSeverity: InsightSeverity;
+    },
   ): Promise<MemberNotificationPreference>;
   listRecipients(workspaceId: string): Promise<NotificationRecipient[]>;
   createNotification(input: CreateMemberNotificationInput): Promise<MemberNotificationRecord | null>;
@@ -212,7 +244,7 @@ export class DatabaseInsightRepository implements InsightRepository {
         ),
       )
       .limit(1);
-    return record ?? null;
+    return record ? toMemberNotificationPreference(record) : null;
   }
 
   async upsertPreference(
@@ -232,7 +264,48 @@ export class DatabaseInsightRepository implements InsightRepository {
       })
       .returning();
     if (!record) throw new Error("Failed to save notification preferences.");
-    return record;
+    return toMemberNotificationPreference(record);
+  }
+
+  async saveOnboardingPreference(
+    workspaceId: string,
+    userId: string,
+    input: {
+      goals: readonly PaceGoal[];
+      proactivity: PaceProactivity;
+      dailyEnabled: boolean;
+      weeklyEnabled: boolean;
+      monthlyEnabled: boolean;
+      minimumSeverity: InsightSeverity;
+    },
+  ): Promise<MemberNotificationPreference> {
+    const [record] = await db
+      .insert(memberNotificationPreferences)
+      .values({
+        workspaceId,
+        userId,
+        paceGoals: [...input.goals],
+        proactivity: input.proactivity,
+        dailyEnabled: input.dailyEnabled,
+        weeklyEnabled: input.weeklyEnabled,
+        monthlyEnabled: input.monthlyEnabled,
+        minimumSeverity: input.minimumSeverity,
+      })
+      .onConflictDoUpdate({
+        target: [memberNotificationPreferences.workspaceId, memberNotificationPreferences.userId],
+        set: {
+          paceGoals: [...input.goals],
+          proactivity: input.proactivity,
+          dailyEnabled: input.dailyEnabled,
+          weeklyEnabled: input.weeklyEnabled,
+          monthlyEnabled: input.monthlyEnabled,
+          minimumSeverity: input.minimumSeverity,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    if (!record) throw new Error("Failed to save onboarding preferences.");
+    return toMemberNotificationPreference(record);
   }
 
   async listRecipients(workspaceId: string): Promise<NotificationRecipient[]> {
@@ -257,6 +330,8 @@ export class DatabaseInsightRepository implements InsightRepository {
       weeklyEnabled: preference?.weeklyEnabled ?? true,
       monthlyEnabled: preference?.monthlyEnabled ?? true,
       minimumSeverity: (preference?.minimumSeverity ?? "INFO") as InsightSeverity,
+      paceGoals: toPaceGoals(preference?.paceGoals),
+      proactivity: toPaceProactivity(preference?.proactivity),
       createdAt: preference?.createdAt ?? now,
       updatedAt: preference?.updatedAt ?? now,
     }));

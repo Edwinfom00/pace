@@ -1,4 +1,5 @@
 import type { InsightCandidate, InsightSeverity } from "@/money/insights";
+import type { PaceGoal, PaceProactivity } from "@/modules/onboarding/profile-domain";
 
 export const INSIGHT_STATUSES = ["ACTIVE", "READ", "DISMISSED", "RESOLVED"] as const;
 export type InsightStatus = (typeof INSIGHT_STATUSES)[number];
@@ -27,6 +28,8 @@ export interface MemberNotificationPreference {
   readonly weeklyEnabled: boolean;
   readonly monthlyEnabled: boolean;
   readonly minimumSeverity: InsightSeverity;
+  readonly paceGoals: readonly PaceGoal[];
+  readonly proactivity: PaceProactivity;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }

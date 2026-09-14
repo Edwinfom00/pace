@@ -242,6 +242,8 @@ function defaultPreference(workspaceId: string, userId: string): MemberNotificat
     weeklyEnabled: true,
     monthlyEnabled: true,
     minimumSeverity: "INFO",
+    paceGoals: [],
+    proactivity: "BALANCED",
     createdAt: now,
     updatedAt: now,
   };
@@ -260,7 +262,7 @@ function shouldNotify(
   if (!enabled || insight.status !== "ACTIVE") return false;
   if (SEVERITY_RANK[insight.severity] < SEVERITY_RANK[preference.minimumSeverity]) return false;
   // Daily delivery deliberately stays high-signal. Summaries can include INFO facts.
-  return cadence !== "DAILY" ||
+  return preference.proactivity === "PROACTIVE" || cadence !== "DAILY" ||
     insight.severity !== "INFO" ||
     insight.type === "NEW_RECURRING_PAYMENT" ||
     insight.type === "UNUSUAL_TRANSACTION";

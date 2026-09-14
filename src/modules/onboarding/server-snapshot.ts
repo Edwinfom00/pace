@@ -1,7 +1,16 @@
 import type { OnboardingLanguage } from "./metadata";
 import type { WorkspaceRecord } from "../workspaces/domain";
 import { getFinancialConnectionCapabilities, type FinancialConnectionCapabilities } from "../financial-connections/capabilities";
-import { reconcileConnectionMethod, type ConnectDraft, type OnboardingStep, type PaceUserProfileRecord, type WorkspaceDraft, type YourPaceDraft } from "./profile-domain";
+import {
+  DEFAULT_ONBOARDING_PREFERENCES,
+  reconcileConnectionMethod,
+  type ConnectDraft,
+  type OnboardingStep,
+  type PaceUserProfileRecord,
+  type PreferencesDraft,
+  type WorkspaceDraft,
+  type YourPaceDraft,
+} from "./profile-domain";
 
 export type OnboardingServerSnapshot = {
   currentStep: OnboardingStep;
@@ -9,12 +18,16 @@ export type OnboardingServerSnapshot = {
   workspace: WorkspaceDraft;
   together: { skipped: boolean; hasExistingInvitation: boolean };
   connect: ConnectDraft & { capabilities: FinancialConnectionCapabilities };
+  /** Optional for backwards-compatible Step 1–4 snapshot call sites. */
+  preferences?: PreferencesDraft;
+  preferencesPersisted?: boolean;
 };
 
 export function createOnboardingServerSnapshot(
   profile: PaceUserProfileRecord,
   language: OnboardingLanguage,
   workspace: WorkspaceRecord | null = null,
+  preferences: PreferencesDraft | null = null,
 ): OnboardingServerSnapshot {
   const currentStep =
     profile.onboardingStatus === "IN_PROGRESS" && profile.onboardingStep
@@ -41,5 +54,7 @@ export function createOnboardingServerSnapshot(
       selectedMethod: reconcileConnectionMethod(profile.onboardingStartingMethod, capabilities),
       capabilities,
     },
+    preferences: preferences ?? DEFAULT_ONBOARDING_PREFERENCES,
+    preferencesPersisted: Boolean(preferences),
   };
 }

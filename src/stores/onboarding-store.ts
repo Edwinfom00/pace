@@ -9,10 +9,11 @@ import type {
   ConnectDraft,
   OnboardingInviteMethod,
   OnboardingStep,
+  PreferencesDraft,
   WorkspaceDraft,
   YourPaceDraft,
 } from "@/modules/onboarding/profile-domain";
-import { reconcileConnectionMethod } from "@/modules/onboarding/profile-domain";
+import { DEFAULT_ONBOARDING_PREFERENCES, reconcileConnectionMethod } from "@/modules/onboarding/profile-domain";
 import type { FinancialConnectionCapabilities } from "@/modules/financial-connections/capabilities";
 
 export const ONBOARDING_STORE_KEY = "pace:onboarding:v1";
@@ -23,7 +24,7 @@ export type OnboardingDraftState = {
   workspace: WorkspaceDraft;
   together: { skipped: boolean; inviteMethod: OnboardingInviteMethod };
   connect: ConnectDraft & { capabilities: FinancialConnectionCapabilities };
-  preferences: { goals: string[]; proactivity: string };
+  preferences: PreferencesDraft;
 };
 
 export type OnboardingStore = OnboardingDraftState & {
@@ -32,6 +33,7 @@ export type OnboardingStore = OnboardingDraftState & {
   setWorkspace: (values: Partial<WorkspaceDraft>) => void;
   setTogether: (values: Partial<OnboardingDraftState["together"]>) => void;
   setConnect: (values: Partial<ConnectDraft>) => void;
+  setPreferences: (values: Partial<PreferencesDraft>) => void;
   setCurrentStep: (step: OnboardingStep) => void;
   reset: () => void;
   hydrateFromServer: (snapshot: OnboardingServerSnapshot) => void;
@@ -47,7 +49,7 @@ export const emptyOnboardingDraft: OnboardingDraftState = {
     selectedMethod: "MANUAL",
     capabilities: { manual: true, importStatement: true, bankConnection: false, mobileMoney: false },
   },
-  preferences: { goals: [], proactivity: "" },
+  preferences: { goals: ["TRACK_SPENDING"], proactivity: "BALANCED" },
 };
 
 /**
@@ -88,6 +90,7 @@ export function mergeOnboardingServerSnapshot(
         server.connect.capabilities,
       ),
     },
+    preferences: server.preferencesPersisted ? (server.preferences ?? DEFAULT_ONBOARDING_PREFERENCES) : local.preferences,
   };
 }
 
@@ -109,6 +112,8 @@ function makeStore(options: StoreOptions = {}) {
         set((state) => ({ together: { ...state.together, ...values } })),
       setConnect: (values) =>
         set((state) => ({ connect: { ...state.connect, ...values } })),
+      setPreferences: (values) =>
+        set((state) => ({ preferences: { ...state.preferences, ...values } })),
       setCurrentStep: (currentStep) => set({ currentStep }),
       reset: () => set({ ...emptyOnboardingDraft, hydrated: true }),
       hydrateFromServer: (snapshot) =>

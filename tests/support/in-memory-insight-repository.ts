@@ -6,6 +6,7 @@ import type {
   MemberNotificationRecord,
   NotificationRecipient,
 } from "@/modules/insights/domain";
+import type { PaceGoal, PaceProactivity } from "@/modules/onboarding/profile-domain";
 import type {
   CreateMemberNotificationInput,
   InsightRepository,
@@ -131,7 +132,45 @@ export class InMemoryInsightRepository implements InsightRepository {
     const record: MemberNotificationPreference = {
       workspaceId,
       userId,
+      paceGoals: current?.paceGoals ?? [],
+      proactivity: current?.proactivity ?? "BALANCED",
       ...input,
+      createdAt: current?.createdAt ?? now,
+      updatedAt: now,
+    };
+    this.preferences.set(this.memberKey(workspaceId, userId), record);
+    this.recipients.set(
+      workspaceId,
+      (this.recipients.get(workspaceId) ?? []).map((recipient) =>
+        recipient.userId === userId ? { ...recipient, ...record } : recipient,
+      ),
+    );
+    return record;
+  }
+
+  async saveOnboardingPreference(
+    workspaceId: string,
+    userId: string,
+    input: {
+      goals: readonly PaceGoal[];
+      proactivity: PaceProactivity;
+      dailyEnabled: boolean;
+      weeklyEnabled: boolean;
+      monthlyEnabled: boolean;
+      minimumSeverity: MemberNotificationPreference["minimumSeverity"];
+    },
+  ): Promise<MemberNotificationPreference> {
+    const current = await this.findPreference(workspaceId, userId);
+    const now = new Date();
+    const record: MemberNotificationPreference = {
+      workspaceId,
+      userId,
+      paceGoals: [...input.goals],
+      proactivity: input.proactivity,
+      dailyEnabled: input.dailyEnabled,
+      weeklyEnabled: input.weeklyEnabled,
+      monthlyEnabled: input.monthlyEnabled,
+      minimumSeverity: input.minimumSeverity,
       createdAt: current?.createdAt ?? now,
       updatedAt: now,
     };

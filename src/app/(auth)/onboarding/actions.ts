@@ -6,7 +6,10 @@ import {
   ConnectionMethodUnavailableError,
   createOnboardingInvitation,
   OnboardingConnectStepUnavailableError,
+  OnboardingPreferencesStepUnavailableError,
+  PersonalWorkspaceGoalError,
   persistConnectStep,
+  persistPreferencesStep,
   persistTogetherStep,
   persistWorkspaceStep,
   persistYourPaceStep,
@@ -14,10 +17,13 @@ import {
 import {
   connectionMethodSchema,
   onboardingInvitationSchema,
+  onboardingPreferencesSchema,
   workspaceStepSchema,
   yourPaceSchema,
   type OnboardingStep,
   type OnboardingConnectionMethod,
+  type PaceGoal,
+  type PaceProactivity,
   type ValidatedWorkspaceStep,
   type ValidatedYourPace,
 } from "@/modules/onboarding/profile-domain";
@@ -88,7 +94,7 @@ export type CreateOnboardingInvitationResult =
   | { ok: true; inviteUrlToken: string; shortCode: string }
   | { ok: false; code: "VALIDATION_ERROR" | "ROTATION_REQUIRED" | string };
 
-/** No workspace ID, role, raw token, or persistence key is ever accepted from the browser. */
+
 export async function submitOnboardingInvitation(
   input: unknown,
   options: { rotate?: boolean } = {},
@@ -133,7 +139,7 @@ export type SubmitConnectResult =
   | { ok: true; selectedMethod: OnboardingConnectionMethod; currentStep: OnboardingStep }
   | { ok: false; code: string };
 
-/** The server resolves country and provider capability again before persisting. */
+
 export async function submitConnectStep(input: unknown): Promise<SubmitConnectResult> {
   const actor = await requireAuthenticatedActor();
   const parsed = connectionMethodSchema.safeParse(input);
@@ -157,6 +163,35 @@ export async function submitConnectStep(input: unknown): Promise<SubmitConnectRe
         : error instanceof OnboardingConnectStepUnavailableError
           ? error.code
           : "CONNECT_SAVE_FAILED",
+    };
+  }
+}
+
+export type SubmitPreferencesResult =
+  | { ok: true; goals: PaceGoal[]; proactivity: PaceProactivity }
+  | { ok: false; code: string };
+
+
+export async function submitPreferencesStep(input: unknown): Promise<SubmitPreferencesResult> {
+  const actor = await requireAuthenticatedActor();
+  const parsed = onboardingPreferencesSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, code: "VALIDATION_ERROR" };
+
+  try {
+    const persisted = await persistPreferencesStep(actor, parsed.data);
+    return {
+      ok: true,
+      goals: [...persisted.preferences.paceGoals],
+      proactivity: persisted.preferences.proactivity,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      code: error instanceof PersonalWorkspaceGoalError
+        ? error.code
+        : error instanceof OnboardingPreferencesStepUnavailableError
+          ? error.code
+          : "PREFERENCES_SAVE_FAILED",
     };
   }
 }

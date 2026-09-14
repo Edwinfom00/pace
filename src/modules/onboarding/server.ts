@@ -11,15 +11,23 @@ import {
 import {
   connectionMethodSchema,
   isConnectionMethodAvailable,
+  isPaceGoalAvailableInWorkspace,
+  onboardingPreferencesSchema,
   onboardingInvitationSchema,
   workspaceStepSchema,
   yourPaceSchema,
   type PaceUserProfileRecord,
   type OnboardingConnectionMethod,
+  type PaceProactivity,
   type ValidatedWorkspaceStep,
 } from "./profile-domain";
 import type { PaceUserProfileRepository } from "./repositories/pace-user-profile-repository";
 import { getFinancialConnectionCapabilities } from "../financial-connections/capabilities";
+import {
+  DatabaseInsightRepository,
+  type InsightRepository,
+} from "../insights/repositories/insight-repository";
+import type { MemberNotificationPreference } from "../insights/domain";
 
 export function getPaceUserProfileRepository(): DatabasePaceUserProfileRepository {
   return new DatabasePaceUserProfileRepository();
@@ -78,11 +86,7 @@ export type OnboardingInvitationCreation =
   | { kind: "created"; inviteUrlToken: string; shortCode: string }
   | { kind: "rotation-required" };
 
-/**
- * Creates one invitation for the canonical onboarding workspace. A compare-
- * and-set profile reference makes duplicate UI submissions idempotent while
- * keeping the raw token ephemeral in this one response.
- */
+
 export async function createOnboardingInvitation(
   actor: AuthenticatedActor,
   input: unknown,
@@ -153,7 +157,7 @@ export async function createOnboardingInvitation(
   }
 }
 
-/** Completes Step 3 without accepting browser-supplied workspace state. */
+
 export async function persistTogetherStep(
   actor: AuthenticatedActor,
   repository: PaceUserProfileRepository = getPaceUserProfileRepository(),
@@ -187,6 +191,22 @@ export class OnboardingConnectStepUnavailableError extends Error {
 
   constructor() {
     super("The connection step is not available yet.");
+  }
+}
+
+export class OnboardingPreferencesStepUnavailableError extends Error {
+  readonly code = "ONBOARDING_PREFERENCES_STEP_UNAVAILABLE";
+
+  constructor() {
+    super("The preferences step is not available yet.");
+  }
+}
+
+export class PersonalWorkspaceGoalError extends Error {
+  readonly code = "PERSONAL_WORKSPACE_GOAL_UNAVAILABLE";
+
+  constructor() {
+    super("Manage money together is not available in a personal workspace.");
   }
 }
 
@@ -225,4 +245,80 @@ export async function persistConnectStep(
   }
 
   return repository.saveConnectStep(actor.userId, method);
+}
+
+type PreferencesOnboardingService = Pick<WorkspaceService, "getWorkspaceForMember">;
+type PreferencesRepository = Pick<InsightRepository, "saveOnboardingPreference">;
+
+export async function getOnboardingMemberPreferences(
+  workspaceId: string | null,
+  userId: string,
+  preferencesRepository: Pick<InsightRepository, "findPreference"> = new DatabaseInsightRepository(),
+) {
+  if (!workspaceId) return null;
+  const preference = await preferencesRepository.findPreference(workspaceId, userId);
+  return preference
+    ? { goals: [...preference.paceGoals], proactivity: preference.proactivity }
+    : null;
+}
+
+function notificationPolicyFor(proactivity: PaceProactivity): Pick<
+  MemberNotificationPreference,
+  "dailyEnabled" | "weeklyEnabled" | "monthlyEnabled" | "minimumSeverity"
+> {
+  if (proactivity === "QUIET") {
+    return { dailyEnabled: false, weeklyEnabled: true, monthlyEnabled: true, minimumSeverity: "WARNING" };
+  }
+
+  return { dailyEnabled: true, weeklyEnabled: true, monthlyEnabled: true, minimumSeverity: "INFO" };
+}
+
+
+export async function persistPreferencesStep(
+  actor: AuthenticatedActor,
+  input: unknown,
+  repository: PaceUserProfileRepository = getPaceUserProfileRepository(),
+  workspaceService: PreferencesOnboardingService = getWorkspaceService(),
+  preferencesRepository: PreferencesRepository = new DatabaseInsightRepository(),
+): Promise<{ profile: PaceUserProfileRecord; preferences: Pick<MemberNotificationPreference, "paceGoals" | "proactivity"> }> {
+  const preferences = onboardingPreferencesSchema.parse(input);
+  const profile = await repository.getOrCreate(actor.userId);
+
+  if (
+    profile.onboardingStatus !== "IN_PROGRESS" ||
+    profile.onboardingStep !== 5 ||
+    !profile.countryCode ||
+    !profile.currency ||
+    !profile.timezone ||
+    !profile.onboardingWorkspaceId
+  ) {
+    throw new OnboardingPreferencesStepUnavailableError();
+  }
+
+  const workspace = await workspaceService.getWorkspaceForMember(actor, profile.onboardingWorkspaceId);
+  if (!workspace) {
+    throw new OnboardingPreferencesStepUnavailableError();
+  }
+
+  const method = connectionMethodSchema.safeParse(profile.onboardingStartingMethod);
+  const capabilities = getFinancialConnectionCapabilities({ country: profile.countryCode });
+  if (!method.success || !isConnectionMethodAvailable(method.data, capabilities)) {
+    throw new OnboardingPreferencesStepUnavailableError();
+  }
+
+  if (preferences.goals.some((goal) => !isPaceGoalAvailableInWorkspace(goal, workspace.type))) {
+    throw new PersonalWorkspaceGoalError();
+  }
+
+  const savedPreferences = await preferencesRepository.saveOnboardingPreference(
+    workspace.id,
+    actor.userId,
+    { goals: preferences.goals, proactivity: preferences.proactivity, ...notificationPolicyFor(preferences.proactivity) },
+  );
+  const completedProfile = await repository.completeOnboarding(actor.userId);
+
+  return {
+    profile: completedProfile,
+    preferences: { paceGoals: [...savedPreferences.paceGoals], proactivity: savedPreferences.proactivity },
+  };
 }

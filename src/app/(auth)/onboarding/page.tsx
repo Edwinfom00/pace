@@ -8,14 +8,14 @@ import {
   resolveOnboardingWorkspaceStep,
 } from "@/modules/onboarding/route-state";
 import { createOnboardingServerSnapshot } from "@/modules/onboarding/server-snapshot";
-import { getPaceUserProfileRepository } from "@/modules/onboarding/server";
+import { getOnboardingMemberPreferences, getPaceUserProfileRepository } from "@/modules/onboarding/server";
 import { resolvePostAuthDestination } from "@/modules/auth/post-auth-resolver";
 import { getWorkspaceService } from "@/modules/workspaces/server";
-import { OnboardingNextStepBoundary } from "@/components/pace/onboarding/onboarding-next-step-boundary";
 import { OnboardingStepOne } from "@/components/pace/onboarding/onboarding-step-one";
 import { OnboardingWorkspaceStep } from "@/components/pace/onboarding/onboarding-workspace-step";
 import { OnboardingTogetherStep } from "@/components/pace/onboarding/steps/together-step";
 import { OnboardingConnectStep } from "@/components/pace/onboarding/steps/connect-step";
+import { OnboardingPreferencesStep } from "@/components/pace/onboarding/steps/preferences-step";
 
 type OnboardingPageProps = {
   searchParams: Promise<{ step?: string | string[] }>;
@@ -42,12 +42,15 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
   const workspace = actor && resolution.profile.onboardingWorkspaceId
     ? await getWorkspaceService().getWorkspaceForMember(actor, resolution.profile.onboardingWorkspaceId)
     : null;
+  const preferences = actor
+    ? await getOnboardingMemberPreferences(workspace?.id ?? null, actor.userId)
+    : null;
   const viewedStep = resolveOnboardingWorkspaceStep(requestedViewedStep, workspace?.type);
 
   if (viewedStep !== requestedViewedStep) {
     redirect(`/onboarding?step=${viewedStep}`);
   }
-  const snapshot = createOnboardingServerSnapshot(resolution.profile, language, workspace);
+  const snapshot = createOnboardingServerSnapshot(resolution.profile, language, workspace, preferences);
 
   if (viewedStep === 1) {
     return <OnboardingStepOne initialSnapshot={snapshot} />;
@@ -65,5 +68,5 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
     return <OnboardingConnectStep initialSnapshot={snapshot} />;
   }
 
-  return <OnboardingNextStepBoundary language={language} step={viewedStep} />;
+  return <OnboardingPreferencesStep initialSnapshot={snapshot} />;
 }
