@@ -88,3 +88,25 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
 .recurring-confirmed { background: #e9fbf2; color: #138951; }
 .recurring-ignored { background: #f2f4f7; color: #667085; }
 @media (max-width: 820px) { .finance-shell { grid-template-columns: 1fr; } .finance-navigation { flex-direction: row; align-items: center; justify-content: space-between; padding: 14px; border-right: 0; border-bottom: 1px solid #e9edf4; } .finance-navigation nav { display: flex; } .finance-content { padding: 28px 18px 44px; } .finance-item { grid-template-columns: 1fr; gap: 12px; } .finance-item-actions, .finance-resolved { justify-self: start; } }
+
+/* M7 is deliberately a small, replaceable workflow surface rather than the Pace product UI. */
+.import-content { max-width: 1120px; }
+.import-panel { margin-top: 24px; padding: 24px; border: 1px solid #e7ebf2; border-radius: 12px; background: #fff; }
+.import-panel h2, .import-panel h3, .import-panel h4 { margin-top: 0; }
+.import-panel > p { color: #71809a; }
+.import-mapping-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.import-field { display: grid; gap: 6px; color: #35435c; font-size: 13px; font-weight: 650; }
+.import-field input, .import-field select { min-height: 40px; padding: 8px 10px; border: 1px solid #dfe5ee; border-radius: 8px; background: #fff; color: inherit; font: inherit; }
+.import-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.import-actions button { border: 1px solid #2867eb; border-radius: 8px; padding: 9px 12px; background: #2867eb; color: #fff; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.import-actions .finance-secondary-button { border-color: #dfe5ee; background: #fff; color: #35435c; }
+.import-actions button:disabled { cursor: not-allowed; opacity: .55; }
+.import-statistics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0; }
+.import-statistics div, .import-totals article { padding: 12px; border: 1px solid #e7ebf2; border-radius: 8px; }
+.import-statistics dt { color: #71809a; font-size: 12px; }
+.import-statistics dd { margin: 4px 0 0; color: #17223b; font-size: 19px; font-weight: 750; }
+.import-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.import-totals p { margin: 7px 0 0; color: #53627b; font-size: 13px; }
+.import-table-wrap { overflow-x: auto; }
+.import-table { width: 100%; min-width: 680px; border-collapse: collapse; font-size: 13px; }
+.import-table th, .import-table td { padding: 10px; border-bottom: 1px solid #e7ebf2; text-align: left; }

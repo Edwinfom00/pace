@@ -6,6 +6,7 @@ import {
   ConflictError,
   NotFoundError,
 } from "@/authorization/errors";
+import { ImportParseError } from "@/modules/imports/parsers";
 
 export async function parseJson<T>(request: Request, schema: ZodType<T>): Promise<T> {
   let body: unknown;
@@ -31,6 +32,10 @@ export function jsonError(error: unknown): Response {
       { error: "Validation failed.", issues: error.issues },
       { status: 400 },
     );
+  }
+
+  if (error instanceof ImportParseError) {
+    return Response.json({ error: error.message, code: error.code }, { status: 400 });
   }
 
   if (

@@ -7,7 +7,7 @@ export function FinanceNavigation({
   active,
   language,
 }: {
-  active: "ask" | "inbox" | "recurring";
+  active: "ask" | "inbox" | "recurring" | "imports";
   language: SupportedLanguage;
 }) {
   const t = getTranslations(language);
@@ -15,6 +15,7 @@ export function FinanceNavigation({
     { href: "/", key: "ask" as const, label: t("nav.askPace") },
     { href: "/inbox", key: "inbox" as const, label: t("nav.inbox") },
     { href: "/recurring", key: "recurring" as const, label: t("nav.recurring") },
+    { href: "/imports", key: "imports" as const, label: t("nav.imports") },
   ];
 
   return (

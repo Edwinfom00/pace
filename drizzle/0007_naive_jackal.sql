@@ -1,0 +1,1 @@
+ALTER TABLE "import_session" ADD CONSTRAINT "import_session_source_size_check" CHECK ("import_session"."source_size_bytes" > 0);
