@@ -1,15 +1,21 @@
 import type { PaceUserProfileRepository } from "@/modules/onboarding/repositories/pace-user-profile-repository";
 import { getPaceUserProfileRepository } from "@/modules/onboarding/server";
+import { isOnboardingReady } from "@/modules/onboarding/profile-domain";
 import {
   DatabaseWorkspaceRepository,
   type WorkspaceRepository,
 } from "@/modules/workspaces/repositories/workspace-repository";
+import {
+  ONBOARDING_DESTINATION,
+  ONBOARDING_READY_DESTINATION,
+} from "./routes";
+
+export { loginPathForReturnTo, ONBOARDING_DESTINATION, ONBOARDING_READY_DESTINATION } from "./routes";
 
 const SAFE_RETURN_URL_ORIGIN = "https://pace.internal";
 const WORKSPACE_OVERVIEW_PATH = /^\/w\/([a-z0-9]+(?:-[a-z0-9]+)*)\/overview$/;
 const JOIN_INVITATION_PATH = /^\/join\/[A-Za-z0-9_-]{43,128}$/;
 
-export const ONBOARDING_DESTINATION = "/onboarding";
 export const WORKSPACE_RECOVERY_DESTINATION = "/onboarding?recovery=workspace";
 
 export interface PostAuthResolverDependencies {
@@ -36,7 +42,7 @@ export async function resolvePostAuthDestination(
   }
 
   if (profile.onboardingStatus !== "COMPLETED") {
-    return ONBOARDING_DESTINATION;
+    return isOnboardingReady(profile) ? ONBOARDING_READY_DESTINATION : ONBOARDING_DESTINATION;
   }
 
   const requestedDestination = await resolveAuthorizedReturnTo(
@@ -58,10 +64,6 @@ export async function resolvePostAuthDestination(
 
 export function workspaceOverviewPath(workspaceSlug: string): string {
   return `/w/${workspaceSlug}/overview`;
-}
-
-export function loginPathForReturnTo(returnTo: string): string {
-  return `/login?returnTo=${encodeURIComponent(returnTo)}`;
 }
 
 export function getSafeInternalReturnTo(returnTo: string | null | undefined): string | null {

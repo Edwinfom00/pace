@@ -20,6 +20,7 @@ import {
   type OnboardingConnectionMethod,
   type PaceProactivity,
   type ValidatedWorkspaceStep,
+  isOnboardingReady,
 } from "./profile-domain";
 import type { PaceUserProfileRepository } from "./repositories/pace-user-profile-repository";
 import { getFinancialConnectionCapabilities } from "../financial-connections/capabilities";
@@ -210,6 +211,14 @@ export class PersonalWorkspaceGoalError extends Error {
   }
 }
 
+export class OnboardingFinalizationUnavailableError extends Error {
+  readonly code = "ONBOARDING_FINALIZATION_UNAVAILABLE";
+
+  constructor() {
+    super("Onboarding is not ready to be finalized.");
+  }
+}
+
 type ConnectOnboardingService = Pick<WorkspaceService, "getWorkspaceForMember">;
 
 /**
@@ -315,10 +324,74 @@ export async function persistPreferencesStep(
     actor.userId,
     { goals: preferences.goals, proactivity: preferences.proactivity, ...notificationPolicyFor(preferences.proactivity) },
   );
-  const completedProfile = await repository.completeOnboarding(actor.userId);
+  const readyProfile = await repository.markOnboardingReady(actor.userId);
 
   return {
-    profile: completedProfile,
+    profile: readyProfile,
     preferences: { paceGoals: [...savedPreferences.paceGoals], proactivity: savedPreferences.proactivity },
   };
+}
+
+type FinalizeOnboardingService = Pick<WorkspaceService, "getWorkspaceForMember">;
+type FinalizePreferencesRepository = Pick<InsightRepository, "findPreference">;
+
+export type FinalizedOnboarding = {
+  profile: PaceUserProfileRecord;
+  workspaceSlug: string;
+};
+
+
+export async function finalizeOnboarding(
+  actor: AuthenticatedActor,
+  repository: PaceUserProfileRepository = getPaceUserProfileRepository(),
+  workspaceService: FinalizeOnboardingService = getWorkspaceService(),
+  preferencesRepository: FinalizePreferencesRepository = new DatabaseInsightRepository(),
+): Promise<FinalizedOnboarding> {
+  const profile = await repository.getOrCreate(actor.userId);
+
+  if (!profile.onboardingWorkspaceId) {
+    throw new OnboardingFinalizationUnavailableError();
+  }
+
+  const workspace = await workspaceService.getWorkspaceForMember(actor, profile.onboardingWorkspaceId);
+  if (!workspace) {
+    throw new OnboardingFinalizationUnavailableError();
+  }
+
+  // A repeat request after success safely resolves the same server-owned
+  // workspace without creating any onboarding data again.
+  if (profile.onboardingStatus === "COMPLETED") {
+    return { profile, workspaceSlug: workspace.slug };
+  }
+
+  if (
+    !isOnboardingReady(profile) ||
+    !profile.countryCode ||
+    !profile.currency ||
+    !profile.timezone
+  ) {
+    throw new OnboardingFinalizationUnavailableError();
+  }
+
+  const method = connectionMethodSchema.safeParse(profile.onboardingStartingMethod);
+  const capabilities = getFinancialConnectionCapabilities({ country: profile.countryCode });
+  if (!method.success || !isConnectionMethodAvailable(method.data, capabilities)) {
+    throw new OnboardingFinalizationUnavailableError();
+  }
+
+  if (workspace.type === "PERSONAL" && !profile.onboardingSkippedSteps.includes(3)) {
+    throw new OnboardingFinalizationUnavailableError();
+  }
+
+  const preferences = await preferencesRepository.findPreference(workspace.id, actor.userId);
+  if (
+    !preferences ||
+    preferences.paceGoals.length === 0 ||
+    preferences.paceGoals.some((goal) => !isPaceGoalAvailableInWorkspace(goal, workspace.type))
+  ) {
+    throw new OnboardingFinalizationUnavailableError();
+  }
+
+  const completedProfile = await repository.completeOnboarding(actor.userId);
+  return { profile: completedProfile, workspaceSlug: workspace.slug };
 }

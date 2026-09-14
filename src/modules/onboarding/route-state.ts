@@ -1,6 +1,11 @@
-import { loginPathForReturnTo } from "@/modules/auth/post-auth-resolver";
+import { loginPathForReturnTo, ONBOARDING_READY_DESTINATION } from "@/modules/auth/routes";
 
-import { ONBOARDING_STEPS, type OnboardingStep, type PaceUserProfileRecord } from "./profile-domain";
+import {
+  isOnboardingReady,
+  ONBOARDING_STEPS,
+  type OnboardingStep,
+  type PaceUserProfileRecord,
+} from "./profile-domain";
 import type { WorkspaceType } from "../workspaces/domain";
 import type { PaceUserProfileRepository } from "./repositories/pace-user-profile-repository";
 
@@ -22,6 +27,10 @@ export async function resolveOnboardingRoute(
 
   if (profile.onboardingStatus === "COMPLETED") {
     return { kind: "redirect", destination: await resolveCompletedDestination(userId) };
+  }
+
+  if (isOnboardingReady(profile)) {
+    return { kind: "redirect", destination: ONBOARDING_READY_DESTINATION };
   }
 
   return { kind: "render", profile };

@@ -173,3 +173,8 @@ export interface PaceUserProfileRecord {
   createdAt: Date;
   updatedAt: Date;
 }
+
+
+export function isOnboardingReady(profile: PaceUserProfileRecord): boolean {
+  return profile.onboardingStatus === "IN_PROGRESS" && profile.onboardingStep === null;
+}

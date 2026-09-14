@@ -5,7 +5,9 @@ import { DomainConflictError } from "@/authorization/errors";
 import {
   ConnectionMethodUnavailableError,
   createOnboardingInvitation,
+  finalizeOnboarding,
   OnboardingConnectStepUnavailableError,
+  OnboardingFinalizationUnavailableError,
   OnboardingPreferencesStepUnavailableError,
   PersonalWorkspaceGoalError,
   persistConnectStep,
@@ -27,6 +29,7 @@ import {
   type ValidatedWorkspaceStep,
   type ValidatedYourPace,
 } from "@/modules/onboarding/profile-domain";
+import { resolvePostAuthDestination } from "@/modules/auth/post-auth-resolver";
 
 export type SubmitYourPaceResult =
   | { ok: true; data: ValidatedYourPace; currentStep: OnboardingStep }
@@ -192,6 +195,29 @@ export async function submitPreferencesStep(input: unknown): Promise<SubmitPrefe
         : error instanceof OnboardingPreferencesStepUnavailableError
           ? error.code
           : "PREFERENCES_SAVE_FAILED",
+    };
+  }
+}
+
+export type CompleteOnboardingReadyResult =
+  | { ok: true; destination: string }
+  | { ok: false; code: string };
+
+/** Completes only a server-verified READY onboarding state. */
+export async function completeOnboardingReady(): Promise<CompleteOnboardingReadyResult> {
+  const actor = await requireAuthenticatedActor();
+
+  try {
+    await finalizeOnboarding(actor);
+    // The post-auth resolver remains the one canonical source for an
+    // authenticated member's destination. The browser never supplies a slug.
+    return { ok: true, destination: await resolvePostAuthDestination(actor.userId, null) };
+  } catch (error) {
+    return {
+      ok: false,
+      code: error instanceof OnboardingFinalizationUnavailableError
+        ? error.code
+        : "ONBOARDING_FINALIZATION_FAILED",
     };
   }
 }

@@ -1,21 +1,15 @@
-import { getOnboardingTranslations } from "@/i18n/onboarding-messages";
 import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
+import type { OnboardingReadySummary } from "@/modules/onboarding/ready-summary";
 
-import { OnboardingShell } from "./onboarding-shell";
+import { OnboardingReadyScreen } from "./onboarding-ready-screen";
 
 
-export function OnboardingReadyBoundary({ language }: { language: OnboardingLanguage }) {
-  const t = getOnboardingTranslations(language);
-
-  return (
-    <OnboardingShell
-      eyebrow={t("onboarding.preferences.eyebrow")}
-      language={language}
-      step={5}
-      subtitle={t("onboarding.ready.subtitle")}
-      title={t("onboarding.ready.title")}
-    >
-      <div className="h-px max-w-xl bg-[#dce4f0]" />
-    </OnboardingShell>
-  );
+export function OnboardingReadyBoundary({
+  language,
+  summary,
+}: {
+  language: OnboardingLanguage;
+  summary: OnboardingReadySummary;
+}) {
+  return <OnboardingReadyScreen language={language} summary={summary} />;
 }

@@ -30,9 +30,12 @@ import {
   resolveOnboardingWorkspaceStep,
 } from "@/modules/onboarding/route-state";
 import { createOnboardingServerSnapshot } from "@/modules/onboarding/server-snapshot";
+import { createOnboardingReadySummary } from "@/modules/onboarding/ready-summary";
 import {
   ConnectionMethodUnavailableError,
   createOnboardingInvitation,
+  finalizeOnboarding,
+  OnboardingFinalizationUnavailableError,
   persistConnectStep,
   persistPreferencesStep,
   persistTogetherStep,
@@ -128,12 +131,21 @@ function repository(record = profile()): PaceUserProfileRepository {
       });
       return record;
     },
+    async markOnboardingReady() {
+      record = profile({
+        ...record,
+        onboardingStatus: "IN_PROGRESS",
+        onboardingStep: null,
+        onboardingCompletedAt: null,
+      });
+      return record;
+    },
     async completeOnboarding() {
       record = profile({
         ...record,
         onboardingStatus: "COMPLETED",
         onboardingStep: null,
-        onboardingCompletedAt: new Date(),
+        onboardingCompletedAt: record.onboardingCompletedAt ?? new Date(),
       });
       return record;
     },
@@ -167,6 +179,13 @@ test("onboarding access redirects unauthenticated and completed users from serve
     async () => "/w/my-home/overview",
   );
   assert.deepEqual(completed, { kind: "redirect", destination: "/w/my-home/overview" });
+
+  const ready = await resolveOnboardingRoute(
+    "user-1",
+    repository(profile({ onboardingStatus: "IN_PROGRESS", onboardingStep: null })),
+    async () => "/w/my-home/overview",
+  );
+  assert.deepEqual(ready, { kind: "redirect", destination: "/onboarding/ready" });
 });
 
 test("server hydration creates a typed Step 1 resume snapshot", () => {
@@ -638,7 +657,7 @@ test("preference enums require a goal, have restrained defaults, and survive a p
   assert.deepEqual(serverWins.preferences, { goals: ["SAVE_FOR_SOMETHING"], proactivity: "PROACTIVE" });
 });
 
-test("Step 5 persists user-scoped goals and M6 proactivity controls only after all prior steps are valid", async () => {
+test("Step 5 persists user-scoped goals and enters the resumable Ready state", async () => {
   const workspaces = new InMemoryWorkspaceRepository();
   const service = new WorkspaceService(workspaces, "test-pepper");
   const workspace = await service.createWorkspace(actor, { name: "House", type: "COUPLE" });
@@ -654,17 +673,17 @@ test("Step 5 persists user-scoped goals and M6 proactivity controls only after a
     onboardingStartingMethod: "MANUAL",
   }));
 
-  const completed = await persistPreferencesStep(
+  const ready = await persistPreferencesStep(
     actor,
     { goals: ["TRACK_SPENDING", "MANAGE_TOGETHER"], proactivity: "QUIET" },
     profiles,
     service,
     insights,
   );
-  assert.equal(completed.profile.onboardingStatus, "COMPLETED");
-  assert.equal(completed.profile.onboardingStep, null);
-  assert.ok(completed.profile.onboardingCompletedAt);
-  assert.deepEqual(completed.preferences, { paceGoals: ["TRACK_SPENDING", "MANAGE_TOGETHER"], proactivity: "QUIET" });
+  assert.equal(ready.profile.onboardingStatus, "IN_PROGRESS");
+  assert.equal(ready.profile.onboardingStep, null);
+  assert.equal(ready.profile.onboardingCompletedAt, null);
+  assert.deepEqual(ready.preferences, { paceGoals: ["TRACK_SPENDING", "MANAGE_TOGETHER"], proactivity: "QUIET" });
   assert.deepEqual(await insights.findPreference(workspace.id, actor.userId), {
     workspaceId: workspace.id,
     userId: actor.userId,
@@ -704,6 +723,137 @@ test("Step 5 persists user-scoped goals and M6 proactivity controls only after a
     onboardingStartingMethod: "MANUAL",
   }));
   await assert.rejects(() => persistPreferencesStep(actor, { goals: ["BILLS"], proactivity: "BALANCED" }, incomplete, service, insights));
+});
+
+test("Ready finalization verifies server state, completes once, and safely handles retries", async () => {
+  const workspaces = new InMemoryWorkspaceRepository();
+  const service = new WorkspaceService(workspaces, "test-pepper");
+  const workspace = await service.createWorkspace(actor, { name: "House", type: "COUPLE" });
+  const insights = new InMemoryInsightRepository();
+  await insights.saveOnboardingPreference(workspace.id, actor.userId, {
+    goals: ["TRACK_SPENDING", "MANAGE_TOGETHER"],
+    proactivity: "BALANCED",
+    dailyEnabled: true,
+    weeklyEnabled: true,
+    monthlyEnabled: true,
+    minimumSeverity: "INFO",
+  });
+
+  const readyProfile = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: null,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+    onboardingWorkspaceId: workspace.id,
+    onboardingStartingMethod: "MANUAL",
+  }));
+  const finalized = await finalizeOnboarding(actor, readyProfile, service, insights);
+  assert.equal(finalized.profile.onboardingStatus, "COMPLETED");
+  assert.equal(finalized.profile.onboardingStep, null);
+  assert.ok(finalized.profile.onboardingCompletedAt);
+  assert.equal(finalized.workspaceSlug, workspace.slug);
+
+  const retried = await finalizeOnboarding(actor, readyProfile, service, insights);
+  assert.equal(retried.profile.onboardingCompletedAt, finalized.profile.onboardingCompletedAt);
+  assert.equal(retried.workspaceSlug, workspace.slug);
+
+  const incomplete = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: 5,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+    onboardingWorkspaceId: workspace.id,
+    onboardingStartingMethod: "MANUAL",
+  }));
+  await assert.rejects(
+    () => finalizeOnboarding(actor, incomplete, service, insights),
+    OnboardingFinalizationUnavailableError,
+  );
+});
+
+test("Ready finalization accepts valid personal and shared Together outcomes", async () => {
+  const workspaces = new InMemoryWorkspaceRepository();
+  const service = new WorkspaceService(workspaces, "test-pepper");
+  const insights = new InMemoryInsightRepository();
+  const personal = await service.createWorkspace(actor, { name: "Private", type: "PERSONAL" });
+  await insights.saveOnboardingPreference(personal.id, actor.userId, {
+    goals: ["TRACK_SPENDING"],
+    proactivity: "QUIET",
+    dailyEnabled: false,
+    weeklyEnabled: true,
+    monthlyEnabled: true,
+    minimumSeverity: "WARNING",
+  });
+
+  const personalProfile = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: null,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+    onboardingWorkspaceId: personal.id,
+    onboardingSkippedSteps: [3],
+    onboardingStartingMethod: "MANUAL",
+  }));
+  assert.equal((await finalizeOnboarding(actor, personalProfile, service, insights)).profile.onboardingStatus, "COMPLETED");
+
+  const shared = await service.createWorkspace(actor, { name: "House", type: "COUPLE" });
+  await insights.saveOnboardingPreference(shared.id, actor.userId, {
+    goals: ["TRACK_SPENDING", "MANAGE_TOGETHER"],
+    proactivity: "PROACTIVE",
+    dailyEnabled: true,
+    weeklyEnabled: true,
+    monthlyEnabled: true,
+    minimumSeverity: "INFO",
+  });
+  const sharedProfile = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: null,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+    onboardingWorkspaceId: shared.id,
+    onboardingStartingMethod: "MANUAL",
+  }));
+  assert.equal((await finalizeOnboarding(actor, sharedProfile, service, insights)).profile.onboardingStatus, "COMPLETED");
+});
+
+test("Ready summaries use persisted values and localize every displayed enum", () => {
+  const workspace = {
+    id: "workspace-1",
+    name: "House",
+    slug: "house-workspace-1",
+    type: "COUPLE" as const,
+    createdByUserId: actor.userId,
+    createdAt: new Date("2026-01-01"),
+    updatedAt: new Date("2026-01-01"),
+  };
+
+  for (const language of ["en", "fr", "de"] as const) {
+    const summary = createOnboardingReadySummary(
+      profile({
+        countryCode: "CM",
+        currency: "XAF",
+        onboardingStartingMethod: "IMPORT_STATEMENT",
+        onboardingInvitationId: "invite-1",
+      }),
+      workspace,
+      { proactivity: "BALANCED" },
+      language,
+    );
+    const t = getOnboardingTranslations(language);
+    assert.equal(summary.workspaceName, "House");
+    assert.match(summary.countryCurrency, /XAF/);
+    assert.equal(summary.workspaceType, "COUPLE");
+    assert.equal(summary.proactivity, "BALANCED");
+    assert.equal(summary.startingMethod, "IMPORT_STATEMENT");
+    assert.ok(t("onboarding.ready.workspaceTypes.couple").length > 0);
+    assert.ok(t("onboarding.ready.guidanceValues.balanced").length > 0);
+    assert.ok(t("onboarding.ready.startingMethods.import_statement").length > 0);
+    assert.ok(t("onboarding.ready.openPace").length > 0);
+  }
 });
 
 test("PERSONAL Step 5 rejects MANAGE_TOGETHER even when a browser forges the enum", async () => {

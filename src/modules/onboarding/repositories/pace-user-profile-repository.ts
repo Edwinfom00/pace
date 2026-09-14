@@ -16,6 +16,7 @@ export interface PaceUserProfileRepository {
   ): Promise<PaceUserProfileRecord>;
   saveTogetherStep(userId: string, skipped: boolean): Promise<PaceUserProfileRecord>;
   saveConnectStep(userId: string, method: OnboardingConnectionMethod): Promise<PaceUserProfileRecord>;
+  markOnboardingReady(userId: string): Promise<PaceUserProfileRecord>;
   completeOnboarding(userId: string): Promise<PaceUserProfileRecord>;
   claimOnboardingInvitationId(userId: string, candidateInvitationId: string): Promise<PaceUserProfileRecord>;
   clearOnboardingInvitationId(userId: string, invitationId: string): Promise<PaceUserProfileRecord>;
@@ -169,19 +170,43 @@ export class DatabasePaceUserProfileRepository implements PaceUserProfileReposit
   }
 
   async completeOnboarding(userId: string): Promise<PaceUserProfileRecord> {
+    const now = new Date();
     const [profile] = await db
       .update(paceUserProfiles)
       .set({
         onboardingStatus: "COMPLETED",
         onboardingStep: null,
-        onboardingCompletedAt: new Date(),
-        updatedAt: new Date(),
+        // A retry is a no-op for the completion timestamp as well as for the
+        // state. This preserves the first successful finalization event.
+        onboardingCompletedAt: sql<Date>`coalesce(${paceUserProfiles.onboardingCompletedAt}, ${now})`,
+        updatedAt: now,
       })
       .where(eq(paceUserProfiles.userId, userId))
       .returning();
 
     if (!profile) {
       throw new Error("Pace user profile could not complete onboarding.");
+    }
+
+    return profile;
+  }
+
+  async markOnboardingReady(userId: string): Promise<PaceUserProfileRecord> {
+    const [profile] = await db
+      .update(paceUserProfiles)
+      .set({
+        onboardingStatus: "IN_PROGRESS",
+        // A null step is the durable READY state while onboarding remains in
+        // progress. It is distinct from COMPLETED by status and timestamp.
+        onboardingStep: null,
+        onboardingCompletedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(paceUserProfiles.userId, userId))
+      .returning();
+
+    if (!profile) {
+      throw new Error("Pace user profile could not enter its ready state.");
     }
 
     return profile;

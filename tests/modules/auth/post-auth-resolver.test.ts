@@ -5,6 +5,7 @@ import {
   getSafeInternalReturnTo,
   loginPathForReturnTo,
   ONBOARDING_DESTINATION,
+  ONBOARDING_READY_DESTINATION,
   resolvePostAuthDestination,
   WORKSPACE_RECOVERY_DESTINATION,
   workspaceOverviewPath,
@@ -17,13 +18,16 @@ import { InMemoryWorkspaceRepository } from "../../support/in-memory-workspace-r
 
 const actor = { userId: "user-1", email: "user@pace.test", name: "Pace User" };
 
-function profile(status: PaceUserProfileRecord["onboardingStatus"]): PaceUserProfileRepository {
+function profile(
+  status: PaceUserProfileRecord["onboardingStatus"],
+  onboardingStep: number | null | undefined = undefined,
+): PaceUserProfileRepository {
   return {
     async getOrCreate(userId) {
       return {
         userId,
         onboardingStatus: status,
-        onboardingStep: status === "IN_PROGRESS" ? 2 : null,
+        onboardingStep: onboardingStep === undefined ? (status === "IN_PROGRESS" ? 2 : null) : onboardingStep,
         onboardingCompletedAt: status === "COMPLETED" ? new Date("2026-01-01") : null,
         countryCode: null,
         currency: null,
@@ -49,6 +53,9 @@ function profile(status: PaceUserProfileRecord["onboardingStatus"]): PaceUserPro
       throw new Error("Not used by post-auth resolver tests.");
     },
     async saveConnectStep() {
+      throw new Error("Not used by post-auth resolver tests.");
+    },
+    async markOnboardingReady() {
       throw new Error("Not used by post-auth resolver tests.");
     },
     async completeOnboarding() {
@@ -91,6 +98,17 @@ test("a user with onboarding in progress resolves to onboarding", async () => {
   });
 
   assert.equal(destination, ONBOARDING_DESTINATION);
+});
+
+test("a user who reached Ready resumes the completion screen", async () => {
+  const { repository } = await createWorkspaceFixture();
+
+  const destination = await resolvePostAuthDestination(actor.userId, null, {
+    profiles: profile("IN_PROGRESS", null),
+    workspaces: repository,
+  });
+
+  assert.equal(destination, ONBOARDING_READY_DESTINATION);
 });
 
 test("a new user who came through an invite returns to that join route before onboarding", async () => {

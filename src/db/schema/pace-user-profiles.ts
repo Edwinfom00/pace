@@ -59,7 +59,7 @@ export const paceUserProfiles = pgTable(
         )
         OR (
           ${table.onboardingStatus} = 'IN_PROGRESS'
-          AND ${table.onboardingStep} BETWEEN 1 AND 5
+          AND (${table.onboardingStep} BETWEEN 1 AND 5 OR ${table.onboardingStep} IS NULL)
           AND ${table.onboardingCompletedAt} IS NULL
         )
         OR (
