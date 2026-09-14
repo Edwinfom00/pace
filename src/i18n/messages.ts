@@ -6,6 +6,21 @@ const messages = {
     "brand.name": "Pace",
     "brand.short": "P",
     "brand.description": "Personal finance that takes care of itself.",
+    "auth.brand.eyebrow": "Your money, a brighter tomorrow",
+    "auth.brand.headline": "A calmer way to money",
+    "auth.brand.tagline": "Track. Plan. Understand. Together.",
+    "auth.brand.benefits.clarity.title": "Get clarity",
+    "auth.brand.benefits.clarity.description": "See where your money goes",
+    "auth.brand.benefits.goals.title": "Reach your goals",
+    "auth.brand.benefits.goals.description": "Plan for what matters",
+    "auth.brand.benefits.together.title": "Better together",
+    "auth.brand.benefits.together.description": "Share with your partner, family or team",
+    "auth.brand.benefits.ai.title": "AI that helps",
+    "auth.brand.benefits.ai.description": "Ask anything, take action, get insights",
+    "auth.brand.testimonial.quote": "“Pace helps us stay on the same page and make smarter decisions together.”",
+    "auth.brand.testimonial.author": "A happier household",
+    "auth.brand.scenicCaption": "Good things happen here.",
+    "auth.brand.agentAnnotation": "Your money companion",
     "askPace.title": "Ask Pace",
     "askPace.subtitle": "Create a transaction in plain language. Every change needs your approval.",
     "askPace.placeholder": "Try “taxi 3500” or “move 25k from Bank to MoMo”",
@@ -229,6 +244,21 @@ const messages = {
     "brand.name": "Pace",
     "brand.short": "P",
     "brand.description": "Des finances personnelles qui prennent soin d’elles-mêmes.",
+    "auth.brand.eyebrow": "Votre argent, un avenir plus lumineux",
+    "auth.brand.headline": "Une façon plus sereine de gérer votre argent",
+    "auth.brand.tagline": "Suivez. Planifiez. Comprenez. Ensemble.",
+    "auth.brand.benefits.clarity.title": "Gagnez en clarté",
+    "auth.brand.benefits.clarity.description": "Voyez où va votre argent",
+    "auth.brand.benefits.goals.title": "Atteignez vos objectifs",
+    "auth.brand.benefits.goals.description": "Planifiez ce qui compte",
+    "auth.brand.benefits.together.title": "Mieux ensemble",
+    "auth.brand.benefits.together.description": "Partagez avec votre partenaire, votre famille ou votre équipe",
+    "auth.brand.benefits.ai.title": "Une IA qui aide",
+    "auth.brand.benefits.ai.description": "Demandez, agissez, obtenez des analyses",
+    "auth.brand.testimonial.quote": "« Pace nous aide à avancer ensemble et à prendre de meilleures décisions. »",
+    "auth.brand.testimonial.author": "Un foyer plus serein",
+    "auth.brand.scenicCaption": "Les belles choses commencent ici.",
+    "auth.brand.agentAnnotation": "Votre compagnon financier",
     "askPace.title": "Demander à Pace",
     "askPace.subtitle": "Créez une transaction en langage naturel. Chaque modification requiert votre approbation.",
     "askPace.placeholder": "Essayez « taxi 3500 » ou « déplacer 25k de Banque vers MoMo »",
@@ -465,4 +495,49 @@ export function getTranslations(language: string | null | undefined) {
       template,
     );
   };
+}
+
+export const AUTH_BRAND_MESSAGE_KEYS = [
+  "auth.brand.eyebrow",
+  "auth.brand.headline",
+  "auth.brand.tagline",
+  "auth.brand.benefits.clarity.title",
+  "auth.brand.benefits.clarity.description",
+  "auth.brand.benefits.goals.title",
+  "auth.brand.benefits.goals.description",
+  "auth.brand.benefits.together.title",
+  "auth.brand.benefits.together.description",
+  "auth.brand.benefits.ai.title",
+  "auth.brand.benefits.ai.description",
+  "auth.brand.testimonial.quote",
+  "auth.brand.testimonial.author",
+  "auth.brand.scenicCaption",
+  "auth.brand.agentAnnotation",
+] as const satisfies readonly MessageKey[];
+
+export type AuthBrandMessageKey = (typeof AUTH_BRAND_MESSAGE_KEYS)[number];
+export type AuthBrandLanguage = SupportedLanguage | "de";
+
+const germanAuthBrandMessages = {
+  "auth.brand.eyebrow": "Dein Geld, eine bessere Zukunft",
+  "auth.brand.headline": "Ein entspannterer Umgang mit Geld",
+  "auth.brand.tagline": "Verfolgen. Planen. Verstehen. Gemeinsam.",
+  "auth.brand.benefits.clarity.title": "Mehr Klarheit",
+  "auth.brand.benefits.clarity.description": "Sieh, wohin dein Geld fließt",
+  "auth.brand.benefits.goals.title": "Erreiche deine Ziele",
+  "auth.brand.benefits.goals.description": "Plane, was dir wichtig ist",
+  "auth.brand.benefits.together.title": "Gemeinsam besser",
+  "auth.brand.benefits.together.description": "Teile mit Partner, Familie oder Team",
+  "auth.brand.benefits.ai.title": "KI, die hilft",
+  "auth.brand.benefits.ai.description": "Frage, handle, gewinne Einblicke",
+  "auth.brand.testimonial.quote": "„Pace hilft uns, auf einer Linie zu bleiben und bessere Entscheidungen zu treffen.“",
+  "auth.brand.testimonial.author": "Ein zufriedener Haushalt",
+  "auth.brand.scenicCaption": "Gute Dinge beginnen hier.",
+  "auth.brand.agentAnnotation": "Dein Finanzbegleiter",
+} as const satisfies Record<AuthBrandMessageKey, string>;
+
+export function getAuthBrandTranslations(language: AuthBrandLanguage) {
+  const fallback = getTranslations(language === "de" ? "en" : language);
+  return (key: AuthBrandMessageKey) =>
+    language === "de" ? germanAuthBrandMessages[key] : fallback(key);
 }
