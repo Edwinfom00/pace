@@ -42,7 +42,7 @@ export function OnboardingShell({
             <h1 className="mt-7 text-[clamp(2.15rem,4vw,3.75rem)] font-semibold leading-[1.03] tracking-[-0.052em] text-[#0e1d3a]">{title}</h1>
             <p className="mt-4 text-[clamp(1.05rem,1.8vw,1.45rem)] leading-8 text-[#6077a2]">{subtitle}</p>
           </div>
-          <div className="mt-14 max-w-[920px] lg:mt-16">{children}</div>
+          <div className="mt-14 max-w-[920px] md:min-h-0 md:flex-1 md:overflow-y-auto md:pb-5 lg:mt-16">{children}</div>
           {footer}
         </section>
       </div>

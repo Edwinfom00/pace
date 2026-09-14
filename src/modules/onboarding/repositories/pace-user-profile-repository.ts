@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { paceUserProfiles, users } from "@/db/schema";
@@ -8,13 +8,11 @@ import type { PaceUserProfileRecord, ValidatedYourPace } from "../profile-domain
 export interface PaceUserProfileRepository {
   getOrCreate(userId: string): Promise<PaceUserProfileRecord>;
   saveYourPaceStep(userId: string, input: ValidatedYourPace): Promise<PaceUserProfileRecord>;
+  claimOnboardingWorkspaceId(userId: string, candidateWorkspaceId: string): Promise<PaceUserProfileRecord>;
+  saveWorkspaceStep(userId: string, workspaceId: string): Promise<PaceUserProfileRecord>;
 }
 
-/**
- * The profile is intentionally created when Pace needs product state, rather
- * than through a Better Auth hook. This keeps the two ownership boundaries
- * explicit and supports existing Better Auth accounts.
- */
+
 export class DatabasePaceUserProfileRepository implements PaceUserProfileRepository {
   async getOrCreate(userId: string): Promise<PaceUserProfileRecord> {
     await db.insert(paceUserProfiles).values({ userId }).onConflictDoNothing();
@@ -46,7 +44,8 @@ export class DatabasePaceUserProfileRepository implements PaceUserProfileReposit
           currency: input.currency,
           timezone: input.timezone,
           onboardingStatus: "IN_PROGRESS",
-          onboardingStep: 2,
+          // Reviewing Step 1 must not send a resumable Step 2/3 flow backwards.
+          onboardingStep: sql<number>`greatest(coalesce(${paceUserProfiles.onboardingStep}, 1), 2)`,
           onboardingCompletedAt: null,
           updatedAt: new Date(),
         })
@@ -58,6 +57,50 @@ export class DatabasePaceUserProfileRepository implements PaceUserProfileReposit
 
     if (!profile) {
       throw new Error("Pace user profile could not be updated.");
+    }
+
+    return profile;
+  }
+
+  async claimOnboardingWorkspaceId(
+    userId: string,
+    candidateWorkspaceId: string,
+  ): Promise<PaceUserProfileRecord> {
+    await db.insert(paceUserProfiles).values({ userId }).onConflictDoNothing();
+
+    const [profile] = await db
+      .update(paceUserProfiles)
+      .set({
+        // This compare-and-set is the idempotency boundary: every retry gets
+        // the same server-issued workspace id, including concurrent requests.
+        onboardingWorkspaceId: sql<string>`coalesce(${paceUserProfiles.onboardingWorkspaceId}, ${candidateWorkspaceId})`,
+        updatedAt: new Date(),
+      })
+      .where(eq(paceUserProfiles.userId, userId))
+      .returning();
+
+    if (!profile) {
+      throw new Error("Pace user profile could not reserve a workspace.");
+    }
+
+    return profile;
+  }
+
+  async saveWorkspaceStep(userId: string, workspaceId: string): Promise<PaceUserProfileRecord> {
+    const [profile] = await db
+      .update(paceUserProfiles)
+      .set({
+        onboardingWorkspaceId: workspaceId,
+        onboardingStatus: "IN_PROGRESS",
+        onboardingStep: sql<number>`greatest(coalesce(${paceUserProfiles.onboardingStep}, 1), 3)`,
+        onboardingCompletedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(paceUserProfiles.userId, userId))
+      .returning();
+
+    if (!profile) {
+      throw new Error("Pace user profile could not save workspace progress.");
     }
 
     return profile;

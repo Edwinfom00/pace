@@ -63,32 +63,8 @@ export class WorkspaceService {
 
   async createWorkspace(actor: AuthenticatedActor, input: CreateWorkspaceInput): Promise<WorkspaceRecord> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const now = new Date();
-      const workspaceId = this.createId();
-      const workspace: WorkspaceRecord = {
-        id: workspaceId,
-        name: input.name,
-        slug: createWorkspaceSlug(input.name, workspaceId),
-        type: input.type,
-        createdByUserId: actor.userId,
-        createdAt: now,
-        updatedAt: now,
-      };
-
       try {
-        await this.repository.createWorkspaceWithOwner({
-          workspace,
-          preferences: { ...DEFAULT_PREFERENCES, ...input.preferences },
-          owner: {
-            workspaceId: workspace.id,
-            userId: actor.userId,
-            role: "OWNER",
-            invitedByUserId: null,
-            joinedAt: now,
-          },
-        });
-
-        return workspace;
+        return await this.createWorkspaceWithId(actor, input, this.createId());
       } catch (error) {
         if (!isWorkspaceSlugConflict(error) || attempt === 2) {
           throw error;
@@ -97,6 +73,48 @@ export class WorkspaceService {
     }
 
     throw new Error("Unable to allocate a unique workspace slug.");
+  }
+
+  
+  async createOrUpdateOnboardingWorkspace(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: CreateWorkspaceInput,
+  ): Promise<WorkspaceRecord> {
+    const context = await this.repository.findMemberContext(workspaceId, actor.userId);
+
+    if (context) {
+      if (context.workspace.createdByUserId !== actor.userId || context.membership.role !== "OWNER") {
+        throw new AuthorizationError("You cannot update this onboarding workspace.");
+      }
+
+      return this.repository.updateWorkspace(workspaceId, { name: input.name, type: input.type });
+    }
+
+    if (await this.repository.findWorkspaceById(workspaceId)) {
+      throw new AuthorizationError("You cannot access this onboarding workspace.");
+    }
+
+    try {
+      return await this.createWorkspaceWithId(actor, input, workspaceId);
+    } catch (error) {
+      // Two direct POST retries can both observe a newly reserved id before
+      // either insert commits. The loser reuses the winner's owner record.
+      const concurrentlyCreated = await this.repository.findMemberContext(workspaceId, actor.userId);
+      if (
+        concurrentlyCreated &&
+        concurrentlyCreated.workspace.createdByUserId === actor.userId &&
+        concurrentlyCreated.membership.role === "OWNER"
+      ) {
+        return this.repository.updateWorkspace(workspaceId, { name: input.name, type: input.type });
+      }
+
+      throw error;
+    }
+  }
+
+  async getWorkspaceForMember(actor: AuthenticatedActor, workspaceId: string): Promise<WorkspaceRecord | null> {
+    return (await this.repository.findMemberContext(workspaceId, actor.userId))?.workspace ?? null;
   }
 
   async listWorkspaces(actor: AuthenticatedActor): Promise<WorkspaceRecord[]> {
@@ -187,5 +205,36 @@ export class WorkspaceService {
     }
 
     return membership;
+  }
+
+  private async createWorkspaceWithId(
+    actor: AuthenticatedActor,
+    input: CreateWorkspaceInput,
+    workspaceId: string,
+  ): Promise<WorkspaceRecord> {
+    const now = new Date();
+    const workspace: WorkspaceRecord = {
+      id: workspaceId,
+      name: input.name,
+      slug: createWorkspaceSlug(input.name, workspaceId),
+      type: input.type,
+      createdByUserId: actor.userId,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.repository.createWorkspaceWithOwner({
+      workspace,
+      preferences: { ...DEFAULT_PREFERENCES, ...input.preferences },
+      owner: {
+        workspaceId: workspace.id,
+        userId: actor.userId,
+        role: "OWNER",
+        invitedByUserId: null,
+        joinedAt: now,
+      },
+    });
+
+    return workspace;
   }
 }

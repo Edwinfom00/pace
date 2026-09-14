@@ -28,11 +28,18 @@ function profile(status: PaceUserProfileRecord["onboardingStatus"]): PaceUserPro
         countryCode: null,
         currency: null,
         timezone: null,
+        onboardingWorkspaceId: null,
         createdAt: new Date("2026-01-01"),
         updatedAt: new Date("2026-01-01"),
       };
     },
     async saveYourPaceStep() {
+      throw new Error("Not used by post-auth resolver tests.");
+    },
+    async claimOnboardingWorkspaceId() {
+      throw new Error("Not used by post-auth resolver tests.");
+    },
+    async saveWorkspaceStep() {
       throw new Error("Not used by post-auth resolver tests.");
     },
   };

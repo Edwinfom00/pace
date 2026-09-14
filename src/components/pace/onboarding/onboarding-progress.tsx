@@ -40,7 +40,6 @@ export function OnboardingProgress({ step, language, compact = false }: Onboardi
       {stepKeys.map(([titleKey, subtitleKey], index) => {
         const stepNumber = (index + 1) as OnboardingStep;
         const current = step === stepNumber;
-        const complete = step > stepNumber;
 
         return (
           <li className="relative grid grid-cols-[50px_1fr] gap-4 pb-3 last:pb-0" key={titleKey}>
@@ -51,7 +50,7 @@ export function OnboardingProgress({ step, language, compact = false }: Onboardi
               aria-current={current ? "step" : undefined}
               className={cn(
                 "relative z-10 grid size-11 place-items-center rounded-full text-base font-semibold",
-                current || complete
+                current
                   ? "bg-[#3268ed] text-white shadow-[0_6px_18px_rgba(50,104,237,0.24)]"
                   : "bg-[#e8eef7] text-[#5e7196]",
               )}

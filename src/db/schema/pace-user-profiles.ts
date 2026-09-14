@@ -37,6 +37,8 @@ export const paceUserProfiles = pgTable(
     currency: text("currency"),
     /** Canonical IANA timezone chosen during Pace onboarding. */
     timezone: text("timezone"),
+    /** Reserved before creation so retries can only ever use one workspace id. */
+    onboardingWorkspaceId: text("onboarding_workspace_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -48,11 +48,16 @@ export interface ConsumedInvitation {
 
 export interface WorkspaceRepository {
   createWorkspaceWithOwner(input: CreateWorkspaceWithOwnerInput): Promise<void>;
+  findWorkspaceById(workspaceId: string): Promise<WorkspaceRecord | null>;
   findMembership(workspaceId: string, userId: string): Promise<WorkspaceMembershipRecord | null>;
   findMemberContext(workspaceId: string, userId: string): Promise<WorkspaceMemberContext | null>;
   findMemberContextBySlug(slug: string, userId: string): Promise<WorkspaceMemberContext | null>;
   findDefaultMemberContext(userId: string): Promise<WorkspaceMemberContext | null>;
   listWorkspacesForUser(userId: string): Promise<WorkspaceRecord[]>;
+  updateWorkspace(
+    workspaceId: string,
+    values: Pick<WorkspaceRecord, "name" | "type">,
+  ): Promise<WorkspaceRecord>;
   updatePreferences(
     workspaceId: string,
     preferences: Partial<WorkspacePreferencesInput>,
@@ -106,6 +111,16 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
     return record ?? null;
   }
 
+  async findWorkspaceById(workspaceId: string): Promise<WorkspaceRecord | null> {
+    const [workspace] = await db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+
+    return workspace ?? null;
+  }
+
   async findMemberContextBySlug(
     slug: string,
     userId: string,
@@ -148,6 +163,23 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
       .where(eq(workspaceMembers.userId, userId));
 
     return records;
+  }
+
+  async updateWorkspace(
+    workspaceId: string,
+    values: Pick<WorkspaceRecord, "name" | "type">,
+  ): Promise<WorkspaceRecord> {
+    const [workspace] = await db
+      .update(workspaces)
+      .set({ ...values, updatedAt: new Date() })
+      .where(eq(workspaces.id, workspaceId))
+      .returning();
+
+    if (!workspace) {
+      throw new Error("Workspace does not exist.");
+    }
+
+    return workspace;
   }
 
   async updatePreferences(

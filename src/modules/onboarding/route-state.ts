@@ -1,6 +1,6 @@
 import { loginPathForReturnTo } from "@/modules/auth/post-auth-resolver";
 
-import type { PaceUserProfileRecord } from "./profile-domain";
+import { ONBOARDING_STEPS, type OnboardingStep, type PaceUserProfileRecord } from "./profile-domain";
 import type { PaceUserProfileRepository } from "./repositories/pace-user-profile-repository";
 
 export type OnboardingRouteResolution =
@@ -24,4 +24,20 @@ export async function resolveOnboardingRoute(
   }
 
   return { kind: "render", profile };
+}
+
+/**
+ * Completion is a server-owned high-water mark. The optional route step is
+ * only the screen being reviewed, so Back never mutates persisted progress.
+ */
+export function resolveOnboardingViewedStep(
+  requestedStep: string | undefined,
+  completedStep: OnboardingStep,
+): OnboardingStep {
+  const candidate = Number(requestedStep);
+  if (ONBOARDING_STEPS.includes(candidate as OnboardingStep) && candidate <= completedStep) {
+    return candidate as OnboardingStep;
+  }
+
+  return completedStep;
 }

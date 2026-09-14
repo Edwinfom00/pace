@@ -53,6 +53,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
     return membership && workspace && preferences ? { workspace, membership, preferences } : null;
   }
 
+  async findWorkspaceById(workspaceId: string): Promise<WorkspaceRecord | null> {
+    return this.workspaces.get(workspaceId) ?? null;
+  }
+
   async findMemberContextBySlug(
     slug: string,
     userId: string,
@@ -78,6 +82,17 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
       .filter((membership) => membership.userId === userId)
       .map((membership) => this.workspaces.get(membership.workspaceId))
       .filter((workspace): workspace is WorkspaceRecord => Boolean(workspace));
+  }
+
+  async updateWorkspace(
+    workspaceId: string,
+    values: Pick<WorkspaceRecord, "name" | "type">,
+  ): Promise<WorkspaceRecord> {
+    const current = this.workspaces.get(workspaceId);
+    if (!current) throw new Error("Workspace does not exist.");
+    const updated = { ...current, ...values, updatedAt: new Date() };
+    this.workspaces.set(workspaceId, updated);
+    return updated;
   }
 
   async updatePreferences(

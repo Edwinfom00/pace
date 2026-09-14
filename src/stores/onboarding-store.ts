@@ -5,14 +5,14 @@ import { createJSONStorage, persist, type PersistStorage } from "zustand/middlew
 import { createStore } from "zustand/vanilla";
 
 import type { OnboardingServerSnapshot } from "@/modules/onboarding/server-snapshot";
-import type { OnboardingStep, YourPaceDraft } from "@/modules/onboarding/profile-domain";
+import type { OnboardingStep, WorkspaceDraft, YourPaceDraft } from "@/modules/onboarding/profile-domain";
 
 export const ONBOARDING_STORE_KEY = "pace:onboarding:v1";
 
 export type OnboardingDraftState = {
   currentStep: OnboardingStep;
   yourPace: YourPaceDraft;
-  workspace: { type: string; name: string };
+  workspace: WorkspaceDraft;
   together: { skipped: boolean };
   connect: { selectedMethod: string };
   preferences: { goals: string[]; proactivity: string };
@@ -21,7 +21,7 @@ export type OnboardingDraftState = {
 export type OnboardingStore = OnboardingDraftState & {
   hydrated: boolean;
   setYourPace: (values: Partial<YourPaceDraft>) => void;
-  setWorkspace: (values: Partial<OnboardingDraftState["workspace"]>) => void;
+  setWorkspace: (values: Partial<WorkspaceDraft>) => void;
   setCurrentStep: (step: OnboardingStep) => void;
   reset: () => void;
   hydrateFromServer: (snapshot: OnboardingServerSnapshot) => void;
@@ -31,7 +31,7 @@ export type OnboardingStore = OnboardingDraftState & {
 export const emptyOnboardingDraft: OnboardingDraftState = {
   currentStep: 1,
   yourPace: { country: "", language: "en", currency: "", timezone: "" },
-  workspace: { type: "", name: "" },
+  workspace: { type: "", name: "", nameManuallyEdited: false },
   together: { skipped: false },
   connect: { selectedMethod: "" },
   preferences: { goals: [], proactivity: "" },
@@ -47,6 +47,7 @@ export function mergeOnboardingServerSnapshot(
   server: OnboardingServerSnapshot,
 ): OnboardingDraftState {
   const serverHasCompletedYourPace = server.currentStep > 1;
+  const serverHasCompletedWorkspace = server.currentStep > 2;
   const mergeField = (key: keyof YourPaceDraft) =>
     server.yourPace[key] || local.yourPace[key] || "";
 
@@ -62,6 +63,7 @@ export function mergeOnboardingServerSnapshot(
           currency: mergeField("currency"),
           timezone: mergeField("timezone"),
         },
+    workspace: serverHasCompletedWorkspace ? server.workspace : local.workspace,
   };
 }
 

@@ -6,16 +6,22 @@ import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 type OnboardingFooterProps = {
   language: OnboardingLanguage;
   onContinue: () => void;
+  onBack?: () => void;
   submitting?: boolean;
   disabled?: boolean;
 };
 
-export function OnboardingFooter({ language, onContinue, submitting = false, disabled = false }: OnboardingFooterProps) {
+export function OnboardingFooter({ language, onContinue, onBack, submitting = false, disabled = false }: OnboardingFooterProps) {
   const t = getOnboardingTranslations(language);
 
   return (
-    <footer className="mt-auto flex items-center justify-end gap-3 border-t border-[#dce4f0] pt-9 max-sm:sticky max-sm:bottom-0 max-sm:-mx-5 max-sm:mt-8 max-sm:bg-white/95 max-sm:px-5 max-sm:py-4 max-sm:backdrop-blur">
-      <button className="h-14 min-w-32 rounded-xl bg-[#f1f4f9] px-6 text-base font-semibold text-[#9aa9c1]" disabled type="button">
+    <footer className="mt-auto shrink-0 flex items-center justify-end gap-3 border-t border-[#dce4f0] pt-9 max-sm:sticky max-sm:bottom-0 max-sm:-mx-5 max-sm:mt-8 max-sm:bg-white/95 max-sm:px-5 max-sm:py-4 max-sm:backdrop-blur">
+      <button
+        className="h-14 min-w-32 rounded-xl bg-[#eef3fb] px-6 text-base font-semibold text-[#5871a1] transition-colors hover:bg-[#e4ecf8] disabled:cursor-not-allowed disabled:text-[#9aa9c1]"
+        disabled={!onBack || submitting}
+        onClick={onBack}
+        type="button"
+      >
         {t("onboarding.back")}
       </button>
       <button

@@ -134,6 +134,7 @@ export function OnboardingStepOne({ initialSnapshot }: StepOneProps) {
       useOnboardingStore.getState().hydrateFromServer({
         currentStep: result.currentStep,
         yourPace: result.data,
+        workspace: useOnboardingStore.getState().workspace,
       });
       router.push("/onboarding?step=2");
     });

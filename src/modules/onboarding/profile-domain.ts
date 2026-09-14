@@ -10,6 +10,7 @@ import {
   isSupportedTimezone,
   type OnboardingLanguage,
 } from "./metadata";
+import { WORKSPACE_TYPES, type WorkspaceType } from "../workspaces/domain";
 
 export const ONBOARDING_STEPS = [1, 2, 3, 4, 5] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
@@ -21,6 +22,32 @@ export type YourPaceDraft = {
   timezone: string;
 };
 
+export type WorkspaceDraft = {
+  type: WorkspaceType | "";
+  name: string;
+  /** Kept in the browser draft so changing a card never erases a chosen name. */
+  nameManuallyEdited: boolean;
+};
+
+export const WORKSPACE_NAME_SUGGESTIONS: Record<WorkspaceType, string> = {
+  PERSONAL: "Personal",
+  COUPLE: "House",
+  FAMILY: "Family",
+  CUSTOM: "My Workspace",
+};
+
+export function suggestedWorkspaceName(type: WorkspaceType): string {
+  return WORKSPACE_NAME_SUGGESTIONS[type];
+}
+
+export function withSelectedWorkspaceType(draft: WorkspaceDraft, type: WorkspaceType): WorkspaceDraft {
+  return {
+    ...draft,
+    type,
+    name: draft.nameManuallyEdited ? draft.name : suggestedWorkspaceName(type),
+  };
+}
+
 export const yourPaceSchema = z.object({
   country: z.string().refine(isSupportedCountry, "Select a valid country or region."),
   language: z.enum(ONBOARDING_LANGUAGES),
@@ -29,6 +56,14 @@ export const yourPaceSchema = z.object({
 });
 
 export type ValidatedYourPace = z.infer<typeof yourPaceSchema>;
+
+/** The Step 2 payload contains only server-owned domain values, never a slug. */
+export const workspaceStepSchema = z.object({
+  type: z.enum(WORKSPACE_TYPES),
+  name: z.string().trim().min(1, "Enter a workspace name.").max(120, "Workspace names can contain at most 120 characters."),
+});
+
+export type ValidatedWorkspaceStep = z.infer<typeof workspaceStepSchema>;
 
 /** Pace-owned, resumable product state; never an authentication claim. */
 export interface PaceUserProfileRecord {
@@ -39,6 +74,8 @@ export interface PaceUserProfileRecord {
   countryCode: string | null;
   currency: string | null;
   timezone: string | null;
+  /** Server-issued idempotency key for the workspace created during Step 2. */
+  onboardingWorkspaceId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
