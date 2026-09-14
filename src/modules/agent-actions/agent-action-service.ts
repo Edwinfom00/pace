@@ -8,6 +8,7 @@ import { LedgerService } from "@/modules/ledger/ledger-service";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import type { WorkspaceMemberContext } from "@/modules/workspaces/domain";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
+import type { TransactionClassificationRequest } from "@/modules/financial-inbox/financial-inbox-service";
 
 import {
   type AgentActionRecord,
@@ -52,6 +53,14 @@ export interface AgentActionDetail {
   transactionContext: AgentTransactionContext;
 }
 
+interface TransactionClassifier {
+  ingestTransaction(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    request: TransactionClassificationRequest,
+  ): Promise<unknown>;
+}
+
 /**
  * The only server-side path from an LLM-produced draft to M2's ledger. The
  * model never receives a Drizzle handle or computes an amount; execution
@@ -63,6 +72,7 @@ export class AgentActionService {
     private readonly ledger: LedgerService,
     private readonly ledgerRecords: Pick<LedgerRepository, "findTransactionByFingerprint">,
     private readonly workspaces: Pick<WorkspaceRepository, "findMemberContext">,
+    private readonly classifier?: TransactionClassifier,
   ) {}
 
   async getTransactionContext(
@@ -264,7 +274,7 @@ export class AgentActionService {
           transaction = await this.ledger.createTransaction(
             actor,
             workspaceId,
-            this.toLedgerInput(action),
+            await this.toLedgerInput(actor, workspaceId, action),
           );
         } catch (error) {
           if (!(error instanceof ConflictError)) throw error;
@@ -292,6 +302,19 @@ export class AgentActionService {
         await this.audit(completed, actor.userId, "PERSISTENCE_VERIFIED", "EXECUTING", "COMPLETED", {
           transactionId: transaction.id,
         });
+        // Classification is an audited, non-ledger overlay. A problem creating
+        // review work must never roll back or mark an already-verified money
+        // mutation as failed.
+        try {
+          await this.classifier?.ingestTransaction(actor, workspaceId, { transaction });
+        } catch (classificationError) {
+          await this.audit(completed, actor.userId, "CLASSIFICATION_DEFERRED", "COMPLETED", "COMPLETED", {
+            message:
+              classificationError instanceof Error
+                ? classificationError.message.slice(0, 1_000)
+                : "Unknown classification failure.",
+          });
+        }
         return result;
       }
 
@@ -406,12 +429,20 @@ export class AgentActionService {
     };
   }
 
-  private toLedgerInput(action: AgentActionRecord): unknown {
+  private async toLedgerInput(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    action: AgentActionRecord,
+  ): Promise<unknown> {
     const draft = action.draft;
     if (!isTransactionDraftReady(draft) || !draft.amountMinor || !draft.occurredAt || !draft.accountId) {
       throw new ConflictError("The approved action has an incomplete transaction draft.");
     }
 
+    const merchant =
+      draft.kind === "TRANSFER" || !draft.merchantName
+        ? null
+        : await this.ledger.createOrFindMerchant(actor, workspaceId, draft.merchantName);
     const common = {
       amountMinor: draft.amountMinor,
       currency: draft.currency,
@@ -435,6 +466,7 @@ export class AgentActionService {
       ...common,
       accountId: draft.accountId,
       categoryId: draft.categoryId,
+      ...(merchant ? { merchantId: merchant.id } : {}),
     };
   }
 

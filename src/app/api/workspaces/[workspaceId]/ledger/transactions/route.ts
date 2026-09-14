@@ -1,6 +1,7 @@
 import { requireAuthenticatedActor } from "@/authorization/session";
 import { presentLedgerTransaction } from "@/modules/ledger/presenters";
 import { getLedgerService } from "@/modules/ledger/server";
+import { getFinancialInboxService } from "@/modules/financial-inbox/server";
 import {
   createLedgerTransactionSchema,
   listLedgerTransactionsSchema,
@@ -46,6 +47,13 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
       parseJson(request, createLedgerTransactionSchema),
     ]);
     const transaction = await getLedgerService().createTransaction(actor, workspaceId, input);
+    try {
+      await getFinancialInboxService().ingestTransaction(actor, workspaceId, { transaction });
+    } catch (classificationError) {
+      // The append-only ledger write is already complete. Classification is an
+      // overlay and cannot invalidate a verified financial mutation.
+      console.error("Financial classification deferred", classificationError);
+    }
     return Response.json({ transaction: presentLedgerTransaction(transaction) }, { status: 201 });
   } catch (error) {
     return jsonError(error);

@@ -34,7 +34,7 @@ export class LedgerService {
   constructor(
     private readonly repository: LedgerRepository,
     private readonly workspaces: Pick<WorkspaceRepository, "findMembership">,
-  ) {}
+  ) { }
 
   async createAccount(
     actor: AuthenticatedActor,
@@ -96,6 +96,26 @@ export class LedgerService {
       throw new ConflictError("A merchant with that name already exists in this workspace.");
     }
 
+    return this.repository.createMerchant({
+      id: randomUUID(),
+      workspaceId,
+      name: parsed.name,
+      normalizedName,
+      createdByUserId: actor.userId,
+    });
+  }
+
+
+  async createOrFindMerchant(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    name: string,
+  ): Promise<LedgerMerchantRecord> {
+    const parsed = createLedgerMerchantSchema.parse({ name });
+    await this.requireWorkspacePermission(actor.userId, workspaceId, "manage_ledger");
+    const normalizedName = normalizeMerchantName(parsed.name);
+    const existing = await this.repository.findMerchantByNormalizedName(workspaceId, normalizedName);
+    if (existing) return existing;
     return this.repository.createMerchant({
       id: randomUUID(),
       workspaceId,
