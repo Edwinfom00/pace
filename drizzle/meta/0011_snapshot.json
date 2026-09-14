@@ -1,6 +1,6 @@
 {
-  "id": "3c1987dd-aa96-4fbc-8e07-85409318651a",
-  "prevId": "3deac2f3-b452-4a56-8f50-fc20ee039432",
+  "id": "ac41b992-0551-478b-9516-b6e3aa7e5441",
+  "prevId": "3c1987dd-aa96-4fbc-8e07-85409318651a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3555,19 +3555,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "pace_user_profile_onboarding_workspace_id_workspace_id_fk": {
-          "name": "pace_user_profile_onboarding_workspace_id_workspace_id_fk",
-          "tableFrom": "pace_user_profile",
-          "tableTo": "workspace",
-          "columnsFrom": [
-            "onboarding_workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
