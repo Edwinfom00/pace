@@ -13,6 +13,8 @@ export interface WorkspacePreferencesInput {
 export interface WorkspaceRecord {
   id: string;
   name: string;
+  /** Stable URL identifier. It never changes when the display name changes. */
+  slug: string;
   type: WorkspaceType;
   createdByUserId: string;
   createdAt: Date;

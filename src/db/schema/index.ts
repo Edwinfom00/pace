@@ -4,5 +4,6 @@ export * from "./financial-inbox";
 export * from "./insights";
 export * from "./imports";
 export * from "./ledger";
+export * from "./pace-user-profiles";
 export * from "./plans";
 export * from "./workspaces";

@@ -241,7 +241,7 @@ async function createFixture() {
   const inboxRecords = new InMemoryFinancialInboxRepository();
   for (const workspaceId of [workspaceOne, workspaceTwo]) {
     await workspaces.createWorkspaceWithOwner({
-      workspace: { id: workspaceId, name: workspaceId, type: "PERSONAL", createdByUserId: owner.userId, createdAt: new Date(), updatedAt: new Date() },
+      workspace: { id: workspaceId, name: workspaceId, slug: workspaceId, type: "PERSONAL", createdByUserId: owner.userId, createdAt: new Date(), updatedAt: new Date() },
       preferences: { currency: "USD", locale: "en-US", timezone: "UTC", weekStartsOn: 1 },
       owner: { workspaceId, userId: owner.userId, role: "OWNER", invitedByUserId: null, joinedAt: new Date() },
     });

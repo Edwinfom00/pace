@@ -23,6 +23,12 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
   readonly preferences = new Map<string, WorkspacePreferenceRecord>();
 
   async createWorkspaceWithOwner(input: CreateWorkspaceWithOwnerInput): Promise<void> {
+    if ([...this.workspaces.values()].some((workspace) => workspace.slug === input.workspace.slug)) {
+      throw Object.assign(new Error("workspace_slug_unique"), {
+        code: "23505",
+        constraint: "workspace_slug_unique",
+      });
+    }
     this.workspaces.set(input.workspace.id, input.workspace);
     this.memberships.set(this.membershipKey(input.owner.workspaceId, input.owner.userId), input.owner);
     this.preferences.set(input.workspace.id, {
@@ -47,11 +53,23 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
     return membership && workspace && preferences ? { workspace, membership, preferences } : null;
   }
 
+  async findMemberContextBySlug(
+    slug: string,
+    userId: string,
+  ): Promise<WorkspaceMemberContext | null> {
+    const workspace = [...this.workspaces.values()].find((candidate) => candidate.slug === slug);
+    return workspace ? this.findMemberContext(workspace.id, userId) : null;
+  }
+
   async findDefaultMemberContext(userId: string): Promise<WorkspaceMemberContext | null> {
     const workspaceId = [...this.memberships.values()]
       .filter((membership) => membership.userId === userId)
-      .map((membership) => membership.workspaceId)
-      .sort()[0];
+      .map((membership) => this.workspaces.get(membership.workspaceId))
+      .filter((workspace): workspace is WorkspaceRecord => Boolean(workspace))
+      .sort(
+        (left, right) =>
+          left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id),
+      )[0]?.id;
     return workspaceId ? this.findMemberContext(workspaceId, userId) : null;
   }
 

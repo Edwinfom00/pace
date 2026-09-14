@@ -33,6 +33,7 @@ export const workspaces = pgTable(
   {
     id: text("id").primaryKey(),
     name: varchar("name", { length: 120 }).notNull(),
+    slug: varchar("slug", { length: 140 }).notNull(),
     type: workspaceType("type").notNull(),
     createdByUserId: text("created_by_user_id")
       .notNull()
@@ -44,7 +45,10 @@ export const workspaces = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [index("workspace_created_by_idx").on(table.createdByUserId)],
+  (table) => [
+    index("workspace_created_by_idx").on(table.createdByUserId),
+    uniqueIndex("workspace_slug_unique").on(table.slug),
+  ],
 );
 
 export const workspacePreferences = pgTable("workspace_preference", {

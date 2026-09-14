@@ -22,6 +22,7 @@ import {
   hashInvitationSecret,
 } from "./invite-secrets";
 import type { WorkspaceRepository } from "./repositories/workspace-repository";
+import { createWorkspaceSlug, isWorkspaceSlugConflict } from "./slug";
 
 const DEFAULT_PREFERENCES: WorkspacePreferencesInput = {
   currency: "USD",
@@ -57,32 +58,45 @@ export class WorkspaceService {
   constructor(
     private readonly repository: WorkspaceRepository,
     private readonly invitationPepper: string,
+    private readonly createId: () => string = randomUUID,
   ) {}
 
   async createWorkspace(actor: AuthenticatedActor, input: CreateWorkspaceInput): Promise<WorkspaceRecord> {
-    const now = new Date();
-    const workspace: WorkspaceRecord = {
-      id: randomUUID(),
-      name: input.name,
-      type: input.type,
-      createdByUserId: actor.userId,
-      createdAt: now,
-      updatedAt: now,
-    };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const now = new Date();
+      const workspaceId = this.createId();
+      const workspace: WorkspaceRecord = {
+        id: workspaceId,
+        name: input.name,
+        slug: createWorkspaceSlug(input.name, workspaceId),
+        type: input.type,
+        createdByUserId: actor.userId,
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    await this.repository.createWorkspaceWithOwner({
-      workspace,
-      preferences: { ...DEFAULT_PREFERENCES, ...input.preferences },
-      owner: {
-        workspaceId: workspace.id,
-        userId: actor.userId,
-        role: "OWNER",
-        invitedByUserId: null,
-        joinedAt: now,
-      },
-    });
+      try {
+        await this.repository.createWorkspaceWithOwner({
+          workspace,
+          preferences: { ...DEFAULT_PREFERENCES, ...input.preferences },
+          owner: {
+            workspaceId: workspace.id,
+            userId: actor.userId,
+            role: "OWNER",
+            invitedByUserId: null,
+            joinedAt: now,
+          },
+        });
 
-    return workspace;
+        return workspace;
+      } catch (error) {
+        if (!isWorkspaceSlugConflict(error) || attempt === 2) {
+          throw error;
+        }
+      }
+    }
+
+    throw new Error("Unable to allocate a unique workspace slug.");
   }
 
   async listWorkspaces(actor: AuthenticatedActor): Promise<WorkspaceRecord[]> {

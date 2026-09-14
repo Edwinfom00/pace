@@ -10,11 +10,11 @@ export interface AuthenticatedActor {
   name: string;
 }
 
-export async function requireAuthenticatedActor(): Promise<AuthenticatedActor> {
+export async function getAuthenticatedActor(): Promise<AuthenticatedActor | null> {
   const session = await auth.api.getSession({ headers: await headers() });
 
   if (!session) {
-    throw new AuthenticationError();
+    return null;
   }
 
   return {
@@ -22,4 +22,14 @@ export async function requireAuthenticatedActor(): Promise<AuthenticatedActor> {
     email: session.user.email,
     name: session.user.name,
   };
+}
+
+export async function requireAuthenticatedActor(): Promise<AuthenticatedActor> {
+  const actor = await getAuthenticatedActor();
+
+  if (!actor) {
+    throw new AuthenticationError();
+  }
+
+  return actor;
 }

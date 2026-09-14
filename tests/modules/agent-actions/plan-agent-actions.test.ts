@@ -25,6 +25,7 @@ async function createFixture() {
   const workspace: WorkspaceRecord = {
     id: workspaceId,
     name: "Household",
+    slug: workspaceId,
     type: "FAMILY",
     createdByUserId: owner.userId,
     createdAt: now,

@@ -54,6 +54,7 @@ async function fixture() {
   const workspaceRecords: WorkspaceRecord[] = [firstWorkspace, secondWorkspace].map((id) => ({
     id,
     name: id,
+    slug: id,
     type: "PERSONAL",
     createdByUserId: owner.userId,
     createdAt: now,

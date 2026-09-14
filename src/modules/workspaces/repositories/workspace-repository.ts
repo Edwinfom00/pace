@@ -50,6 +50,7 @@ export interface WorkspaceRepository {
   createWorkspaceWithOwner(input: CreateWorkspaceWithOwnerInput): Promise<void>;
   findMembership(workspaceId: string, userId: string): Promise<WorkspaceMembershipRecord | null>;
   findMemberContext(workspaceId: string, userId: string): Promise<WorkspaceMemberContext | null>;
+  findMemberContextBySlug(slug: string, userId: string): Promise<WorkspaceMemberContext | null>;
   findDefaultMemberContext(userId: string): Promise<WorkspaceMemberContext | null>;
   listWorkspacesForUser(userId: string): Promise<WorkspaceRecord[]>;
   updatePreferences(
@@ -105,6 +106,20 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
     return record ?? null;
   }
 
+  async findMemberContextBySlug(
+    slug: string,
+    userId: string,
+  ): Promise<WorkspaceMemberContext | null> {
+    const [record] = await db
+      .select({ workspace: workspaces, membership: workspaceMembers, preferences: workspacePreferences })
+      .from(workspaces)
+      .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, workspaces.id))
+      .innerJoin(workspacePreferences, eq(workspacePreferences.workspaceId, workspaces.id))
+      .where(and(eq(workspaces.slug, slug), eq(workspaceMembers.userId, userId)))
+      .limit(1);
+    return record ?? null;
+  }
+
   async findDefaultMemberContext(userId: string): Promise<WorkspaceMemberContext | null> {
     const [record] = await db
       .select({ workspace: workspaces, membership: workspaceMembers, preferences: workspacePreferences })
@@ -122,6 +137,7 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
       .select({
         id: workspaces.id,
         name: workspaces.name,
+        slug: workspaces.slug,
         type: workspaces.type,
         createdByUserId: workspaces.createdByUserId,
         createdAt: workspaces.createdAt,
