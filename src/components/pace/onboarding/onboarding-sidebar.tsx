@@ -22,8 +22,8 @@ export function OnboardingSidebar({ step, language }: OnboardingSidebarProps) {
       </div>
       {step === 1 ? <OnboardingVisual step={step} /> : null}
       <div className="mt-auto max-w-[310px] pt-4">
-        <h2 className="text-[22px] font-semibold tracking-[-0.04em] text-[#152340] lg:text-[26px]">{t("onboarding.sidebar.title")}</h2>
-        <p className="mt-2 text-[15px] leading-5 text-[#657da7]">{t("onboarding.sidebar.subtitle")}</p>
+        <h2 className="text-balance text-[22px] font-semibold tracking-[-0.04em] text-[#152340] lg:text-[26px]">{t("onboarding.sidebar.title")}</h2>
+        <p className="mt-2 text-pretty text-[15px] leading-5 text-[#657da7]">{t("onboarding.sidebar.subtitle")}</p>
       </div>
     </aside>
   );

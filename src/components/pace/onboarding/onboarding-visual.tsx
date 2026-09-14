@@ -3,7 +3,8 @@ import Image from "next/image";
 import type { OnboardingStep } from "@/modules/onboarding/profile-domain";
 
 export const ONBOARDING_VISUAL_ASSETS: Record<OnboardingStep, string> = {
-  1: "/onboarding/01-your-pace.png",
+  // New transparent PNG path bypasses the previous optimized-image cache.
+  1: "/onboarding/01-your-pace-illustration.png",
   2: "/onboarding/02-workspace.png",
   3: "/onboarding/03-together.png",
   4: "/onboarding/04-connect.png",
