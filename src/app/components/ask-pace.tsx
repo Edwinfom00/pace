@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useEveAgent, type EveDynamicToolPart } from "eve/react";
 
 import { getTranslations, type MessageKey, type SupportedLanguage } from "@/i18n/messages";
+import { PaceLogo } from "@/components/pace/brand/pace-logo";
 
 type TransactionDraft = {
   kind: "EXPENSE" | "INCOME" | "TRANSFER";
@@ -81,6 +82,7 @@ export function AskPace({
       <section className="pace-panel pace-empty" aria-label={t("askPace.title")}>
         <h1>{t("askPace.title")}</h1>
         <p>{t("askPace.noWorkspace")}</p>
+        <PaceLogo/>
       </section>
     );
   }
