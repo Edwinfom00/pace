@@ -77,7 +77,6 @@ function PaceLogo({
   const defaultSize = isIcon ? PACE_ICON_DEFAULT_SIZE : PACE_LOGO_DEFAULT_SIZE
   const displaySize = getContainedSize(width, height, defaultSize)
   const imageStyle: CSSProperties = {
-    display: "block",
     height: toPixels(displaySize.height),
     width: toPixels(displaySize.width),
   }
@@ -90,7 +89,7 @@ function PaceLogo({
       width={intrinsicSize.width}
       height={intrinsicSize.height}
       sizes={toPixels(displaySize.width)}
-      className={className}
+      className={["block", className].filter(Boolean).join(" ")}
       preload={preload}
       unoptimized
       style={imageStyle}

@@ -60,9 +60,9 @@ export function AuthBrandPanel({
 
   return (
     <section
-      aria-label={t("auth.brand.headline")}
+      aria-labelledby="auth-brand-heading"
       className={[
-        "relative isolate min-h-[min(100dvh,1080px)] overflow-hidden bg-[#f3f6ff] p-[clamp(2.5rem,5.1vw,4.9rem)] text-[#07152f] max-xl:p-[3.25rem] max-[940px]:p-10 max-md:min-h-0 max-md:bg-[#f6f8ff] max-md:px-6 max-md:py-7",
+        "relative isolate h-full min-h-0 overflow-hidden bg-[#f3f6ff] p-[clamp(2.5rem,3vw,3.5rem)] text-[#07152f] max-xl:p-[clamp(2.5rem,3vw,3.5rem)] max-[940px]:p-10 max-md:min-h-0 max-md:bg-[#f6f8ff] max-md:px-6 max-md:py-7 [@media(max-height:850px)]:p-10",
         className,
       ]
         .filter(Boolean)
@@ -76,16 +76,16 @@ export function AuthBrandPanel({
           <PaceLogo height={45} preload width={150} />
         </header>
 
-        <div className="mt-[clamp(4.5rem,9vw,8.4rem)] max-xl:mt-[6.5rem] max-[940px]:mt-20 max-md:mt-13 max-md:max-w-[30rem]">
+        <div className="mt-[clamp(4rem,4vw,4.5rem)] max-xl:mt-[clamp(4rem,4vw,4.5rem)] max-[940px]:mt-16 max-md:mt-13 max-md:max-w-[30rem] [@media(max-height:850px)]:mt-12">
           {variant === "register" ? (
             <p className="mb-[1.85rem] mt-0 text-[0.7rem] font-semibold leading-[1.2] tracking-[0.055em] text-[#617096] uppercase">
               {t("auth.brand.eyebrow")}
             </p>
           ) : null}
-          <h1 className="m-0 max-w-[7.4ch] text-[clamp(2.8rem,5vw,4.25rem)] leading-[0.98] font-[720] tracking-[-0.038em] text-[#07152f] text-balance max-md:max-w-[11ch] max-md:text-[clamp(2.35rem,10vw,3.5rem)]">
-            {t("auth.brand.headline")}
-          </h1>
-          <p className="mt-[1.15rem] mb-0 max-w-[28rem] text-[clamp(1rem,1.45vw,1.27rem)] leading-[1.45] text-[#5f7094] text-pretty max-md:mt-3.5">
+          <h2 className="m-0 max-w-[11ch] text-[clamp(2.8rem,3.8vw,3.75rem)] leading-[1.02] font-bold tracking-[-0.035em] text-[#07152f] max-md:max-w-[11ch] max-md:text-[clamp(2.35rem,10vw,3.5rem)] [@media(max-height:850px)]:text-[3rem]" id="auth-brand-heading">
+            <AuthHeadline language={language} text={t("auth.brand.headline")} />
+          </h2>
+          <p className="mt-[1.15rem] mb-0 max-w-[28rem] text-[clamp(1rem,1.45vw,1.27rem)] leading-[1.45] text-[#5f7094] text-pretty max-md:mt-3.5 [@media(max-height:850px)]:mt-3 [@media(max-height:850px)]:text-base">
             {t("auth.brand.tagline")}
           </p>
         </div>
@@ -98,18 +98,39 @@ export function AuthBrandPanel({
 
       <div
         aria-hidden="true"
-        className="absolute right-[4.6rem] bottom-[3.4rem] left-[4.5rem] z-20 flex items-end justify-between text-[#f8fbff] max-[940px]:right-10 max-[940px]:bottom-10 max-[940px]:left-10 max-md:hidden"
+        className="absolute right-[3.5rem] bottom-[3rem] left-[3.5rem] z-20 flex items-end justify-between text-[#f8fbff] max-[940px]:right-10 max-[940px]:bottom-10 max-[940px]:left-10 max-md:hidden [@media(max-height:850px)]:hidden"
       >
-        <p className="m-0 max-w-[10rem] font-serif text-[clamp(1.5rem,2.4vw,2.55rem)] leading-[1.03] tracking-[-0.035em] italic text-balance">
+        <p className="m-0 max-w-[10rem] text-[clamp(1.5rem,2.1vw,2.25rem)] leading-[1.03] font-medium tracking-[-0.035em] italic text-balance">
           {t("auth.brand.scenicCaption")}
         </p>
-        <div className="flex max-w-36 items-end gap-2.5 font-serif text-base leading-[1.15] text-[#5573a4] italic">
+        <div className="flex max-w-36 items-end gap-2.5 text-sm leading-[1.15] font-medium text-[#5573a4] italic">
           <span className="h-6 w-9 rounded-bl-full border-b border-l border-current -rotate-[17deg]" />
           <span>{t("auth.brand.agentAnnotation")}</span>
         </div>
       </div>
     </section>
   );
+}
+
+function AuthHeadline({
+  language,
+  text,
+}: {
+  language: AuthBrandLanguage;
+  text: string;
+}) {
+  const words = text.split(" ");
+
+  if (language === "en" && words.length > 2) {
+    return (
+      <>
+        <span className="block whitespace-nowrap">{words.slice(0, 2).join(" ")}</span>
+        <span className="block whitespace-nowrap">{words.slice(2).join(" ")}</span>
+      </>
+    );
+  }
+
+  return text;
 }
 
 function AuthScenicBackground() {
@@ -143,7 +164,7 @@ function AuthBenefits({
     : primaryBenefits;
 
   return (
-    <ul className="mt-[clamp(2.25rem,4.4vw,4.1rem)] mb-0 grid list-none gap-5 p-0 max-md:hidden">
+    <ul className="mt-[clamp(2.25rem,2.5vw,3rem)] mb-0 grid list-none gap-5 p-0 max-md:hidden [@media(max-height:850px)]:mt-7 [@media(max-height:850px)]:gap-4">
       {benefits.map(({ icon: Icon, id }) => (
         <li className="flex min-w-0 items-center gap-3.5" key={id}>
           <span
@@ -172,8 +193,8 @@ function AuthTestimonial({
   t: ReturnType<typeof getAuthBrandTranslations>;
 }) {
   return (
-    <figure className="mt-[clamp(3rem,7.5vw,7.2rem)] mb-0 max-w-[23rem] text-[#5a6a8e] max-[940px]:mt-[3.6rem] max-md:hidden">
-      <blockquote className="m-0 text-[clamp(0.94rem,1.25vw,1.08rem)] leading-[1.55] italic text-pretty">
+    <figure className="mt-[clamp(3rem,4vw,5rem)] mb-0 max-w-[23rem] text-[#5a6a8e] max-[940px]:mt-[3.6rem] max-md:hidden [@media(max-height:850px)]:hidden">
+      <blockquote className="m-0 text-[clamp(0.94rem,1.1vw,1.05rem)] leading-[1.55] italic text-pretty">
         {t("auth.brand.testimonial.quote")}
       </blockquote>
       <figcaption className="mt-3 text-[0.88rem] text-[#637397]">
@@ -187,7 +208,7 @@ function AuthProductPreview() {
   return (
     <div
       aria-hidden="true"
-      className="absolute top-[15%] right-[-10%] z-20 grid min-h-[clamp(29rem,44vw,39rem)] w-[63%] max-w-[38rem] grid-cols-[34%_66%] overflow-visible rounded-[1.05rem] bg-white/93 shadow-[0_22px_48px_rgb(42_64_110_/_14%)] rotate-[4deg] origin-[54%_38%] max-xl:right-[-15%] max-xl:w-[65%] max-[940px]:top-[19%] max-[940px]:right-[-18%] max-[940px]:min-h-[28rem] max-[940px]:w-[67%] max-md:hidden"
+      className="absolute top-[15%] right-[-8%] z-20 grid min-h-[clamp(25rem,37vw,34rem)] w-[57%] max-w-[34rem] grid-cols-[34%_66%] overflow-visible rounded-[1.05rem] bg-white/93 shadow-[0_18px_38px_rgb(42_64_110_/_12%)] rotate-[4deg] origin-[54%_38%] max-xl:right-[-12%] max-xl:w-[60%] max-[940px]:hidden max-md:hidden"
     >
       <div className="flex flex-col gap-[clamp(2.5rem,5vw,4.2rem)] bg-[#f8faff]/80 p-5 max-[940px]:gap-10">
         <PaceLogo alt="" height={24} variant="icon" width={24} />

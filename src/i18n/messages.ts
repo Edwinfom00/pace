@@ -635,6 +635,12 @@ export const AUTH_FORM_MESSAGE_KEYS = [
 export type AuthFormMessageKey = (typeof AUTH_FORM_MESSAGE_KEYS)[number];
 export type AuthFormLanguage = SupportedLanguage | "de";
 
+export function toAuthFormLanguage(
+  value: string | string[] | null | undefined,
+): AuthFormLanguage {
+  return value === "fr" || value === "de" ? value : "en";
+}
+
 const germanAuthFormMessages = {
   "auth.language.selector": "Sprache auswählen",
   "auth.language.en": "English",

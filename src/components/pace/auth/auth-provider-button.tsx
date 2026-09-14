@@ -20,7 +20,7 @@ export function AuthProviderButton({
   return (
     <Button
       aria-label={isComingSoon ? `${label}: ${comingSoonLabel}` : label}
-      className="h-14 min-w-0 flex-col gap-1 rounded-[0.6rem] border-[#dfe5ee] bg-white px-2 text-[0.79rem] font-medium text-[#17213a] shadow-none transition-[border-color,background-color,color,transform] hover:border-[#cbd5e4] hover:bg-[#fafcff] active:translate-y-px disabled:cursor-not-allowed disabled:border-[#e5e9f0] disabled:bg-[#f8f9fb] disabled:text-[#8892a7] disabled:opacity-100"
+      className="h-14 min-w-0 flex-col gap-1 rounded-[0.6rem] border-[#dfe5ee] bg-white px-2 text-[0.79rem] font-medium text-[#17213a] shadow-none transition-[border-color,background-color,color,transform] hover:border-[#cbd5e4] hover:bg-[#fafcff] active:translate-y-px disabled:cursor-not-allowed disabled:border-[#e5e9f0] disabled:bg-[#f8f9fb] disabled:text-[#8892a7] disabled:opacity-100 [@media(max-height:850px)]:h-12"
       disabled={isComingSoon}
       type="button"
       variant="outline"

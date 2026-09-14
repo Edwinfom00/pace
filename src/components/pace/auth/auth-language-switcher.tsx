@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { HiOutlineChevronDown, HiOutlineGlobeAlt } from "react-icons/hi2";
 
 import { Button } from "@/components/ui/button";
@@ -10,34 +11,51 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { AuthFormLanguage, AuthFormMessageKey } from "@/i18n/messages";
+import {
+  getAuthFormTranslations,
+  type AuthFormLanguage,
+} from "@/i18n/messages";
 
 type AuthLanguageSwitcherProps = {
   language: AuthFormLanguage;
-  onLanguageChange: (language: AuthFormLanguage) => void;
-  t: (key: AuthFormMessageKey) => string;
 };
 
 const languages: AuthFormLanguage[] = ["en", "fr", "de"];
 
 export function AuthLanguageSwitcher({
   language,
-  onLanguageChange,
-  t,
 }: AuthLanguageSwitcherProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const t = getAuthFormTranslations(language);
+
+  function changeLanguage(nextLanguage: AuthFormLanguage) {
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+
+    if (nextLanguage === "en") {
+      nextSearchParams.delete("lang");
+    } else {
+      nextSearchParams.set("lang", nextLanguage);
+    }
+
+    const query = nextSearchParams.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: true });
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           aria-label={t("auth.language.selector")}
-          className="h-10 gap-2 rounded-md px-2.5 text-[0.84rem] font-medium text-[#27334b] hover:bg-[#f4f6fa] focus-visible:border-[#2360e8] focus-visible:ring-4 focus-visible:ring-[#2360e8]/15"
+          className="h-9 gap-1.5 rounded-md px-2 text-[0.82rem] font-medium text-[#27334b] hover:bg-[#f4f6fa] focus-visible:border-[#2360e8] focus-visible:ring-4 focus-visible:ring-[#2360e8]/15"
           size="sm"
           type="button"
           variant="ghost"
         >
-          <HiOutlineGlobeAlt aria-hidden="true" className="size-[1.05rem]" />
+          <HiOutlineGlobeAlt aria-hidden="true" className="size-4" />
           <span>{t(`auth.language.${language}`)}</span>
-          <HiOutlineChevronDown aria-hidden="true" className="size-3.5 text-[#6d7890]" />
+          <HiOutlineChevronDown aria-hidden="true" className="size-3 text-[#6d7890]" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -46,7 +64,7 @@ export function AuthLanguageSwitcher({
         sideOffset={6}
       >
         <DropdownMenuRadioGroup
-          onValueChange={(value) => onLanguageChange(value as AuthFormLanguage)}
+          onValueChange={(value) => changeLanguage(value as AuthFormLanguage)}
           value={language}
         >
           {languages.map((option) => (

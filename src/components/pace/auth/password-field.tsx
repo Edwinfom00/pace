@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 type PasswordFieldProps = {
   error?: string;
   forgotPasswordLabel: string;
-  forgotPasswordUrl: string;
+  forgotPasswordUrl?: string;
   hidePasswordLabel: string;
   label: string;
   placeholder: string;
@@ -39,12 +39,18 @@ export function PasswordField({
         <Label className="text-[0.9rem] font-medium text-[#17213a]" htmlFor="auth-password">
           {label}
         </Label>
-        <a
-          className="shrink-0 text-[0.81rem] font-medium text-[#1556e8] transition-colors hover:text-[#0b3eae] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2360e8]/40"
-          href={forgotPasswordUrl}
-        >
-          {forgotPasswordLabel}
-        </a>
+        {forgotPasswordUrl ? (
+          <a
+            className="shrink-0 text-[0.81rem] font-medium text-[#1556e8] transition-colors hover:text-[#0b3eae] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2360e8]/40"
+            href={forgotPasswordUrl}
+          >
+            {forgotPasswordLabel}
+          </a>
+        ) : (
+          <span className="shrink-0 text-[0.81rem] font-medium text-[#1556e8]">
+            {forgotPasswordLabel}
+          </span>
+        )}
       </div>
       <div className="relative">
         <HiOutlineLockClosed
@@ -55,7 +61,7 @@ export function PasswordField({
           aria-describedby={error ? errorId : undefined}
           aria-invalid={Boolean(error)}
           autoComplete="current-password"
-          className="h-[3.25rem] rounded-[0.65rem] border-[#dbe2ec] bg-white pl-11 pr-12 text-[0.92rem] text-[#17213a] placeholder:text-[#75819a] hover:border-[#cbd5e1] focus-visible:border-[#2360e8] focus-visible:ring-4 focus-visible:ring-[#2360e8]/12"
+          className="h-[3.25rem] rounded-[0.65rem] border-[#dbe2ec] bg-white pl-11 pr-12 text-[0.92rem] text-[#17213a] placeholder:text-[#75819a] hover:border-[#cbd5e1] focus-visible:border-[#2360e8] focus-visible:ring-4 focus-visible:ring-[#2360e8]/12 [@media(max-height:850px)]:h-11"
           id="auth-password"
           name="password"
           placeholder={placeholder}

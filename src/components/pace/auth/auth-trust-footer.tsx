@@ -14,31 +14,22 @@ export function AuthTrustFooter({
   trustLabel,
 }: AuthTrustFooterProps) {
   return (
-    <footer className="mt-auto flex flex-col items-center gap-5 px-1 pb-7 pt-6 text-center sm:pb-9">
+    <footer className="mt-auto flex shrink-0 flex-col items-center gap-5 px-1 pb-8 pt-6 text-center sm:pb-12 lg:pb-14 [@media(max-height:850px)]:gap-3 [@media(max-height:850px)]:pb-6 [@media(max-height:850px)]:pt-4">
       <p className="flex items-center justify-center gap-2 text-[0.78rem] leading-5 text-[#62708c]">
         <HiOutlineLockClosed aria-hidden="true" className="size-[0.98rem] shrink-0 text-[#33415d]" />
         {trustLabel}
       </p>
-      <nav className="flex items-center justify-center gap-6">
-        <a
-          className="text-[0.78rem] text-[#64718a] transition-colors hover:text-[#17213a] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2360e8]/40"
-          href="/terms"
-        >
+      <div className="flex items-center justify-center gap-6">
+        <span className="text-[0.78rem] text-[#64718a]" data-auth-route="/terms">
           {termsLabel}
-        </a>
-        <a
-          className="text-[0.78rem] text-[#64718a] transition-colors hover:text-[#17213a] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2360e8]/40"
-          href="/privacy"
-        >
+        </span>
+        <span className="text-[0.78rem] text-[#64718a]" data-auth-route="/privacy">
           {privacyLabel}
-        </a>
-        <a
-          className="text-[0.78rem] text-[#64718a] transition-colors hover:text-[#17213a] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2360e8]/40"
-          href="/help"
-        >
+        </span>
+        <span className="text-[0.78rem] text-[#64718a]" data-auth-route="/help">
           {helpLabel}
-        </a>
-      </nav>
+        </span>
+      </div>
     </footer>
   );
 }
