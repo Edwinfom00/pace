@@ -30,5 +30,5 @@ export default async function WorkspaceOverviewScaffoldPage({ params }: Workspac
     notFound();
   }
 
-  return <main data-temporary-route="workspace-overview" />;
+  return <div data-temporary-route="workspace-overview" />;
 }
