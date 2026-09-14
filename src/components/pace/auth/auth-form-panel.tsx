@@ -31,7 +31,7 @@ export function AuthFormPanel({
         "flex h-full min-h-0 w-full flex-col bg-white px-6 text-[#17213a] sm:px-10 lg:px-[clamp(2.75rem,5vw,6.5rem)]",
         isRegister
           ? "overflow-visible md:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          : "overflow-hidden",
+          : "overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         className,
       ]
         .filter(Boolean)
@@ -46,7 +46,7 @@ export function AuthFormPanel({
         className={
           isRegister
             ? "flex w-full justify-center pb-8 pt-8 sm:pt-10 md:pb-10"
-            : "flex min-h-0 flex-1 items-start justify-center pb-8 pt-10 sm:pb-10 sm:pt-[clamp(2.75rem,4.5vh,3.75rem)] [@media(max-height:850px)]:pb-4 [@media(max-height:850px)]:pt-5"
+            : "flex w-full shrink-0 items-start justify-center pb-8 pt-10 sm:pb-10 sm:pt-[clamp(2.75rem,4.5vh,3.75rem)] [@media(max-height:850px)]:pb-4 [@media(max-height:850px)]:pt-5"
         }
       >
         <div className="w-full max-w-[31.75rem]">
