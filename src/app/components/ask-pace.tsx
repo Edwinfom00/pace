@@ -6,7 +6,7 @@ import { useEveAgent, type EveDynamicToolPart } from "eve/react";
 
 import { getTranslations, type MessageKey, type SupportedLanguage } from "@/i18n/messages";
 
-type Draft = {
+type TransactionDraft = {
   kind: "EXPENSE" | "INCOME" | "TRANSFER";
   amountText: string | null;
   occurredAt: string | null;
@@ -16,18 +16,49 @@ type Draft = {
   missingFields: readonly ("amount" | "date" | "account" | "destinationAccount" | "category")[];
 };
 
-type Action = {
+type PlanDraft =
+  | {
+      planType: "BUDGET";
+      operation: "CREATE" | "UPDATE";
+      scope: "OVERALL" | "CATEGORY" | null;
+      categoryId: string | null;
+      amountText: string | null;
+      startsOn: string | null;
+      endsOn: string | null;
+      missingFields: readonly string[];
+    }
+  | {
+      planType: "SAVINGS_GOAL";
+      operation: "CREATE" | "UPDATE";
+      name: string | null;
+      targetAmountText: string | null;
+      currentSavedText: string | null;
+      targetDate: string | null;
+      missingFields: readonly string[];
+    };
+
+type TransactionAction = {
   id: string;
+  type: "TRANSACTION_CREATE";
   status: "DRAFT" | "WAITING_APPROVAL" | "APPROVED" | "REJECTED" | "EXECUTING" | "COMPLETED" | "FAILED";
-  draft: Draft;
+  draft: TransactionDraft;
 };
+
+type PlanAction = {
+  id: string;
+  type: "BUDGET_CREATE" | "BUDGET_UPDATE" | "SAVINGS_GOAL_CREATE" | "SAVINGS_GOAL_UPDATE";
+  status: "DRAFT" | "WAITING_APPROVAL" | "APPROVED" | "REJECTED" | "EXECUTING" | "COMPLETED" | "FAILED";
+  draft: PlanDraft;
+};
+
+type Action = TransactionAction | PlanAction;
 
 type TransactionContext = {
   accounts: readonly { id: string; name: string; currency: string }[];
   categories: readonly { id: string; name: string; kind: "EXPENSE" | "INCOME" }[];
 };
 
-type ActionDetail = { action: Action; transactionContext: TransactionContext };
+type ActionDetail = { action: Action; transactionContext?: TransactionContext };
 
 export function AskPace({
   language,
@@ -83,7 +114,7 @@ export function AskPace({
 
         <div className="pace-actions">
           {[...actions.entries()].map(([actionId, approvalRequestId]) => (
-            <TransactionActionCard
+            <ActionCard
               actionId={actionId}
               approvalRequestId={approvalRequestId}
               key={actionId}
@@ -129,7 +160,7 @@ export function AskPace({
   );
 }
 
-function TransactionActionCard({
+function ActionCard({
   actionId,
   approvalRequestId,
   language,
@@ -163,7 +194,21 @@ function TransactionActionCard({
   }, [actionId, approvalRequestId, workspaceId]);
 
   if (!detail) return null;
-  const { action, transactionContext } = detail;
+  const { action } = detail;
+  if (action.type !== "TRANSACTION_CREATE") {
+    return (
+      <PlanActionCard
+        action={action}
+        approvalRequestId={approvalRequestId}
+        language={language}
+        onApprove={onApprove}
+        onReject={onReject}
+        onRequestReview={onRequestReview}
+      />
+    );
+  }
+  const transactionContext = detail.transactionContext;
+  if (!transactionContext) return null;
   const statusKey = `askPace.status.${action.status}` as MessageKey;
   const categories = transactionContext.categories.filter((category) => category.kind === action.draft.kind);
   const missing = action.draft.missingFields
@@ -262,6 +307,68 @@ function TransactionActionCard({
             {t("askPace.approve")}
           </button>
           <button className="pace-secondary-button" onClick={() => void onReject(approvalRequestId)} type="button">
+            {t("askPace.reject")}
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function PlanActionCard({
+  action,
+  approvalRequestId,
+  language,
+  onApprove,
+  onReject,
+  onRequestReview,
+}: {
+  action: PlanAction;
+  approvalRequestId: string | undefined;
+  language: SupportedLanguage;
+  onApprove: (requestId: string) => Promise<unknown>;
+  onReject: (requestId: string) => Promise<unknown>;
+  onRequestReview: () => void;
+}) {
+  const t = getTranslations(language);
+  const statusKey = `askPace.status.${action.status}` as MessageKey;
+  const draft = action.draft;
+  const missing = draft.missingFields
+    .map((field) => t(`plans.field.${field}` as MessageKey))
+    .join(", ");
+  const title = draft.planType === "BUDGET" ? t("plans.budget") : t("plans.savingsGoal");
+  return (
+    <section aria-label={title} data-m5-plan-action>
+      <header>
+        <div>
+          <p>{approvalRequestId ? t("askPace.approval") : t("plans.draft")}</p>
+          <h2>{title}</h2>
+        </div>
+        <span>{t(statusKey)}</span>
+      </header>
+      {draft.planType === "BUDGET" ? (
+        <dl>
+          <div><dt>{t("plans.scope")}</dt><dd>{draft.scope === "OVERALL" ? t("plans.overall") : t("plans.category")}</dd></div>
+          <div><dt>{t("askPace.amount")}</dt><dd>{draft.amountText ?? "—"}</dd></div>
+          <div><dt>{t("plans.period")}</dt><dd>{draft.startsOn?.slice(0, 10) ?? "—"}</dd></div>
+        </dl>
+      ) : (
+        <dl>
+          <div><dt>{t("plans.savingsGoal")}</dt><dd>{draft.name ?? "—"}</dd></div>
+          <div><dt>{t("plans.target")}</dt><dd>{draft.targetAmountText ?? "—"}</dd></div>
+          <div><dt>{t("plans.saved")}</dt><dd>{draft.currentSavedText ?? "0"}</dd></div>
+          {draft.targetDate ? <div><dt>{t("plans.targetDate")}</dt><dd>{draft.targetDate.slice(0, 10)}</dd></div> : null}
+        </dl>
+      )}
+      {action.status === "DRAFT" ? (
+        <div>
+          {missing ? <p>{t("plans.missing", { fields: missing })}</p> : null}
+          <button onClick={onRequestReview} type="button">{t("askPace.review")}</button>
+        </div>
+      ) : approvalRequestId && action.status === "WAITING_APPROVAL" ? (
+        <div>
+          <button onClick={() => void onApprove(approvalRequestId)} type="button">{t("askPace.approve")}</button>
+          <button onClick={() => void onReject(approvalRequestId)} type="button">
             {t("askPace.reject")}
           </button>
         </div>

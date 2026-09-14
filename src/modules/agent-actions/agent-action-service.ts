@@ -9,14 +9,22 @@ import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repo
 import type { WorkspaceMemberContext } from "@/modules/workspaces/domain";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 import type { TransactionClassificationRequest } from "@/modules/financial-inbox/financial-inbox-service";
+import type { PlansContext, PlansService } from "@/modules/plans/plan-service";
+import type { BudgetRecord, SavingsGoalRecord } from "@/modules/plans/domain";
 
 import {
   type AgentActionRecord,
-  type AgentActionResult,
   type AgentActionStatus,
-  isTransactionDraftReady,
+  isAgentActionDraftReady,
+  isPlanAction,
+  isTransactionAction,
+  type PlanAgentActionRecord,
+  type PlanActionResult,
+  type TransactionAgentActionRecord,
+  type TransactionActionResult,
   type TransactionDraft,
 } from "./domain";
+import { buildPlanDraft, type PlanDraftIntent } from "./plan-draft";
 import type { AgentActionRepository } from "./repositories/agent-action-repository";
 import {
   buildTransactionDraft,
@@ -39,6 +47,14 @@ export interface EditTransactionDraftInput {
   note?: string | null;
 }
 
+export interface CreatePlanDraftInput extends PlanDraftIntent {
+  idempotencyKey: string;
+  eveSessionId?: string | null;
+  eveCallId?: string | null;
+}
+
+export type EditPlanDraftInput = Omit<Partial<PlanDraftIntent>, "actionType" | "budgetId" | "goalId">;
+
 export interface AgentTransactionContext {
   workspaceId: string;
   currency: string;
@@ -48,10 +64,17 @@ export interface AgentTransactionContext {
   categories: readonly Pick<LedgerCategoryRecord, "id" | "name" | "kind">[];
 }
 
-export interface AgentActionDetail {
-  action: AgentActionRecord;
+export interface TransactionActionDetail {
+  action: AgentActionRecord & { readonly type: "TRANSACTION_CREATE"; readonly draft: TransactionDraft };
   transactionContext: AgentTransactionContext;
 }
+
+export interface PlanActionDetail {
+  action: AgentActionRecord;
+  planContext: PlansContext;
+}
+
+export type AgentActionDetail = TransactionActionDetail | PlanActionDetail;
 
 interface TransactionClassifier {
   ingestTransaction(
@@ -73,6 +96,7 @@ export class AgentActionService {
     private readonly ledgerRecords: Pick<LedgerRepository, "findTransactionByFingerprint">,
     private readonly workspaces: Pick<WorkspaceRepository, "findMemberContext">,
     private readonly classifier?: TransactionClassifier,
+    private readonly plans?: PlansService,
   ) {}
 
   async getTransactionContext(
@@ -91,10 +115,12 @@ export class AgentActionService {
     actor: AuthenticatedActor,
     workspaceId: string,
     input: CreateTransactionDraftInput,
-  ): Promise<AgentActionRecord> {
+  ): Promise<TransactionAgentActionRecord> {
     const existing = await this.actions.findActionByIdempotencyKey(workspaceId, input.idempotencyKey);
     if (existing) {
-      return this.requireActionInitiator(actor, workspaceId, existing.id);
+      const action = await this.requireActionInitiator(actor, workspaceId, existing.id);
+      if (!isTransactionAction(action)) throw new ConflictError("Idempotency key belongs to another action type.");
+      return action;
     }
 
     const [context, transactionContext] = await Promise.all([
@@ -127,6 +153,57 @@ export class AgentActionService {
       eveCallId: input.eveCallId ?? null,
     });
     await this.audit(created, actor.userId, "DRAFT_CREATED", null, "DRAFT");
+    if (!isTransactionAction(created)) throw new Error("Created action was not a transaction.");
+    return created;
+  }
+
+  async getPlanContext(actor: AuthenticatedActor, workspaceId: string): Promise<PlansContext> {
+    return this.requirePlans().getContext(actor, workspaceId);
+  }
+
+  async getPlanStatus(actor: AuthenticatedActor, workspaceId: string): Promise<{
+    budgets: Awaited<ReturnType<PlansService["listBudgetSummaries"]>>;
+    savingsGoals: Awaited<ReturnType<PlansService["listSavingsGoalSummaries"]>>;
+  }> {
+    const plans = this.requirePlans();
+    const [budgets, savingsGoals] = await Promise.all([
+      plans.listBudgetSummaries(actor, workspaceId),
+      plans.listSavingsGoalSummaries(actor, workspaceId),
+    ]);
+    return { budgets, savingsGoals };
+  }
+
+  async createPlanDraft(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: CreatePlanDraftInput,
+  ): Promise<PlanAgentActionRecord> {
+    const existing = await this.actions.findActionByIdempotencyKey(workspaceId, input.idempotencyKey);
+    if (existing) {
+      const action = await this.requireActionInitiator(actor, workspaceId, existing.id);
+      if (!isPlanAction(action)) throw new ConflictError("Idempotency key belongs to another action type.");
+      return action;
+    }
+    const context = await this.getPlanContext(actor, workspaceId);
+    const draft = buildPlanDraft(input, {
+      currency: context.currency,
+      timezone: context.timezone,
+      categories: await this.ledger.listCategories(actor, workspaceId),
+      budgets: context.budgets,
+      savingsGoals: context.savingsGoals,
+    });
+    const created = await this.actions.createAction({
+      id: randomUUID(),
+      workspaceId,
+      type: input.actionType,
+      initiatedByUserId: actor.userId,
+      draft,
+      idempotencyKey: input.idempotencyKey,
+      eveSessionId: input.eveSessionId ?? null,
+      eveCallId: input.eveCallId ?? null,
+    });
+    await this.audit(created, actor.userId, "DRAFT_CREATED", null, "DRAFT", { planType: draft.planType });
+    if (!isPlanAction(created)) throw new Error("Created action was not a plan.");
     return created;
   }
 
@@ -136,7 +213,13 @@ export class AgentActionService {
     actionId: string,
   ): Promise<AgentActionDetail> {
     const action = await this.requireActionInitiator(actor, workspaceId, actionId);
-    return { action, transactionContext: await this.getTransactionContext(actor, workspaceId) };
+    if (isTransactionAction(action)) {
+      return { action, transactionContext: await this.getTransactionContext(actor, workspaceId) };
+    }
+    if (isPlanAction(action)) {
+      return { action, planContext: await this.getPlanContext(actor, workspaceId) };
+    }
+    throw new ConflictError("Agent action has an unsupported draft.");
   }
 
   async editTransactionDraft(
@@ -146,6 +229,7 @@ export class AgentActionService {
     input: EditTransactionDraftInput,
   ): Promise<AgentActionRecord> {
     const action = await this.requireActionInitiator(actor, workspaceId, actionId);
+    if (!isTransactionAction(action)) throw new ConflictError("This is not a transaction draft.");
     if (action.status !== "DRAFT") {
       throw new ConflictError("Only a draft agent action can be edited.");
     }
@@ -159,6 +243,51 @@ export class AgentActionService {
     const updated = await this.actions.updateDraft(workspaceId, action.id, draft);
     if (!updated) throw new ConflictError("This draft changed before it could be updated.");
     await this.audit(updated, actor.userId, "DRAFT_UPDATED", "DRAFT", "DRAFT");
+    if (!isTransactionAction(updated)) throw new Error("Updated action was not a transaction.");
+    return updated;
+  }
+
+  async editPlanDraft(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+    input: EditPlanDraftInput,
+  ): Promise<AgentActionRecord> {
+    const action = await this.requireActionInitiator(actor, workspaceId, actionId);
+    if (!isPlanAction(action)) throw new ConflictError("This is not a plan draft.");
+    if (action.status !== "DRAFT") throw new ConflictError("Only a draft agent action can be edited.");
+    const context = await this.getPlanContext(actor, workspaceId);
+    const current = action.draft;
+    const draft = buildPlanDraft(
+      {
+        actionType: action.type,
+        budgetId: current.planType === "BUDGET" ? current.budgetId : undefined,
+        goalId: current.planType === "SAVINGS_GOAL" ? current.goalId : undefined,
+        scope: current.planType === "BUDGET" ? current.scope : undefined,
+        categoryId: current.planType === "BUDGET" ? current.categoryId : undefined,
+        amountText: current.planType === "BUDGET" ? current.amountText : undefined,
+        startsOnText: current.planType === "BUDGET" ? current.startsOn?.slice(0, 10) : undefined,
+        endsOnText: current.planType === "BUDGET" ? current.endsOn?.slice(0, 10) : undefined,
+        budgetStatus: current.planType === "BUDGET" ? current.status : undefined,
+        name: current.planType === "SAVINGS_GOAL" ? current.name : undefined,
+        targetAmountText: current.planType === "SAVINGS_GOAL" ? current.targetAmountText : undefined,
+        currentSavedText: current.planType === "SAVINGS_GOAL" ? current.currentSavedText : undefined,
+        targetDateText: current.planType === "SAVINGS_GOAL" ? current.targetDate?.slice(0, 10) : undefined,
+        goalStatus: current.planType === "SAVINGS_GOAL" ? current.status : undefined,
+        sourceText: current.sourceText,
+        ...input,
+      },
+      {
+        currency: context.currency,
+        timezone: context.timezone,
+        categories: await this.ledger.listCategories(actor, workspaceId),
+        budgets: context.budgets,
+        savingsGoals: context.savingsGoals,
+      },
+    );
+    const updated = await this.actions.updateDraft(workspaceId, action.id, draft);
+    if (!updated) throw new ConflictError("This draft changed before it could be updated.");
+    await this.audit(updated, actor.userId, "DRAFT_UPDATED", "DRAFT", "DRAFT", { planType: draft.planType });
     return updated;
   }
 
@@ -172,8 +301,8 @@ export class AgentActionService {
     if (action.status !== "DRAFT") {
       throw new ConflictError("Only a new draft can be sent for approval.");
     }
-    if (!isTransactionDraftReady(action.draft)) {
-      throw new ConflictError("Complete the transaction draft before requesting approval.");
+    if (!isAgentActionDraftReady(action.draft)) {
+      throw new ConflictError("Complete the draft before requesting approval.");
     }
 
     const transitioned = await this.actions.transitionAction({
@@ -240,8 +369,9 @@ export class AgentActionService {
     actor: AuthenticatedActor,
     workspaceId: string,
     actionId: string,
-  ): Promise<AgentActionResult> {
+  ): Promise<TransactionActionResult> {
     let action = await this.requireActionInitiator(actor, workspaceId, actionId);
+    if (!isTransactionAction(action)) throw new ConflictError("This action does not create a transaction.");
     if (action.status === "COMPLETED" && action.result) return action.result;
     if (action.status !== "APPROVED" && action.status !== "EXECUTING") {
       throw new ConflictError("Only an approved action can be executed.");
@@ -259,6 +389,7 @@ export class AgentActionService {
         action = transitioned;
       } else {
         action = await this.requireActionInitiator(actor, workspaceId, actionId);
+        if (!isTransactionAction(action)) throw new ConflictError("This action does not create a transaction.");
         if (action.status === "COMPLETED" && action.result) return action.result;
         if (action.status !== "EXECUTING") {
           throw new ConflictError("This action changed before it could be executed.");
@@ -284,9 +415,9 @@ export class AgentActionService {
       }
 
       this.assertPersistedTransactionMatches(action, transaction);
-      const result: AgentActionResult = {
+      const result: TransactionActionResult = {
         transactionId: transaction.id,
-        kind: transaction.kind as AgentActionResult["kind"],
+        kind: transaction.kind as TransactionActionResult["kind"],
         verifiedAt: new Date().toISOString(),
       };
       const completed = await this.actions.transitionAction({
@@ -319,8 +450,71 @@ export class AgentActionService {
       }
 
       const current = await this.requireActionInitiator(actor, workspaceId, actionId);
-      if (current.status === "COMPLETED" && current.result) return current.result;
+      if (isTransactionAction(current) && current.status === "COMPLETED" && current.result) return current.result;
       throw new ConflictError("This action changed while its transaction was being verified.");
+    } catch (error) {
+      await this.failAction(actor, workspaceId, actionId, error);
+      throw error;
+    }
+  }
+
+  async executeApprovedPlan(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+  ): Promise<PlanActionResult> {
+    let action = await this.requireActionInitiator(actor, workspaceId, actionId);
+    if (!isPlanAction(action)) throw new ConflictError("This action does not change a plan.");
+    if (action.status === "COMPLETED" && action.result) return action.result;
+    if (action.status !== "APPROVED" && action.status !== "EXECUTING") {
+      throw new ConflictError("Only an approved action can be executed.");
+    }
+    if (action.status === "APPROVED") {
+      const transitioned = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["APPROVED"],
+        to: "EXECUTING",
+      });
+      if (transitioned) {
+        await this.audit(transitioned, actor.userId, "EXECUTION_STARTED", "APPROVED", "EXECUTING");
+        action = transitioned;
+      } else {
+        action = await this.requireActionInitiator(actor, workspaceId, actionId);
+        if (!isPlanAction(action)) throw new ConflictError("This action does not change a plan.");
+        if (action.status === "COMPLETED" && action.result) return action.result;
+        if (action.status !== "EXECUTING") throw new ConflictError("This action changed before it could be executed.");
+      }
+    }
+    try {
+      if (!isPlanAction(action)) throw new ConflictError("This action does not change a plan.");
+      const record = await this.persistPlanAction(actor, workspaceId, action);
+      const result: PlanActionResult = {
+        planType: action.draft.planType,
+        planId: record.id,
+        operation: action.draft.operation,
+        verifiedAt: new Date().toISOString(),
+      };
+      const completed = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["EXECUTING"],
+        to: "COMPLETED",
+        result,
+        failureCode: null,
+        failureMessage: null,
+      });
+      if (completed) {
+        await this.audit(completed, actor.userId, "PERSISTENCE_VERIFIED", "EXECUTING", "COMPLETED", {
+          planId: record.id,
+          planType: action.draft.planType,
+          operation: action.draft.operation,
+        });
+        return result;
+      }
+      const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+      if (isPlanAction(current) && current.status === "COMPLETED" && current.result) return current.result;
+      throw new ConflictError("This action changed while its plan was being verified.");
     } catch (error) {
       await this.failAction(actor, workspaceId, actionId, error);
       throw error;
@@ -335,6 +529,74 @@ export class AgentActionService {
     if (!context) throw new AuthorizationError("You are not a member of this workspace.");
     assertWorkspacePermission(context.membership.role, "manage_ledger");
     return context;
+  }
+
+  private async persistPlanAction(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    action: AgentActionRecord,
+  ): Promise<BudgetRecord | SavingsGoalRecord> {
+    if (!isPlanAction(action) || !isAgentActionDraftReady(action.draft)) {
+      throw new ConflictError("The approved action has an incomplete plan draft.");
+    }
+    const service = this.requirePlans();
+    const draft = action.draft;
+    if (draft.planType === "BUDGET") {
+      if (!draft.scope || !draft.amountMinor || !draft.startsOn || !draft.status) {
+        throw new ConflictError("The approved budget draft is incomplete.");
+      }
+      if (draft.operation === "CREATE") {
+        const prior = await service.findBudgetCreatedByAction(actor, workspaceId, action.id);
+        const record = prior ?? await service.createBudget(actor, workspaceId, {
+          scope: draft.scope,
+          categoryId: draft.scope === "OVERALL" ? null : draft.categoryId,
+          amountMinor: BigInt(draft.amountMinor),
+          startsOn: new Date(draft.startsOn),
+          endsOn: draft.endsOn ? new Date(draft.endsOn) : null,
+          agentActionId: action.id,
+        });
+        this.assertBudgetMatchesDraft(record, draft, action.id);
+        return record;
+      }
+      if (!draft.budgetId) throw new ConflictError("The approved budget draft has no target.");
+      const record = await service.updateBudget(actor, workspaceId, draft.budgetId, {
+        scope: draft.scope,
+        categoryId: draft.scope === "OVERALL" ? null : draft.categoryId,
+        amountMinor: BigInt(draft.amountMinor),
+        startsOn: new Date(draft.startsOn),
+        endsOn: draft.endsOn ? new Date(draft.endsOn) : null,
+        status: draft.status,
+      });
+      this.assertBudgetMatchesDraft(record, draft);
+      return record;
+    }
+
+    if (!draft.name || !draft.targetAmountMinor || !draft.status) {
+      throw new ConflictError("The approved savings-goal draft is incomplete.");
+    }
+    const currentSavedMinor = BigInt(draft.currentSavedMinor ?? "0");
+    if (draft.operation === "CREATE") {
+      const prior = await service.findSavingsGoalCreatedByAction(actor, workspaceId, action.id);
+      const record = prior ?? await service.createSavingsGoal(actor, workspaceId, {
+        name: draft.name,
+        targetAmountMinor: BigInt(draft.targetAmountMinor),
+        currentSavedMinor,
+        targetDate: draft.targetDate ? new Date(draft.targetDate) : null,
+        agentActionId: action.id,
+      });
+      this.assertSavingsGoalMatchesDraft(record, draft, action.id);
+      return record;
+    }
+    if (!draft.goalId) throw new ConflictError("The approved savings-goal draft has no target.");
+    const record = await service.updateSavingsGoal(actor, workspaceId, draft.goalId, {
+      name: draft.name,
+      targetAmountMinor: BigInt(draft.targetAmountMinor),
+      currentSavedMinor,
+      targetDate: draft.targetDate ? new Date(draft.targetDate) : null,
+      status: draft.status,
+    });
+    this.assertSavingsGoalMatchesDraft(record, draft);
+    return record;
   }
 
   private async requireActionInitiator(
@@ -434,8 +696,9 @@ export class AgentActionService {
     workspaceId: string,
     action: AgentActionRecord,
   ): Promise<unknown> {
+    if (!isTransactionAction(action)) throw new ConflictError("This action does not create a transaction.");
     const draft = action.draft;
-    if (!isTransactionDraftReady(draft) || !draft.amountMinor || !draft.occurredAt || !draft.accountId) {
+    if (!isAgentActionDraftReady(draft) || !draft.amountMinor || !draft.occurredAt || !draft.accountId) {
       throw new ConflictError("The approved action has an incomplete transaction draft.");
     }
 
@@ -474,6 +737,7 @@ export class AgentActionService {
     action: AgentActionRecord,
     transaction: LedgerTransactionRecord,
   ): void {
+    if (!isTransactionAction(action)) throw new Error("Persisted transaction action was not a transaction.");
     const draft = action.draft;
     if (
       transaction.workspaceId !== action.workspaceId ||
@@ -496,6 +760,40 @@ export class AgentActionService {
       }
     } else if (transaction.transferAccountId !== null || transaction.categoryId !== draft.categoryId) {
       throw new Error("Persisted transaction verification failed.");
+    }
+  }
+
+  private assertBudgetMatchesDraft(
+    record: BudgetRecord,
+    draft: Extract<AgentActionRecord["draft"], { planType: "BUDGET" }>,
+    createdByAgentActionId?: string | null,
+  ): void {
+    if (
+      record.scope !== draft.scope ||
+      record.categoryId !== (draft.scope === "OVERALL" ? null : draft.categoryId) ||
+      record.amountMinor.toString() !== draft.amountMinor ||
+      record.startsOn.toISOString() !== draft.startsOn ||
+      (record.endsOn?.toISOString() ?? null) !== draft.endsOn ||
+      record.status !== draft.status ||
+      (createdByAgentActionId !== undefined && record.createdByAgentActionId !== createdByAgentActionId)
+    ) {
+      throw new Error("Persisted budget verification failed.");
+    }
+  }
+
+  private assertSavingsGoalMatchesDraft(
+    record: SavingsGoalRecord,
+    draft: Extract<AgentActionRecord["draft"], { planType: "SAVINGS_GOAL" }>,
+    createdByAgentActionId?: string | null,
+  ): void {
+    if (
+      record.name !== draft.name ||
+      record.targetAmountMinor.toString() !== draft.targetAmountMinor ||
+      record.currentSavedMinor.toString() !== (draft.currentSavedMinor ?? "0") ||
+      (record.targetDate?.toISOString() ?? null) !== draft.targetDate ||
+      (createdByAgentActionId !== undefined && record.createdByAgentActionId !== createdByAgentActionId)
+    ) {
+      throw new Error("Persisted savings-goal verification failed.");
     }
   }
 
@@ -543,5 +841,10 @@ export class AgentActionService {
 
   private transactionFingerprint(actionId: string): string {
     return `agent-action:${actionId}`;
+  }
+
+  private requirePlans(): PlansService {
+    if (!this.plans) throw new Error("Plans service is unavailable.");
+    return this.plans;
   }
 }

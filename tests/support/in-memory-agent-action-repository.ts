@@ -2,7 +2,7 @@ import type {
   AgentActionAuditRecord,
   AgentActionRecord,
   AgentActionStatus,
-  TransactionDraft,
+  AgentActionDraft,
 } from "@/modules/agent-actions/domain";
 import type {
   AgentActionRepository,
@@ -50,7 +50,7 @@ export class InMemoryAgentActionRepository implements AgentActionRepository {
   async updateDraft(
     workspaceId: string,
     actionId: string,
-    draft: TransactionDraft,
+    draft: AgentActionDraft,
   ): Promise<AgentActionRecord | null> {
     const current = await this.findAction(workspaceId, actionId);
     if (!current || current.status !== "DRAFT") return null;

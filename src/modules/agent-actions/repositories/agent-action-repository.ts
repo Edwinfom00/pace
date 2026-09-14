@@ -9,7 +9,7 @@ import type {
   AgentActionResult,
   AgentActionStatus,
   AgentActionType,
-  TransactionDraft,
+  AgentActionDraft,
 } from "../domain";
 
 export interface CreateAgentActionInput {
@@ -17,7 +17,7 @@ export interface CreateAgentActionInput {
   workspaceId: string;
   type: AgentActionType;
   initiatedByUserId: string;
-  draft: TransactionDraft;
+  draft: AgentActionDraft;
   idempotencyKey: string;
   eveSessionId: string | null;
   eveCallId: string | null;
@@ -55,7 +55,7 @@ export interface AgentActionRepository {
   updateDraft(
     workspaceId: string,
     actionId: string,
-    draft: TransactionDraft,
+    draft: AgentActionDraft,
   ): Promise<AgentActionRecord | null>;
   transitionAction(input: TransitionAgentActionInput): Promise<AgentActionRecord | null>;
   createAudit(input: CreateAgentActionAuditInput): Promise<AgentActionAuditRecord>;
@@ -98,7 +98,7 @@ export class DatabaseAgentActionRepository implements AgentActionRepository {
   async updateDraft(
     workspaceId: string,
     actionId: string,
-    draft: TransactionDraft,
+    draft: AgentActionDraft,
   ): Promise<AgentActionRecord | null> {
     const [record] = await db
       .update(agentActions)

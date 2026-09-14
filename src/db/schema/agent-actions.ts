@@ -9,7 +9,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import type { AgentActionResult, TransactionDraft } from "@/modules/agent-actions/domain";
+import type { AgentActionDraft, AgentActionResult } from "@/modules/agent-actions/domain";
 
 import { users } from "./auth";
 import { workspaces } from "./workspaces";
@@ -24,7 +24,13 @@ export const agentActionStatus = pgEnum("agent_action_status", [
   "FAILED",
 ]);
 
-export const agentActionType = pgEnum("agent_action_type", ["TRANSACTION_CREATE"]);
+export const agentActionType = pgEnum("agent_action_type", [
+  "TRANSACTION_CREATE",
+  "BUDGET_CREATE",
+  "BUDGET_UPDATE",
+  "SAVINGS_GOAL_CREATE",
+  "SAVINGS_GOAL_UPDATE",
+]);
 
 export const agentActions = pgTable(
   "agent_actions",
@@ -41,7 +47,7 @@ export const agentActions = pgTable(
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "restrict",
     }),
-    draft: jsonb("draft").$type<TransactionDraft>().notNull(),
+    draft: jsonb("draft").$type<AgentActionDraft>().notNull(),
     result: jsonb("result").$type<AgentActionResult>(),
     failureCode: varchar("failure_code", { length: 120 }),
     failureMessage: varchar("failure_message", { length: 1_000 }),
