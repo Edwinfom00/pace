@@ -9,6 +9,30 @@ export interface LocalDate {
   readonly day: number;
 }
 
+/** Returns a half-open calendar-month period in the supplied IANA time zone. */
+export function calendarMonthPeriod(
+  instant: Date,
+  timeZone: string,
+  monthOffset = 0,
+): Period {
+  const local = localDateForInstant(instant, timeZone);
+  const shifted = new Date(Date.UTC(local.year, local.month - 1 + monthOffset, 1));
+  const next = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 1));
+  return periodForLocalDates(
+    formatLocalDate({
+      year: shifted.getUTCFullYear(),
+      month: shifted.getUTCMonth() + 1,
+      day: 1,
+    }),
+    formatLocalDate({
+      year: next.getUTCFullYear(),
+      month: next.getUTCMonth() + 1,
+      day: 1,
+    }),
+    timeZone,
+  );
+}
+
 export function createPeriod(start: Date, end: Date): Period {
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end) {
     throw new Error("A period must have valid start and end instants with start before end.");
@@ -53,6 +77,10 @@ export function localDateKey(date: LocalDate): string {
   return `${date.year.toString().padStart(4, "0")}-${date.month.toString().padStart(2, "0")}-${date.day
     .toString()
     .padStart(2, "0")}`;
+}
+
+function formatLocalDate(date: LocalDate): string {
+  return localDateKey(date);
 }
 
 export function countCalendarDays(start: Date, end: Date, timeZone: string): number {
