@@ -1,0 +1,32 @@
+import { FiArrowRight } from "react-icons/fi";
+
+import { getOnboardingTranslations } from "@/i18n/onboarding-messages";
+import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
+
+type OnboardingFooterProps = {
+  language: OnboardingLanguage;
+  onContinue: () => void;
+  submitting?: boolean;
+  disabled?: boolean;
+};
+
+export function OnboardingFooter({ language, onContinue, submitting = false, disabled = false }: OnboardingFooterProps) {
+  const t = getOnboardingTranslations(language);
+
+  return (
+    <footer className="mt-auto flex items-center justify-end gap-3 border-t border-[#dce4f0] pt-9 max-sm:sticky max-sm:bottom-0 max-sm:-mx-5 max-sm:mt-8 max-sm:bg-white/95 max-sm:px-5 max-sm:py-4 max-sm:backdrop-blur">
+      <button className="h-14 min-w-32 rounded-xl bg-[#f1f4f9] px-6 text-base font-semibold text-[#9aa9c1]" disabled type="button">
+        {t("onboarding.back")}
+      </button>
+      <button
+        className="inline-flex h-14 min-w-44 items-center justify-center gap-3 rounded-xl bg-[#132442] px-7 text-base font-semibold text-white shadow-[0_10px_22px_rgba(19,36,66,0.14)] transition-transform hover:bg-[#1b3158] active:translate-y-px disabled:cursor-wait disabled:opacity-70"
+        disabled={submitting || disabled}
+        onClick={onContinue}
+        type="button"
+      >
+        {submitting ? t("onboarding.continuing") : t("onboarding.continue")}
+        {submitting ? null : <FiArrowRight aria-hidden className="size-5" />}
+      </button>
+    </footer>
+  );
+}

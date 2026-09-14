@@ -31,6 +31,12 @@ export const paceUserProfiles = pgTable(
       .default("NOT_STARTED"),
     onboardingStep: integer("onboarding_step"),
     onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
+    /** ISO 3166-1 alpha-2 value chosen during Pace onboarding. */
+    countryCode: text("country_code"),
+    /** ISO 4217 value chosen during Pace onboarding. */
+    currency: text("currency"),
+    /** Canonical IANA timezone chosen during Pace onboarding. */
+    timezone: text("timezone"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

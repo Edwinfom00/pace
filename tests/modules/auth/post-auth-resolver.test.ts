@@ -25,9 +25,15 @@ function profile(status: PaceUserProfileRecord["onboardingStatus"]): PaceUserPro
         onboardingStatus: status,
         onboardingStep: status === "IN_PROGRESS" ? 2 : null,
         onboardingCompletedAt: status === "COMPLETED" ? new Date("2026-01-01") : null,
+        countryCode: null,
+        currency: null,
+        timezone: null,
         createdAt: new Date("2026-01-01"),
         updatedAt: new Date("2026-01-01"),
       };
+    },
+    async saveYourPaceStep() {
+      throw new Error("Not used by post-auth resolver tests.");
     },
   };
 }

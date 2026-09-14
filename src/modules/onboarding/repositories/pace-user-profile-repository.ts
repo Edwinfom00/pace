@@ -1,12 +1,13 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { paceUserProfiles } from "@/db/schema";
+import { paceUserProfiles, users } from "@/db/schema";
 
-import type { PaceUserProfileRecord } from "../profile-domain";
+import type { PaceUserProfileRecord, ValidatedYourPace } from "../profile-domain";
 
 export interface PaceUserProfileRepository {
   getOrCreate(userId: string): Promise<PaceUserProfileRecord>;
+  saveYourPaceStep(userId: string, input: ValidatedYourPace): Promise<PaceUserProfileRecord>;
 }
 
 /**
@@ -29,5 +30,39 @@ export class DatabasePaceUserProfileRepository implements PaceUserProfileReposit
     }
 
     return profile;
+  }
+
+  async saveYourPaceStep(
+    userId: string,
+    input: ValidatedYourPace,
+  ): Promise<PaceUserProfileRecord> {
+    return db.transaction(async (transaction) => {
+      await transaction.insert(paceUserProfiles).values({ userId }).onConflictDoNothing();
+
+      await transaction
+        .update(users)
+        .set({ preferredLanguage: input.language })
+        .where(eq(users.id, userId));
+
+      const [profile] = await transaction
+        .update(paceUserProfiles)
+        .set({
+          countryCode: input.country,
+          currency: input.currency,
+          timezone: input.timezone,
+          onboardingStatus: "IN_PROGRESS",
+          onboardingStep: 2,
+          onboardingCompletedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(paceUserProfiles.userId, userId))
+        .returning();
+
+      if (!profile) {
+        throw new Error("Pace user profile could not be updated.");
+      }
+
+      return profile;
+    });
   }
 }
