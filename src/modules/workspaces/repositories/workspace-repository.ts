@@ -1,0 +1,212 @@
+import { and, eq } from "drizzle-orm";
+
+import { db, neonSql } from "@/db/client";
+import {
+  workspaceInvitations,
+  workspaceMembers,
+  workspacePreferences,
+  workspaces,
+} from "@/db/schema";
+
+import type {
+  WorkspaceInvitationRecord,
+  WorkspaceMembershipRecord,
+  WorkspacePreferenceRecord,
+  WorkspacePreferencesInput,
+  WorkspaceRecord,
+} from "../domain";
+
+export interface CreateWorkspaceWithOwnerInput {
+  workspace: WorkspaceRecord;
+  preferences: WorkspacePreferencesInput;
+  owner: WorkspaceMembershipRecord;
+}
+
+export interface CreateInvitationRecordInput {
+  id: string;
+  workspaceId: string;
+  invitedEmail: string;
+  role: WorkspaceMembershipRecord["role"];
+  tokenHash: string;
+  codeHash: string;
+  invitedByUserId: string;
+  expiresAt: Date;
+}
+
+export interface ConsumeInvitationInput {
+  matcher: "token" | "code";
+  hash: string;
+  userId: string;
+  email: string;
+}
+
+export interface ConsumedInvitation {
+  workspaceId: string;
+  role: WorkspaceMembershipRecord["role"];
+}
+
+export interface WorkspaceRepository {
+  createWorkspaceWithOwner(input: CreateWorkspaceWithOwnerInput): Promise<void>;
+  findMembership(workspaceId: string, userId: string): Promise<WorkspaceMembershipRecord | null>;
+  listWorkspacesForUser(userId: string): Promise<WorkspaceRecord[]>;
+  updatePreferences(
+    workspaceId: string,
+    preferences: Partial<WorkspacePreferencesInput>,
+  ): Promise<WorkspacePreferenceRecord>;
+  createInvitation(input: CreateInvitationRecordInput): Promise<WorkspaceInvitationRecord>;
+  revokeInvitation(workspaceId: string, invitationId: string): Promise<boolean>;
+  consumeInvitation(input: ConsumeInvitationInput): Promise<ConsumedInvitation | null>;
+}
+
+export class DatabaseWorkspaceRepository implements WorkspaceRepository {
+  async createWorkspaceWithOwner(input: CreateWorkspaceWithOwnerInput): Promise<void> {
+    await db.batch([
+      db.insert(workspaces).values(input.workspace),
+      db.insert(workspacePreferences).values({
+        workspaceId: input.workspace.id,
+        ...input.preferences,
+      }),
+      db.insert(workspaceMembers).values(input.owner),
+    ]);
+  }
+
+  async findMembership(
+    workspaceId: string,
+    userId: string,
+  ): Promise<WorkspaceMembershipRecord | null> {
+    const [membership] = await db
+      .select()
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, workspaceId),
+          eq(workspaceMembers.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    return membership ?? null;
+  }
+
+  async listWorkspacesForUser(userId: string): Promise<WorkspaceRecord[]> {
+    const records = await db
+      .select({
+        id: workspaces.id,
+        name: workspaces.name,
+        type: workspaces.type,
+        createdByUserId: workspaces.createdByUserId,
+        createdAt: workspaces.createdAt,
+        updatedAt: workspaces.updatedAt,
+      })
+      .from(workspaces)
+      .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, workspaces.id))
+      .where(eq(workspaceMembers.userId, userId));
+
+    return records;
+  }
+
+  async updatePreferences(
+    workspaceId: string,
+    preferences: Partial<WorkspacePreferencesInput>,
+  ): Promise<WorkspacePreferenceRecord> {
+    const [record] = await db
+      .update(workspacePreferences)
+      .set({ ...preferences, updatedAt: new Date() })
+      .where(eq(workspacePreferences.workspaceId, workspaceId))
+      .returning();
+
+    if (!record) {
+      throw new Error("Workspace preferences do not exist.");
+    }
+
+    return record;
+  }
+
+  async createInvitation(
+    input: CreateInvitationRecordInput,
+  ): Promise<WorkspaceInvitationRecord> {
+    const [record] = await db
+      .insert(workspaceInvitations)
+      .values(input)
+      .returning({
+        id: workspaceInvitations.id,
+        workspaceId: workspaceInvitations.workspaceId,
+        invitedEmail: workspaceInvitations.invitedEmail,
+        role: workspaceInvitations.role,
+        invitedByUserId: workspaceInvitations.invitedByUserId,
+        acceptedByUserId: workspaceInvitations.acceptedByUserId,
+        expiresAt: workspaceInvitations.expiresAt,
+        usedAt: workspaceInvitations.usedAt,
+        revokedAt: workspaceInvitations.revokedAt,
+        createdAt: workspaceInvitations.createdAt,
+      });
+
+    if (!record) {
+      throw new Error("Failed to create invitation.");
+    }
+
+    return record;
+  }
+
+  async revokeInvitation(workspaceId: string, invitationId: string): Promise<boolean> {
+    const revoked = await db
+      .update(workspaceInvitations)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(workspaceInvitations.workspaceId, workspaceId),
+          eq(workspaceInvitations.id, invitationId),
+        ),
+      )
+      .returning({ id: workspaceInvitations.id });
+
+    return revoked.length === 1;
+  }
+
+  async consumeInvitation(input: ConsumeInvitationInput): Promise<ConsumedInvitation | null> {
+    const digestPredicate =
+      input.matcher === "token"
+        ? neonSql`i.token_hash = ${input.hash}`
+        : neonSql`i.code_hash = ${input.hash}`;
+
+    // A single PostgreSQL statement locks the invitation, creates the membership,
+    // and consumes the invitation. A concurrent claim cannot produce two members
+    // or consume an invite without adding its membership.
+    const rows = (await neonSql`
+      WITH candidate AS (
+        SELECT i.id, i.workspace_id, i.role, i.invited_by_user_id
+        FROM workspace_invitation AS i
+        WHERE ${digestPredicate}
+          AND i.invited_email = ${input.email}
+          AND i.revoked_at IS NULL
+          AND i.used_at IS NULL
+          AND i.expires_at > NOW()
+        FOR UPDATE
+      ),
+      created_membership AS (
+        INSERT INTO workspace_member (workspace_id, user_id, role, invited_by_user_id, joined_at)
+        SELECT workspace_id, ${input.userId}, role, invited_by_user_id, NOW()
+        FROM candidate
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM workspace_member AS member
+          WHERE member.workspace_id = candidate.workspace_id
+            AND member.user_id = ${input.userId}
+        )
+        ON CONFLICT (workspace_id, user_id) DO NOTHING
+        RETURNING workspace_id
+      ),
+      consumed AS (
+        UPDATE workspace_invitation AS invitation
+        SET used_at = NOW(), accepted_by_user_id = ${input.userId}
+        WHERE invitation.id IN (SELECT id FROM candidate)
+          AND EXISTS (SELECT 1 FROM created_membership)
+        RETURNING invitation.workspace_id, invitation.role
+      )
+      SELECT workspace_id AS "workspaceId", role
+      FROM consumed;
+    `) as ConsumedInvitation[];
+
+    return rows[0] ?? null;
+  }
+}
