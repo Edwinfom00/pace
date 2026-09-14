@@ -36,15 +36,10 @@ export class DatabasePaceUserProfileRepository implements PaceUserProfileReposit
     userId: string,
     input: ValidatedYourPace,
   ): Promise<PaceUserProfileRecord> {
-    return db.transaction(async (transaction) => {
-      await transaction.insert(paceUserProfiles).values({ userId }).onConflictDoNothing();
-
-      await transaction
-        .update(users)
-        .set({ preferredLanguage: input.language })
-        .where(eq(users.id, userId));
-
-      const [profile] = await transaction
+    const [, , profiles] = await db.batch([
+      db.insert(paceUserProfiles).values({ userId }).onConflictDoNothing(),
+      db.update(users).set({ preferredLanguage: input.language }).where(eq(users.id, userId)),
+      db
         .update(paceUserProfiles)
         .set({
           countryCode: input.country,
@@ -56,13 +51,15 @@ export class DatabasePaceUserProfileRepository implements PaceUserProfileReposit
           updatedAt: new Date(),
         })
         .where(eq(paceUserProfiles.userId, userId))
-        .returning();
+        .returning(),
+    ]);
 
-      if (!profile) {
-        throw new Error("Pace user profile could not be updated.");
-      }
+    const [profile] = profiles;
 
-      return profile;
-    });
+    if (!profile) {
+      throw new Error("Pace user profile could not be updated.");
+    }
+
+    return profile;
   }
 }
