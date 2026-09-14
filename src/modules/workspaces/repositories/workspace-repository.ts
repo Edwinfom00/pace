@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { db, neonSql } from "@/db/client";
 import {
@@ -10,6 +10,7 @@ import {
 
 import type {
   WorkspaceInvitationRecord,
+  WorkspaceMemberContext,
   WorkspaceMembershipRecord,
   WorkspacePreferenceRecord,
   WorkspacePreferencesInput,
@@ -48,6 +49,8 @@ export interface ConsumedInvitation {
 export interface WorkspaceRepository {
   createWorkspaceWithOwner(input: CreateWorkspaceWithOwnerInput): Promise<void>;
   findMembership(workspaceId: string, userId: string): Promise<WorkspaceMembershipRecord | null>;
+  findMemberContext(workspaceId: string, userId: string): Promise<WorkspaceMemberContext | null>;
+  findDefaultMemberContext(userId: string): Promise<WorkspaceMemberContext | null>;
   listWorkspacesForUser(userId: string): Promise<WorkspaceRecord[]>;
   updatePreferences(
     workspaceId: string,
@@ -86,6 +89,32 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
       .limit(1);
 
     return membership ?? null;
+  }
+
+  async findMemberContext(
+    workspaceId: string,
+    userId: string,
+  ): Promise<WorkspaceMemberContext | null> {
+    const [record] = await db
+      .select({ workspace: workspaces, membership: workspaceMembers, preferences: workspacePreferences })
+      .from(workspaces)
+      .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, workspaces.id))
+      .innerJoin(workspacePreferences, eq(workspacePreferences.workspaceId, workspaces.id))
+      .where(and(eq(workspaces.id, workspaceId), eq(workspaceMembers.userId, userId)))
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findDefaultMemberContext(userId: string): Promise<WorkspaceMemberContext | null> {
+    const [record] = await db
+      .select({ workspace: workspaces, membership: workspaceMembers, preferences: workspacePreferences })
+      .from(workspaces)
+      .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, workspaces.id))
+      .innerJoin(workspacePreferences, eq(workspacePreferences.workspaceId, workspaces.id))
+      .where(eq(workspaceMembers.userId, userId))
+      .orderBy(asc(workspaces.createdAt), asc(workspaces.id))
+      .limit(1);
+    return record ?? null;
   }
 
   async listWorkspacesForUser(userId: string): Promise<WorkspaceRecord[]> {

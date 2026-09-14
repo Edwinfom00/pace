@@ -1,5 +1,6 @@
 import type {
   WorkspaceInvitationRecord,
+  WorkspaceMemberContext,
   WorkspaceMembershipRecord,
   WorkspacePreferenceRecord,
   WorkspaceRecord,
@@ -34,6 +35,24 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
 
   async findMembership(workspaceId: string, userId: string): Promise<WorkspaceMembershipRecord | null> {
     return this.memberships.get(this.membershipKey(workspaceId, userId)) ?? null;
+  }
+
+  async findMemberContext(
+    workspaceId: string,
+    userId: string,
+  ): Promise<WorkspaceMemberContext | null> {
+    const membership = await this.findMembership(workspaceId, userId);
+    const workspace = this.workspaces.get(workspaceId);
+    const preferences = this.preferences.get(workspaceId);
+    return membership && workspace && preferences ? { workspace, membership, preferences } : null;
+  }
+
+  async findDefaultMemberContext(userId: string): Promise<WorkspaceMemberContext | null> {
+    const workspaceId = [...this.memberships.values()]
+      .filter((membership) => membership.userId === userId)
+      .map((membership) => membership.workspaceId)
+      .sort()[0];
+    return workspaceId ? this.findMemberContext(workspaceId, userId) : null;
   }
 
   async listWorkspacesForUser(userId: string): Promise<WorkspaceRecord[]> {

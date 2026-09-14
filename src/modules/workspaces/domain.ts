@@ -33,6 +33,13 @@ export interface WorkspaceMembershipRecord {
   joinedAt: Date;
 }
 
+/** A server-resolved tenant context. Never construct this from browser input. */
+export interface WorkspaceMemberContext {
+  workspace: WorkspaceRecord;
+  membership: WorkspaceMembershipRecord;
+  preferences: WorkspacePreferenceRecord;
+}
+
 export interface WorkspaceInvitationRecord {
   id: string;
   workspaceId: string;

@@ -14,7 +14,10 @@ import type {
 } from "@/modules/ledger/repositories/ledger-repository";
 
 export const SYSTEM_GROCERIES_ID = "00000000-0000-4000-8000-000000000001";
+export const SYSTEM_TRANSPORT_ID = "00000000-0000-4000-8000-000000000003";
+export const SYSTEM_OTHER_EXPENSE_ID = "00000000-0000-4000-8000-000000000009";
 export const SYSTEM_SALARY_ID = "00000000-0000-4000-8000-000000000101";
+export const SYSTEM_OTHER_INCOME_ID = "00000000-0000-4000-8000-000000000104";
 
 export class InMemoryLedgerRepository implements LedgerRepository {
   readonly accounts = new Map<string, LedgerAccountRecord>();
@@ -42,6 +45,39 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       kind: "INCOME",
       isSystem: true,
       systemKey: "income:salary",
+      createdByUserId: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    this.categories.set(SYSTEM_TRANSPORT_ID, {
+      id: SYSTEM_TRANSPORT_ID,
+      workspaceId: null,
+      name: "Transport",
+      kind: "EXPENSE",
+      isSystem: true,
+      systemKey: "expense:transport",
+      createdByUserId: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    this.categories.set(SYSTEM_OTHER_EXPENSE_ID, {
+      id: SYSTEM_OTHER_EXPENSE_ID,
+      workspaceId: null,
+      name: "Other expense",
+      kind: "EXPENSE",
+      isSystem: true,
+      systemKey: "expense:other",
+      createdByUserId: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    this.categories.set(SYSTEM_OTHER_INCOME_ID, {
+      id: SYSTEM_OTHER_INCOME_ID,
+      workspaceId: null,
+      name: "Other income",
+      kind: "INCOME",
+      isSystem: true,
+      systemKey: "income:other",
       createdByUserId: null,
       createdAt: now,
       updatedAt: now,
