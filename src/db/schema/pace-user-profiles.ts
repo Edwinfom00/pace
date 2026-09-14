@@ -39,6 +39,13 @@ export const paceUserProfiles = pgTable(
     timezone: text("timezone"),
     /** Reserved before creation so retries can only ever use one workspace id. */
     onboardingWorkspaceId: text("onboarding_workspace_id"),
+    /** Steps deliberately skipped or not applicable; never an authorization claim. */
+    onboardingSkippedSteps: integer("onboarding_skipped_steps")
+      .array()
+      .notNull()
+      .default(sql`'{}'::integer[]`),
+    /** Non-secret server reference for a Step 3 invitation; the credential is never stored here. */
+    onboardingInvitationId: text("onboarding_invitation_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -29,6 +29,8 @@ function profile(status: PaceUserProfileRecord["onboardingStatus"]): PaceUserPro
         currency: null,
         timezone: null,
         onboardingWorkspaceId: null,
+        onboardingSkippedSteps: [],
+        onboardingInvitationId: null,
         createdAt: new Date("2026-01-01"),
         updatedAt: new Date("2026-01-01"),
       };
@@ -40,6 +42,15 @@ function profile(status: PaceUserProfileRecord["onboardingStatus"]): PaceUserPro
       throw new Error("Not used by post-auth resolver tests.");
     },
     async saveWorkspaceStep() {
+      throw new Error("Not used by post-auth resolver tests.");
+    },
+    async saveTogetherStep() {
+      throw new Error("Not used by post-auth resolver tests.");
+    },
+    async claimOnboardingInvitationId() {
+      throw new Error("Not used by post-auth resolver tests.");
+    },
+    async clearOnboardingInvitationId() {
       throw new Error("Not used by post-auth resolver tests.");
     },
   };

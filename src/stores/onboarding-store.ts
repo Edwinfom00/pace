@@ -5,7 +5,12 @@ import { createJSONStorage, persist, type PersistStorage } from "zustand/middlew
 import { createStore } from "zustand/vanilla";
 
 import type { OnboardingServerSnapshot } from "@/modules/onboarding/server-snapshot";
-import type { OnboardingStep, WorkspaceDraft, YourPaceDraft } from "@/modules/onboarding/profile-domain";
+import type {
+  OnboardingInviteMethod,
+  OnboardingStep,
+  WorkspaceDraft,
+  YourPaceDraft,
+} from "@/modules/onboarding/profile-domain";
 
 export const ONBOARDING_STORE_KEY = "pace:onboarding:v1";
 
@@ -13,7 +18,7 @@ export type OnboardingDraftState = {
   currentStep: OnboardingStep;
   yourPace: YourPaceDraft;
   workspace: WorkspaceDraft;
-  together: { skipped: boolean };
+  together: { skipped: boolean; inviteMethod: OnboardingInviteMethod };
   connect: { selectedMethod: string };
   preferences: { goals: string[]; proactivity: string };
 };
@@ -22,6 +27,7 @@ export type OnboardingStore = OnboardingDraftState & {
   hydrated: boolean;
   setYourPace: (values: Partial<YourPaceDraft>) => void;
   setWorkspace: (values: Partial<WorkspaceDraft>) => void;
+  setTogether: (values: Partial<OnboardingDraftState["together"]>) => void;
   setCurrentStep: (step: OnboardingStep) => void;
   reset: () => void;
   hydrateFromServer: (snapshot: OnboardingServerSnapshot) => void;
@@ -32,7 +38,7 @@ export const emptyOnboardingDraft: OnboardingDraftState = {
   currentStep: 1,
   yourPace: { country: "", language: "en", currency: "", timezone: "" },
   workspace: { type: "", name: "", nameManuallyEdited: false },
-  together: { skipped: false },
+  together: { skipped: false, inviteMethod: "email" },
   connect: { selectedMethod: "" },
   preferences: { goals: [], proactivity: "" },
 };
@@ -64,6 +70,9 @@ export function mergeOnboardingServerSnapshot(
           timezone: mergeField("timezone"),
         },
     workspace: serverHasCompletedWorkspace ? server.workspace : local.workspace,
+    together: server.currentStep >= 3
+      ? { ...local.together, skipped: server.together.skipped }
+      : local.together,
   };
 }
 
@@ -81,6 +90,8 @@ function makeStore(options: StoreOptions = {}) {
         set((state) => ({ yourPace: { ...state.yourPace, ...values } })),
       setWorkspace: (values) =>
         set((state) => ({ workspace: { ...state.workspace, ...values } })),
+      setTogether: (values) =>
+        set((state) => ({ together: { ...state.together, ...values } })),
       setCurrentStep: (currentStep) => set({ currentStep }),
       reset: () => set({ ...emptyOnboardingDraft, hydrated: true }),
       hydrateFromServer: (snapshot) =>

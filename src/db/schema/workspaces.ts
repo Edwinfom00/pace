@@ -97,7 +97,8 @@ export const workspaceInvitations = pgTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    invitedEmail: varchar("invited_email", { length: 320 }).notNull(),
+    /** Null means a secure, shareable link that is not email-restricted. */
+    invitedEmail: varchar("invited_email", { length: 320 }),
     role: workspaceRole("role").notNull(),
     tokenHash: varchar("token_hash", { length: 64 }).notNull(),
     codeHash: varchar("code_hash", { length: 64 }).notNull(),

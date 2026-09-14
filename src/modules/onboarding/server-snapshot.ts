@@ -6,6 +6,7 @@ export type OnboardingServerSnapshot = {
   currentStep: OnboardingStep;
   yourPace: YourPaceDraft;
   workspace: WorkspaceDraft;
+  together: { skipped: boolean; hasExistingInvitation: boolean };
 };
 
 export function createOnboardingServerSnapshot(
@@ -29,5 +30,9 @@ export function createOnboardingServerSnapshot(
     workspace: workspace
       ? { type: workspace.type, name: workspace.name, nameManuallyEdited: true }
       : { type: "", name: "", nameManuallyEdited: false },
+    together: {
+      skipped: profile.onboardingSkippedSteps.includes(3),
+      hasExistingInvitation: Boolean(profile.onboardingInvitationId),
+    },
   };
 }

@@ -12,15 +12,26 @@ import {
 import {
   suggestedWorkspaceName,
   withSelectedWorkspaceType,
+  onboardingInvitationSchema,
   workspaceStepSchema,
   type PaceUserProfileRecord,
   type ValidatedYourPace,
 } from "@/modules/onboarding/profile-domain";
-import { resolveOnboardingRoute, resolveOnboardingViewedStep } from "@/modules/onboarding/route-state";
+import {
+  resolveOnboardingRoute,
+  resolveOnboardingViewedStep,
+  resolveOnboardingWorkspaceStep,
+} from "@/modules/onboarding/route-state";
 import { createOnboardingServerSnapshot } from "@/modules/onboarding/server-snapshot";
-import { persistWorkspaceStep, persistYourPaceStep } from "@/modules/onboarding/server";
+import {
+  createOnboardingInvitation,
+  persistTogetherStep,
+  persistWorkspaceStep,
+  persistYourPaceStep,
+} from "@/modules/onboarding/server";
 import type { PaceUserProfileRepository } from "@/modules/onboarding/repositories/pace-user-profile-repository";
 import { getOnboardingTranslations } from "@/i18n/onboarding-messages";
+import { getPaceCopyState } from "@/components/pace/shared/pace-copy-field";
 import { WorkspaceService } from "@/modules/workspaces/workspace-service";
 import {
   createOnboardingStore,
@@ -44,6 +55,8 @@ function profile(overrides: Partial<PaceUserProfileRecord> = {}): PaceUserProfil
     currency: null,
     timezone: null,
     onboardingWorkspaceId: null,
+    onboardingSkippedSteps: [],
+    onboardingInvitationId: null,
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     ...overrides,
@@ -73,12 +86,36 @@ function repository(record = profile()): PaceUserProfileRepository {
       });
       return record;
     },
-    async saveWorkspaceStep(_userId, workspaceId) {
+    async saveWorkspaceStep(_userId, workspaceId, progress) {
       record = profile({
         ...record,
         onboardingStatus: "IN_PROGRESS",
-        onboardingStep: Math.max(record.onboardingStep ?? 1, 3),
+        onboardingStep: progress.nextStep,
         onboardingWorkspaceId: workspaceId,
+        onboardingSkippedSteps: progress.skipTogether ? [3] : [],
+      });
+      return record;
+    },
+    async saveTogetherStep(_userId, skipped) {
+      record = profile({
+        ...record,
+        onboardingStatus: "IN_PROGRESS",
+        onboardingStep: 4,
+        onboardingSkippedSteps: skipped ? [3] : [],
+      });
+      return record;
+    },
+    async claimOnboardingInvitationId(_userId, candidateInvitationId) {
+      record = profile({
+        ...record,
+        onboardingInvitationId: record.onboardingInvitationId ?? candidateInvitationId,
+      });
+      return record;
+    },
+    async clearOnboardingInvitationId(_userId, invitationId) {
+      record = profile({
+        ...record,
+        onboardingInvitationId: record.onboardingInvitationId === invitationId ? null : record.onboardingInvitationId,
       });
       return record;
     },
@@ -116,6 +153,7 @@ test("server hydration creates a typed Step 1 resume snapshot", () => {
     currentStep: 2,
     yourPace: { country: "CM", language: "fr", currency: "XAF", timezone: "Africa/Douala" },
     workspace: { type: "", name: "", nameManuallyEdited: false },
+    together: { skipped: false, hasExistingInvitation: false },
   });
 });
 
@@ -129,6 +167,7 @@ test("server-completed Step 1 values override stale persisted browser state", ()
     currentStep: 2,
     yourPace: { country: "CM", language: "fr", currency: "XAF", timezone: "Africa/Douala" },
     workspace: { type: "", name: "", nameManuallyEdited: false },
+    together: { skipped: false, hasExistingInvitation: false },
   });
 
   assert.equal(merged.currentStep, 2);
@@ -152,6 +191,7 @@ test("the versioned Zustand store restores a safe Step 1 draft without auth data
   const first = createOnboardingStore({ storage, skipHydration: false });
   first.getState().setYourPace({ country: "CM", language: "fr", currency: "XAF", timezone: "Africa/Douala" });
   first.getState().setWorkspace({ type: "COUPLE", name: "Our House", nameManuallyEdited: true });
+  first.getState().setTogether({ inviteMethod: "link", skipped: false });
   first.getState().setCurrentStep(2);
 
   const second = createOnboardingStore({ storage, skipHydration: false });
@@ -162,6 +202,7 @@ test("the versioned Zustand store restores a safe Step 1 draft without auth data
   const serialized = records.get(ONBOARDING_STORE_KEY) ?? "";
   assert.match(serialized, /"country":"CM"/);
   assert.match(serialized, /"name":"Our House"/);
+  assert.match(serialized, /"inviteMethod":"link"/);
   assert.doesNotMatch(serialized, /token|session|credential|password/i);
 });
 
@@ -202,6 +243,7 @@ test("language changes immediately in the draft and Step 1 progresses to 2 on pe
     currentStep: 2,
     yourPace: input,
     workspace: { type: "", name: "", nameManuallyEdited: false },
+    together: { skipped: false, hasExistingInvitation: false },
   });
   assert.equal(saved.onboardingStep, 2);
   assert.equal(store.getState().currentStep, 2);
@@ -267,6 +309,110 @@ test("workspace Step 2 persistence is idempotent, creates an owner, and advances
   );
 });
 
+test("PERSONAL skips Together in server state and cannot be forced back to Step 3", async () => {
+  const profiles = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: 2,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+  }));
+  const workspaces = new InMemoryWorkspaceRepository();
+  const service = new WorkspaceService(workspaces, "test-pepper");
+  const persisted = await persistWorkspaceStep(actor, { type: "PERSONAL", name: "Private" }, profiles, service);
+
+  assert.equal(persisted.profile.onboardingStep, 4);
+  assert.deepEqual(persisted.profile.onboardingSkippedSteps, [3]);
+  assert.equal(resolveOnboardingWorkspaceStep(3, "PERSONAL"), 4);
+  assert.equal(resolveOnboardingWorkspaceStep(3, "COUPLE"), 3);
+});
+
+test("shared workspace types create MEMBER onboarding invitations and Step 3 can be skipped", async () => {
+  for (const type of ["COUPLE", "FAMILY", "CUSTOM"] as const) {
+    const profiles = repository(profile({
+      onboardingStatus: "IN_PROGRESS",
+      onboardingStep: 2,
+      countryCode: "CM",
+      currency: "XAF",
+      timezone: "Africa/Douala",
+    }));
+    const workspaces = new InMemoryWorkspaceRepository();
+    const service = new WorkspaceService(workspaces, "test-pepper");
+    await persistWorkspaceStep(actor, { type, name: `${type} space` }, profiles, service);
+
+    const created = await createOnboardingInvitation(actor, { method: "email", email: "partner@pace.test" }, profiles, service, () => `${type}-invite`);
+    assert.equal(created.kind, "created");
+    const invitation = created.kind === "created"
+      ? await workspaces.findInvitationById(`${type}-invite`)
+      : null;
+    assert.equal(invitation?.role, "MEMBER");
+    assert.equal(invitation?.invitedEmail, "partner@pace.test");
+
+    const completed = await persistTogetherStep(actor, profiles, service);
+    assert.equal(completed.onboardingStep, 4);
+    assert.deepEqual(completed.onboardingSkippedSteps, []);
+  }
+});
+
+test("onboarding invitation creation is idempotent and raw credentials never enter persisted state", async () => {
+  const profiles = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: 2,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+  }));
+  const workspaces = new InMemoryWorkspaceRepository();
+  const service = new WorkspaceService(workspaces, "test-pepper");
+  await persistWorkspaceStep(actor, { type: "COUPLE", name: "House" }, profiles, service);
+
+  const [first, second] = await Promise.all([
+    createOnboardingInvitation(actor, { method: "link" }, profiles, service, () => "invite-one"),
+    createOnboardingInvitation(actor, { method: "link" }, profiles, service, () => "invite-two"),
+  ]);
+  assert.equal([...workspaces.invitations.values()].length, 1);
+  assert.equal([first.kind, second.kind].filter((kind) => kind === "created").length, 1);
+  assert.equal([first.kind, second.kind].filter((kind) => kind === "rotation-required").length, 1);
+
+  const storage = createJSONStorage<OnboardingDraftState>(() => ({
+    getItem: () => null,
+    setItem: () => undefined,
+    removeItem: () => undefined,
+  }));
+  const store = createOnboardingStore({ storage, skipHydration: false });
+  store.getState().setTogether({ inviteMethod: "link" });
+  const serialized = JSON.stringify(store.getState());
+  assert.doesNotMatch(serialized, /invite-one|invite-two|shortCode|inviteUrlToken/i);
+});
+
+test("email validation is strict and skipping creates no invitation before advancing", async () => {
+  assert.equal(onboardingInvitationSchema.safeParse({ method: "email", email: "not-an-email" }).success, false);
+  assert.equal(onboardingInvitationSchema.safeParse({ method: "email", email: "partner@pace.test" }).success, true);
+  assert.equal(onboardingInvitationSchema.safeParse({ method: "link" }).success, true);
+
+  const profiles = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: 2,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+  }));
+  const workspaces = new InMemoryWorkspaceRepository();
+  const service = new WorkspaceService(workspaces, "test-pepper");
+  await persistWorkspaceStep(actor, { type: "FAMILY", name: "Family" }, profiles, service);
+  const completed = await persistTogetherStep(actor, profiles, service);
+
+  assert.equal([...workspaces.invitations.values()].length, 0);
+  assert.equal(completed.onboardingStep, 4);
+  assert.deepEqual(completed.onboardingSkippedSteps, [3]);
+});
+
+test("copy fields expose copied and failed feedback only for their current credential", () => {
+  assert.equal(getPaceCopyState("K7PX-4M2Q", "K7PX-4M2Q", null), "copied");
+  assert.equal(getPaceCopyState("K7PX-4M2Q", null, "K7PX-4M2Q"), "error");
+  assert.equal(getPaceCopyState("fresh-value", "K7PX-4M2Q", null), "idle");
+});
+
 test("Back selects a view without regressing the completed progress and workspace messages exist in EN, FR, and DE", () => {
   assert.equal(resolveOnboardingViewedStep("1", 2), 1);
   assert.equal(resolveOnboardingViewedStep("3", 2), 2);
@@ -277,5 +423,7 @@ test("Back selects a view without regressing the completed progress and workspac
     assert.ok(t("onboarding.workspace.title").length > 0);
     assert.ok(t("onboarding.workspace.types.couple.description").length > 0);
     assert.ok(t("onboarding.workspace.name.helper").length > 0);
+    assert.ok(t("onboarding.together.title").length > 0);
+    assert.ok(t("onboarding.together.copy").length > 0);
   }
 });

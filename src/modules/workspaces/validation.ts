@@ -27,7 +27,7 @@ export const updateWorkspacePreferencesSchema = workspacePreferencesSchema.parti
 );
 
 export const createInvitationSchema = z.object({
-  email: z.string().trim().email().max(320).transform((value) => value.toLowerCase()),
+  email: z.string().trim().email().max(320).transform((value) => value.toLowerCase()).optional(),
   role: z.enum(WORKSPACE_ROLES).refine((role) => role !== "OWNER", {
     message: "An invitation cannot grant the OWNER role.",
   }),

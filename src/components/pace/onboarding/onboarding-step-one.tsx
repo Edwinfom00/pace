@@ -135,6 +135,10 @@ export function OnboardingStepOne({ initialSnapshot }: StepOneProps) {
         currentStep: result.currentStep,
         yourPace: result.data,
         workspace: useOnboardingStore.getState().workspace,
+        together: {
+          skipped: useOnboardingStore.getState().together.skipped,
+          hasExistingInvitation: false,
+        },
       });
       router.push("/onboarding?step=2");
     });

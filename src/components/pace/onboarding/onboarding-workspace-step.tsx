@@ -128,7 +128,11 @@ export function OnboardingWorkspaceStep({ initialSnapshot }: WorkspaceStepProps)
           type: result.errors.type ? t("onboarding.validation.workspaceType") : undefined,
           name: result.errors.name ? t("onboarding.validation.workspaceName") : undefined,
         });
-        setServerError(t("onboarding.validation.general"));
+        setServerError(
+          result.code === "WORKSPACE_CANNOT_BECOME_PERSONAL"
+            ? t("onboarding.workspace.personalBlocked")
+            : t("onboarding.validation.general"),
+        );
         return;
       }
 
@@ -137,8 +141,12 @@ export function OnboardingWorkspaceStep({ initialSnapshot }: WorkspaceStepProps)
         currentStep: result.currentStep,
         yourPace: current.yourPace,
         workspace: { ...result.data, nameManuallyEdited: true },
+        together: {
+          skipped: result.data.type === "PERSONAL",
+          hasExistingInvitation: false,
+        },
       });
-      router.push("/onboarding?step=3");
+      router.push(`/onboarding?step=${result.currentStep}`);
     });
   }
 

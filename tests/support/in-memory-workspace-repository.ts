@@ -84,6 +84,26 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
       .filter((workspace): workspace is WorkspaceRecord => Boolean(workspace));
   }
 
+  async countMembers(workspaceId: string): Promise<number> {
+    return [...this.memberships.values()].filter((membership) => membership.workspaceId === workspaceId).length;
+  }
+
+  async hasActiveInvitations(workspaceId: string): Promise<boolean> {
+    const now = new Date();
+    return [...this.invitations.values()].some(
+      (invitation) =>
+        invitation.workspaceId === workspaceId &&
+        !invitation.revokedAt &&
+        !invitation.usedAt &&
+        invitation.expiresAt > now,
+    );
+  }
+
+  async findInvitationById(invitationId: string): Promise<WorkspaceInvitationRecord | null> {
+    const invitation = this.invitations.get(invitationId);
+    return invitation ? this.toInvitationRecord(invitation) : null;
+  }
+
   async updateWorkspace(
     workspaceId: string,
     values: Pick<WorkspaceRecord, "name" | "type">,
@@ -132,10 +152,11 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
     });
     if (
       !invitation ||
-      invitation.invitedEmail !== input.email ||
+      (invitation.invitedEmail !== null && invitation.invitedEmail !== input.email) ||
       invitation.revokedAt ||
       invitation.usedAt ||
-      invitation.expiresAt <= new Date()
+      invitation.expiresAt <= new Date() ||
+      this.workspaces.get(invitation.workspaceId)?.type === "PERSONAL"
     ) {
       return null;
     }

@@ -33,3 +33,17 @@ export class ConflictError extends Error {
     this.name = "ConflictError";
   }
 }
+
+/**
+ * A typed business-rule conflict. API consumers can present translated,
+ * context-specific guidance without inspecting an English error message.
+ */
+export class DomainConflictError extends ConflictError {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "DomainConflictError";
+  }
+}

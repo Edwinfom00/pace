@@ -9,7 +9,14 @@ export interface PaceUserProfileRepository {
   getOrCreate(userId: string): Promise<PaceUserProfileRecord>;
   saveYourPaceStep(userId: string, input: ValidatedYourPace): Promise<PaceUserProfileRecord>;
   claimOnboardingWorkspaceId(userId: string, candidateWorkspaceId: string): Promise<PaceUserProfileRecord>;
-  saveWorkspaceStep(userId: string, workspaceId: string): Promise<PaceUserProfileRecord>;
+  saveWorkspaceStep(
+    userId: string,
+    workspaceId: string,
+    progress: { nextStep: 3 | 4; skipTogether: boolean },
+  ): Promise<PaceUserProfileRecord>;
+  saveTogetherStep(userId: string, skipped: boolean): Promise<PaceUserProfileRecord>;
+  claimOnboardingInvitationId(userId: string, candidateInvitationId: string): Promise<PaceUserProfileRecord>;
+  clearOnboardingInvitationId(userId: string, invitationId: string): Promise<PaceUserProfileRecord>;
 }
 
 
@@ -86,13 +93,21 @@ export class DatabasePaceUserProfileRepository implements PaceUserProfileReposit
     return profile;
   }
 
-  async saveWorkspaceStep(userId: string, workspaceId: string): Promise<PaceUserProfileRecord> {
+  async saveWorkspaceStep(
+    userId: string,
+    workspaceId: string,
+    progress: { nextStep: 3 | 4; skipTogether: boolean },
+  ): Promise<PaceUserProfileRecord> {
     const [profile] = await db
       .update(paceUserProfiles)
       .set({
         onboardingWorkspaceId: workspaceId,
         onboardingStatus: "IN_PROGRESS",
-        onboardingStep: sql<number>`greatest(coalesce(${paceUserProfiles.onboardingStep}, 1), 3)`,
+        // Switching a workspace from PERSONAL back to shared reopens Step 3.
+        onboardingStep: progress.nextStep,
+        onboardingSkippedSteps: progress.skipTogether
+          ? sql<number[]>`array_append(array_remove(coalesce(${paceUserProfiles.onboardingSkippedSteps}, '{}'::integer[]), 3), 3)`
+          : sql<number[]>`array_remove(coalesce(${paceUserProfiles.onboardingSkippedSteps}, '{}'::integer[]), 3)`,
         onboardingCompletedAt: null,
         updatedAt: new Date(),
       })
@@ -101,6 +116,70 @@ export class DatabasePaceUserProfileRepository implements PaceUserProfileReposit
 
     if (!profile) {
       throw new Error("Pace user profile could not save workspace progress.");
+    }
+
+    return profile;
+  }
+
+  async saveTogetherStep(userId: string, skipped: boolean): Promise<PaceUserProfileRecord> {
+    const [profile] = await db
+      .update(paceUserProfiles)
+      .set({
+        onboardingStatus: "IN_PROGRESS",
+        onboardingStep: 4,
+        onboardingSkippedSteps: skipped
+          ? sql<number[]>`array_append(array_remove(coalesce(${paceUserProfiles.onboardingSkippedSteps}, '{}'::integer[]), 3), 3)`
+          : sql<number[]>`array_remove(coalesce(${paceUserProfiles.onboardingSkippedSteps}, '{}'::integer[]), 3)`,
+        onboardingCompletedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(paceUserProfiles.userId, userId))
+      .returning();
+
+    if (!profile) {
+      throw new Error("Pace user profile could not save Together progress.");
+    }
+
+    return profile;
+  }
+
+  async claimOnboardingInvitationId(
+    userId: string,
+    candidateInvitationId: string,
+  ): Promise<PaceUserProfileRecord> {
+    const [profile] = await db
+      .update(paceUserProfiles)
+      .set({
+        // A compare-and-set leaves one server-owned invitation reference even
+        // when duplicate clicks arrive concurrently. It never stores a secret.
+        onboardingInvitationId: sql<string>`coalesce(${paceUserProfiles.onboardingInvitationId}, ${candidateInvitationId})`,
+        updatedAt: new Date(),
+      })
+      .where(eq(paceUserProfiles.userId, userId))
+      .returning();
+
+    if (!profile) {
+      throw new Error("Pace user profile could not reserve an invitation.");
+    }
+
+    return profile;
+  }
+
+  async clearOnboardingInvitationId(
+    userId: string,
+    invitationId: string,
+  ): Promise<PaceUserProfileRecord> {
+    const [profile] = await db
+      .update(paceUserProfiles)
+      .set({
+        onboardingInvitationId: sql<string>`case when ${paceUserProfiles.onboardingInvitationId} = ${invitationId} then null else ${paceUserProfiles.onboardingInvitationId} end`,
+        updatedAt: new Date(),
+      })
+      .where(eq(paceUserProfiles.userId, userId))
+      .returning();
+
+    if (!profile) {
+      throw new Error("Pace user profile could not rotate its invitation.");
     }
 
     return profile;

@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
 
 import { db, neonSql } from "@/db/client";
 import {
@@ -26,7 +26,7 @@ export interface CreateWorkspaceWithOwnerInput {
 export interface CreateInvitationRecordInput {
   id: string;
   workspaceId: string;
-  invitedEmail: string;
+  invitedEmail: string | null;
   role: WorkspaceMembershipRecord["role"];
   tokenHash: string;
   codeHash: string;
@@ -54,6 +54,9 @@ export interface WorkspaceRepository {
   findMemberContextBySlug(slug: string, userId: string): Promise<WorkspaceMemberContext | null>;
   findDefaultMemberContext(userId: string): Promise<WorkspaceMemberContext | null>;
   listWorkspacesForUser(userId: string): Promise<WorkspaceRecord[]>;
+  countMembers(workspaceId: string): Promise<number>;
+  hasActiveInvitations(workspaceId: string): Promise<boolean>;
+  findInvitationById(invitationId: string): Promise<WorkspaceInvitationRecord | null>;
   updateWorkspace(
     workspaceId: string,
     values: Pick<WorkspaceRecord, "name" | "type">,
@@ -165,6 +168,49 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
     return records;
   }
 
+  async countMembers(workspaceId: string): Promise<number> {
+    const [result] = await db
+      .select({ value: count() })
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.workspaceId, workspaceId));
+    return Number(result?.value ?? 0);
+  }
+
+  async hasActiveInvitations(workspaceId: string): Promise<boolean> {
+    const [result] = await db
+      .select({ value: count() })
+      .from(workspaceInvitations)
+      .where(
+        and(
+          eq(workspaceInvitations.workspaceId, workspaceId),
+          isNull(workspaceInvitations.revokedAt),
+          isNull(workspaceInvitations.usedAt),
+          gt(workspaceInvitations.expiresAt, new Date()),
+        ),
+      );
+    return Number(result?.value ?? 0) > 0;
+  }
+
+  async findInvitationById(invitationId: string): Promise<WorkspaceInvitationRecord | null> {
+    const [invitation] = await db
+      .select({
+        id: workspaceInvitations.id,
+        workspaceId: workspaceInvitations.workspaceId,
+        invitedEmail: workspaceInvitations.invitedEmail,
+        role: workspaceInvitations.role,
+        invitedByUserId: workspaceInvitations.invitedByUserId,
+        acceptedByUserId: workspaceInvitations.acceptedByUserId,
+        expiresAt: workspaceInvitations.expiresAt,
+        usedAt: workspaceInvitations.usedAt,
+        revokedAt: workspaceInvitations.revokedAt,
+        createdAt: workspaceInvitations.createdAt,
+      })
+      .from(workspaceInvitations)
+      .where(eq(workspaceInvitations.id, invitationId))
+      .limit(1);
+    return invitation ?? null;
+  }
+
   async updateWorkspace(
     workspaceId: string,
     values: Pick<WorkspaceRecord, "name" | "type">,
@@ -253,8 +299,10 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
       WITH candidate AS (
         SELECT i.id, i.workspace_id, i.role, i.invited_by_user_id
         FROM workspace_invitation AS i
+        INNER JOIN workspace AS workspace ON workspace.id = i.workspace_id
         WHERE ${digestPredicate}
-          AND i.invited_email = ${input.email}
+          AND workspace.type <> 'PERSONAL'
+          AND (i.invited_email IS NULL OR i.invited_email = ${input.email})
           AND i.revoked_at IS NULL
           AND i.used_at IS NULL
           AND i.expires_at > NOW()

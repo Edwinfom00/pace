@@ -1,6 +1,7 @@
 import { loginPathForReturnTo } from "@/modules/auth/post-auth-resolver";
 
 import { ONBOARDING_STEPS, type OnboardingStep, type PaceUserProfileRecord } from "./profile-domain";
+import type { WorkspaceType } from "../workspaces/domain";
 import type { PaceUserProfileRepository } from "./repositories/pace-user-profile-repository";
 
 export type OnboardingRouteResolution =
@@ -40,4 +41,12 @@ export function resolveOnboardingViewedStep(
   }
 
   return completedStep;
+}
+
+/** PERSONAL workspaces skip Together server-side; Step 3 is never rendered. */
+export function resolveOnboardingWorkspaceStep(
+  step: OnboardingStep,
+  workspaceType: WorkspaceType | undefined,
+): OnboardingStep {
+  return workspaceType === "PERSONAL" && step === 3 ? 4 : step;
 }

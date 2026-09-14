@@ -29,6 +29,9 @@ export type WorkspaceDraft = {
   nameManuallyEdited: boolean;
 };
 
+export const ONBOARDING_INVITE_METHODS = ["email", "link"] as const;
+export type OnboardingInviteMethod = (typeof ONBOARDING_INVITE_METHODS)[number];
+
 export const WORKSPACE_NAME_SUGGESTIONS: Record<WorkspaceType, string> = {
   PERSONAL: "Personal",
   COUPLE: "House",
@@ -65,6 +68,17 @@ export const workspaceStepSchema = z.object({
 
 export type ValidatedWorkspaceStep = z.infer<typeof workspaceStepSchema>;
 
+/** Browser input for Step 3. Workspace identity and role are server-resolved. */
+export const onboardingInvitationSchema = z.discriminatedUnion("method", [
+  z.object({
+    method: z.literal("email"),
+    email: z.string().trim().email().max(320).transform((value) => value.toLowerCase()),
+  }),
+  z.object({ method: z.literal("link") }),
+]);
+
+export type ValidatedOnboardingInvitation = z.infer<typeof onboardingInvitationSchema>;
+
 /** Pace-owned, resumable product state; never an authentication claim. */
 export interface PaceUserProfileRecord {
   userId: string;
@@ -76,6 +90,10 @@ export interface PaceUserProfileRecord {
   timezone: string | null;
   /** Server-issued idempotency key for the workspace created during Step 2. */
   onboardingWorkspaceId: string | null;
+  /** Server-owned progress metadata for deliberately skipped/not-applicable steps. */
+  onboardingSkippedSteps: number[];
+  /** A non-secret reference; raw invitation credentials are never persisted. */
+  onboardingInvitationId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

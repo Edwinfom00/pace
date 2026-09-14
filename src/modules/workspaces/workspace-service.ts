@@ -5,7 +5,12 @@ import {
   canAssignInvitationRole,
   type WorkspaceRole,
 } from "@/authorization/workspace-permissions";
-import { AuthorizationError, ConflictError, NotFoundError } from "@/authorization/errors";
+import {
+  AuthorizationError,
+  ConflictError,
+  DomainConflictError,
+  NotFoundError,
+} from "@/authorization/errors";
 
 import type { AuthenticatedActor } from "@/authorization/session";
 
@@ -38,7 +43,8 @@ export interface CreateWorkspaceInput {
 }
 
 export interface CreateInvitationInput {
-  email: string;
+  /** Omit the email only for a deliberately shareable invitation link. */
+  email?: string;
   role: WorkspaceRole;
   expiresInHours: number;
 }
@@ -52,6 +58,26 @@ export interface CreatedInvitation {
   invitation: WorkspaceInvitationRecord;
   inviteUrlToken: string;
   shortCode: string;
+}
+
+export const PERSONAL_WORKSPACE_CANNOT_INVITE = "PERSONAL_WORKSPACE_CANNOT_INVITE";
+export const WORKSPACE_CANNOT_BECOME_PERSONAL = "WORKSPACE_CANNOT_BECOME_PERSONAL";
+
+export class PersonalWorkspaceInviteError extends DomainConflictError {
+  constructor() {
+    super(PERSONAL_WORKSPACE_CANNOT_INVITE, "Personal workspaces cannot have invitations.");
+    this.name = "PersonalWorkspaceInviteError";
+  }
+}
+
+export class WorkspaceCannotBecomePersonalError extends DomainConflictError {
+  constructor() {
+    super(
+      WORKSPACE_CANNOT_BECOME_PERSONAL,
+      "A workspace with other members or active invitations cannot become personal.",
+    );
+    this.name = "WorkspaceCannotBecomePersonalError";
+  }
 }
 
 export class WorkspaceService {
@@ -86,6 +112,10 @@ export class WorkspaceService {
     if (context) {
       if (context.workspace.createdByUserId !== actor.userId || context.membership.role !== "OWNER") {
         throw new AuthorizationError("You cannot update this onboarding workspace.");
+      }
+
+      if (input.type === "PERSONAL") {
+        await this.assertCanBecomePersonal(workspaceId);
       }
 
       return this.repository.updateWorkspace(workspaceId, { name: input.name, type: input.type });
@@ -135,8 +165,19 @@ export class WorkspaceService {
     actor: AuthenticatedActor,
     workspaceId: string,
     input: CreateInvitationInput,
+    invitationId: string = randomUUID(),
   ): Promise<CreatedInvitation> {
-    const membership = await this.requireMembership(actor.userId, workspaceId);
+    const context = await this.repository.findMemberContext(workspaceId, actor.userId);
+
+    if (!context) {
+      throw new AuthorizationError("You are not a member of this workspace.");
+    }
+
+    if (context.workspace.type === "PERSONAL") {
+      throw new PersonalWorkspaceInviteError();
+    }
+
+    const { membership } = context;
     assertWorkspacePermission(membership.role, "create_invitation");
 
     if (!canAssignInvitationRole(membership.role, input.role)) {
@@ -145,9 +186,9 @@ export class WorkspaceService {
 
     const secrets = createInvitationSecrets();
     const invitation = await this.repository.createInvitation({
-      id: randomUUID(),
+      id: invitationId,
       workspaceId,
-      invitedEmail: input.email,
+      invitedEmail: input.email?.trim().toLowerCase() || null,
       role: input.role,
       tokenHash: hashInvitationSecret(this.invitationPepper, "token", secrets.token),
       codeHash: hashInvitationSecret(this.invitationPepper, "code", secrets.shortCode),
@@ -205,6 +246,17 @@ export class WorkspaceService {
     }
 
     return membership;
+  }
+
+  private async assertCanBecomePersonal(workspaceId: string): Promise<void> {
+    const [memberCount, hasActiveInvitations] = await Promise.all([
+      this.repository.countMembers(workspaceId),
+      this.repository.hasActiveInvitations(workspaceId),
+    ]);
+
+    if (memberCount > 1 || hasActiveInvitations) {
+      throw new WorkspaceCannotBecomePersonalError();
+    }
   }
 
   private async createWorkspaceWithId(

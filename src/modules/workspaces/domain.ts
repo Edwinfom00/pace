@@ -45,7 +45,8 @@ export interface WorkspaceMemberContext {
 export interface WorkspaceInvitationRecord {
   id: string;
   workspaceId: string;
-  invitedEmail: string;
+  /** Null only for a secure shareable link invitation. */
+  invitedEmail: string | null;
   role: WorkspaceRole;
   invitedByUserId: string;
   acceptedByUserId: string | null;

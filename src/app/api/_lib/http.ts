@@ -4,6 +4,7 @@ import {
   AuthenticationError,
   AuthorizationError,
   ConflictError,
+  DomainConflictError,
   NotFoundError,
 } from "@/authorization/errors";
 import { ImportParseError } from "@/modules/imports/parsers";
@@ -36,6 +37,10 @@ export function jsonError(error: unknown): Response {
 
   if (error instanceof ImportParseError) {
     return Response.json({ error: error.message, code: error.code }, { status: 400 });
+  }
+
+  if (error instanceof DomainConflictError) {
+    return Response.json({ error: error.message, code: error.code }, { status: error.status });
   }
 
   if (
