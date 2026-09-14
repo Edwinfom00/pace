@@ -8,6 +8,13 @@
       "when": 1789342925326,
       "tag": "0000_narrow_black_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789345415072,
+      "tag": "0001_left_nextwave",
+      "breakpoints": true
     }
   ]
 }

@@ -8,13 +8,14 @@ export const WORKSPACE_ACTIONS = [
   "update_preferences",
   "create_invitation",
   "revoke_invitation",
+  "manage_ledger",
 ] as const;
 export type WorkspaceAction = (typeof WORKSPACE_ACTIONS)[number];
 
 const ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly WorkspaceAction[]>> = {
-  OWNER: ["read", "update_preferences", "create_invitation", "revoke_invitation"],
-  ADMIN: ["read", "update_preferences", "create_invitation", "revoke_invitation"],
-  MEMBER: ["read"],
+  OWNER: ["read", "update_preferences", "create_invitation", "revoke_invitation", "manage_ledger"],
+  ADMIN: ["read", "update_preferences", "create_invitation", "revoke_invitation", "manage_ledger"],
+  MEMBER: ["read", "manage_ledger"],
   VIEWER: ["read"],
 };
 
