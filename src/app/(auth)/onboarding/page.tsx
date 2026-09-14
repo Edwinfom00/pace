@@ -15,6 +15,7 @@ import { OnboardingNextStepBoundary } from "@/components/pace/onboarding/onboard
 import { OnboardingStepOne } from "@/components/pace/onboarding/onboarding-step-one";
 import { OnboardingWorkspaceStep } from "@/components/pace/onboarding/onboarding-workspace-step";
 import { OnboardingTogetherStep } from "@/components/pace/onboarding/steps/together-step";
+import { OnboardingConnectStep } from "@/components/pace/onboarding/steps/connect-step";
 
 type OnboardingPageProps = {
   searchParams: Promise<{ step?: string | string[] }>;
@@ -58,6 +59,10 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
 
   if (viewedStep === 3) {
     return <OnboardingTogetherStep initialSnapshot={snapshot} />;
+  }
+
+  if (viewedStep === 4) {
+    return <OnboardingConnectStep initialSnapshot={snapshot} />;
   }
 
   return <OnboardingNextStepBoundary language={language} step={viewedStep} />;

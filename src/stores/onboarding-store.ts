@@ -6,11 +6,14 @@ import { createStore } from "zustand/vanilla";
 
 import type { OnboardingServerSnapshot } from "@/modules/onboarding/server-snapshot";
 import type {
+  ConnectDraft,
   OnboardingInviteMethod,
   OnboardingStep,
   WorkspaceDraft,
   YourPaceDraft,
 } from "@/modules/onboarding/profile-domain";
+import { reconcileConnectionMethod } from "@/modules/onboarding/profile-domain";
+import type { FinancialConnectionCapabilities } from "@/modules/financial-connections/capabilities";
 
 export const ONBOARDING_STORE_KEY = "pace:onboarding:v1";
 
@@ -19,7 +22,7 @@ export type OnboardingDraftState = {
   yourPace: YourPaceDraft;
   workspace: WorkspaceDraft;
   together: { skipped: boolean; inviteMethod: OnboardingInviteMethod };
-  connect: { selectedMethod: string };
+  connect: ConnectDraft & { capabilities: FinancialConnectionCapabilities };
   preferences: { goals: string[]; proactivity: string };
 };
 
@@ -28,6 +31,7 @@ export type OnboardingStore = OnboardingDraftState & {
   setYourPace: (values: Partial<YourPaceDraft>) => void;
   setWorkspace: (values: Partial<WorkspaceDraft>) => void;
   setTogether: (values: Partial<OnboardingDraftState["together"]>) => void;
+  setConnect: (values: Partial<ConnectDraft>) => void;
   setCurrentStep: (step: OnboardingStep) => void;
   reset: () => void;
   hydrateFromServer: (snapshot: OnboardingServerSnapshot) => void;
@@ -39,7 +43,10 @@ export const emptyOnboardingDraft: OnboardingDraftState = {
   yourPace: { country: "", language: "en", currency: "", timezone: "" },
   workspace: { type: "", name: "", nameManuallyEdited: false },
   together: { skipped: false, inviteMethod: "email" },
-  connect: { selectedMethod: "" },
+  connect: {
+    selectedMethod: "MANUAL",
+    capabilities: { manual: true, importStatement: true, bankConnection: false, mobileMoney: false },
+  },
   preferences: { goals: [], proactivity: "" },
 };
 
@@ -54,6 +61,7 @@ export function mergeOnboardingServerSnapshot(
 ): OnboardingDraftState {
   const serverHasCompletedYourPace = server.currentStep > 1;
   const serverHasCompletedWorkspace = server.currentStep > 2;
+  const serverHasCompletedConnect = server.currentStep > 4;
   const mergeField = (key: keyof YourPaceDraft) =>
     server.yourPace[key] || local.yourPace[key] || "";
 
@@ -73,6 +81,13 @@ export function mergeOnboardingServerSnapshot(
     together: server.currentStep >= 3
       ? { ...local.together, skipped: server.together.skipped }
       : local.together,
+    connect: {
+      capabilities: server.connect.capabilities,
+      selectedMethod: reconcileConnectionMethod(
+        serverHasCompletedConnect ? server.connect.selectedMethod : local.connect.selectedMethod,
+        server.connect.capabilities,
+      ),
+    },
   };
 }
 
@@ -92,6 +107,8 @@ function makeStore(options: StoreOptions = {}) {
         set((state) => ({ workspace: { ...state.workspace, ...values } })),
       setTogether: (values) =>
         set((state) => ({ together: { ...state.together, ...values } })),
+      setConnect: (values) =>
+        set((state) => ({ connect: { ...state.connect, ...values } })),
       setCurrentStep: (currentStep) => set({ currentStep }),
       reset: () => set({ ...emptyOnboardingDraft, hydrated: true }),
       hydrateFromServer: (snapshot) =>

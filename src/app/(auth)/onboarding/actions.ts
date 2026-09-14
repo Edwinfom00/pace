@@ -3,16 +3,21 @@
 import { requireAuthenticatedActor } from "@/authorization/session";
 import { DomainConflictError } from "@/authorization/errors";
 import {
+  ConnectionMethodUnavailableError,
   createOnboardingInvitation,
+  OnboardingConnectStepUnavailableError,
+  persistConnectStep,
   persistTogetherStep,
   persistWorkspaceStep,
   persistYourPaceStep,
 } from "@/modules/onboarding/server";
 import {
+  connectionMethodSchema,
   onboardingInvitationSchema,
   workspaceStepSchema,
   yourPaceSchema,
   type OnboardingStep,
+  type OnboardingConnectionMethod,
   type ValidatedWorkspaceStep,
   type ValidatedYourPace,
 } from "@/modules/onboarding/profile-domain";
@@ -121,5 +126,37 @@ export async function completeTogetherOnboarding(): Promise<CompleteTogetherResu
     };
   } catch (error) {
     return { ok: false, code: error instanceof DomainConflictError ? error.code : "TOGETHER_SAVE_FAILED" };
+  }
+}
+
+export type SubmitConnectResult =
+  | { ok: true; selectedMethod: OnboardingConnectionMethod; currentStep: OnboardingStep }
+  | { ok: false; code: string };
+
+/** The server resolves country and provider capability again before persisting. */
+export async function submitConnectStep(input: unknown): Promise<SubmitConnectResult> {
+  const actor = await requireAuthenticatedActor();
+  const parsed = connectionMethodSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, code: "VALIDATION_ERROR" };
+  }
+
+  try {
+    const profile = await persistConnectStep(actor, parsed.data);
+    return {
+      ok: true,
+      selectedMethod: profile.onboardingStartingMethod ?? "MANUAL",
+      currentStep: (profile.onboardingStep ?? 5) as OnboardingStep,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      code: error instanceof ConnectionMethodUnavailableError
+        ? error.code
+        : error instanceof OnboardingConnectStepUnavailableError
+          ? error.code
+          : "CONNECT_SAVE_FAILED",
+    };
   }
 }

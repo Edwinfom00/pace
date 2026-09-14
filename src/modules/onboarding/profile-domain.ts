@@ -11,6 +11,7 @@ import {
   type OnboardingLanguage,
 } from "./metadata";
 import { WORKSPACE_TYPES, type WorkspaceType } from "../workspaces/domain";
+import type { FinancialConnectionCapabilities } from "../financial-connections/capabilities";
 
 export const ONBOARDING_STEPS = [1, 2, 3, 4, 5] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
@@ -79,6 +80,42 @@ export const onboardingInvitationSchema = z.discriminatedUnion("method", [
 
 export type ValidatedOnboardingInvitation = z.infer<typeof onboardingInvitationSchema>;
 
+export const ONBOARDING_CONNECTION_METHODS = [
+  "MANUAL",
+  "IMPORT_STATEMENT",
+  "BANK_CONNECTION",
+  "MOBILE_MONEY",
+] as const;
+export type OnboardingConnectionMethod = (typeof ONBOARDING_CONNECTION_METHODS)[number];
+
+export type ConnectDraft = {
+  selectedMethod: OnboardingConnectionMethod;
+};
+
+/** The browser may only submit stable domain values, never translated labels. */
+export const connectionMethodSchema = z.enum(ONBOARDING_CONNECTION_METHODS);
+
+export function isConnectionMethodAvailable(
+  method: OnboardingConnectionMethod,
+  capabilities: FinancialConnectionCapabilities,
+): boolean {
+  return (
+    (method === "MANUAL" && capabilities.manual)
+    || (method === "IMPORT_STATEMENT" && capabilities.importStatement)
+    || (method === "BANK_CONNECTION" && capabilities.bankConnection)
+    || (method === "MOBILE_MONEY" && capabilities.mobileMoney)
+  );
+}
+
+/** Local drafts are helpful, but never allowed to outlive server capabilities. */
+export function reconcileConnectionMethod(
+  candidate: string | null | undefined,
+  capabilities: FinancialConnectionCapabilities,
+): OnboardingConnectionMethod {
+  const parsed = connectionMethodSchema.safeParse(candidate);
+  return parsed.success && isConnectionMethodAvailable(parsed.data, capabilities) ? parsed.data : "MANUAL";
+}
+
 /** Pace-owned, resumable product state; never an authentication claim. */
 export interface PaceUserProfileRecord {
   userId: string;
@@ -88,12 +125,10 @@ export interface PaceUserProfileRecord {
   countryCode: string | null;
   currency: string | null;
   timezone: string | null;
-  /** Server-issued idempotency key for the workspace created during Step 2. */
   onboardingWorkspaceId: string | null;
-  /** Server-owned progress metadata for deliberately skipped/not-applicable steps. */
   onboardingSkippedSteps: number[];
-  /** A non-secret reference; raw invitation credentials are never persisted. */
   onboardingInvitationId: string | null;
+  onboardingStartingMethod: OnboardingConnectionMethod | null;
   createdAt: Date;
   updatedAt: Date;
 }

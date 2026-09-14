@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import { createJSONStorage } from "zustand/middleware";
+import { FiCreditCard } from "react-icons/fi";
 
 import {
   getCountryDefaultCurrency,
@@ -10,6 +13,8 @@ import {
   isSupportedTimezone,
 } from "@/modules/onboarding/metadata";
 import {
+  connectionMethodSchema,
+  isConnectionMethodAvailable,
   suggestedWorkspaceName,
   withSelectedWorkspaceType,
   onboardingInvitationSchema,
@@ -18,13 +23,16 @@ import {
   type ValidatedYourPace,
 } from "@/modules/onboarding/profile-domain";
 import {
+  resolveConnectBackStep,
   resolveOnboardingRoute,
   resolveOnboardingViewedStep,
   resolveOnboardingWorkspaceStep,
 } from "@/modules/onboarding/route-state";
 import { createOnboardingServerSnapshot } from "@/modules/onboarding/server-snapshot";
 import {
+  ConnectionMethodUnavailableError,
   createOnboardingInvitation,
+  persistConnectStep,
   persistTogetherStep,
   persistWorkspaceStep,
   persistYourPaceStep,
@@ -32,6 +40,8 @@ import {
 import type { PaceUserProfileRepository } from "@/modules/onboarding/repositories/pace-user-profile-repository";
 import { getOnboardingTranslations } from "@/i18n/onboarding-messages";
 import { getPaceCopyState } from "@/components/pace/shared/pace-copy-field";
+import { PaceSelectionCard } from "@/components/pace/onboarding/pace-selection-card";
+import { getFinancialConnectionCapabilities } from "@/modules/financial-connections/capabilities";
 import { WorkspaceService } from "@/modules/workspaces/workspace-service";
 import {
   createOnboardingStore,
@@ -60,6 +70,7 @@ function profile(overrides: Partial<PaceUserProfileRecord> = {}): PaceUserProfil
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     ...overrides,
+    onboardingStartingMethod: overrides.onboardingStartingMethod ?? null,
   };
 }
 
@@ -102,6 +113,15 @@ function repository(record = profile()): PaceUserProfileRepository {
         onboardingStatus: "IN_PROGRESS",
         onboardingStep: 4,
         onboardingSkippedSteps: skipped ? [3] : [],
+      });
+      return record;
+    },
+    async saveConnectStep(_userId, method) {
+      record = profile({
+        ...record,
+        onboardingStatus: "IN_PROGRESS",
+        onboardingStep: 5,
+        onboardingStartingMethod: method,
       });
       return record;
     },
@@ -154,6 +174,10 @@ test("server hydration creates a typed Step 1 resume snapshot", () => {
     yourPace: { country: "CM", language: "fr", currency: "XAF", timezone: "Africa/Douala" },
     workspace: { type: "", name: "", nameManuallyEdited: false },
     together: { skipped: false, hasExistingInvitation: false },
+    connect: {
+      selectedMethod: "MANUAL",
+      capabilities: { manual: true, importStatement: true, bankConnection: false, mobileMoney: false },
+    },
   });
 });
 
@@ -168,6 +192,10 @@ test("server-completed Step 1 values override stale persisted browser state", ()
     yourPace: { country: "CM", language: "fr", currency: "XAF", timezone: "Africa/Douala" },
     workspace: { type: "", name: "", nameManuallyEdited: false },
     together: { skipped: false, hasExistingInvitation: false },
+    connect: {
+      selectedMethod: "MANUAL",
+      capabilities: { manual: true, importStatement: true, bankConnection: false, mobileMoney: false },
+    },
   });
 
   assert.equal(merged.currentStep, 2);
@@ -244,6 +272,10 @@ test("language changes immediately in the draft and Step 1 progresses to 2 on pe
     yourPace: input,
     workspace: { type: "", name: "", nameManuallyEdited: false },
     together: { skipped: false, hasExistingInvitation: false },
+    connect: {
+      selectedMethod: "MANUAL",
+      capabilities: { manual: true, importStatement: true, bankConnection: false, mobileMoney: false },
+    },
   });
   assert.equal(saved.onboardingStep, 2);
   assert.equal(store.getState().currentStep, 2);
@@ -417,6 +449,8 @@ test("Back selects a view without regressing the completed progress and workspac
   assert.equal(resolveOnboardingViewedStep("1", 2), 1);
   assert.equal(resolveOnboardingViewedStep("3", 2), 2);
   assert.equal(resolveOnboardingViewedStep(undefined, 3), 3);
+  assert.equal(resolveConnectBackStep("PERSONAL"), 2);
+  assert.equal(resolveConnectBackStep("COUPLE"), 3);
 
   for (const language of ["en", "fr", "de"] as const) {
     const t = getOnboardingTranslations(language);
@@ -425,5 +459,117 @@ test("Back selects a view without regressing the completed progress and workspac
     assert.ok(t("onboarding.workspace.name.helper").length > 0);
     assert.ok(t("onboarding.together.title").length > 0);
     assert.ok(t("onboarding.together.copy").length > 0);
+    assert.ok(t("onboarding.connect.title").length > 0);
+    assert.ok(t("onboarding.connect.bank.comingSoon").length > 0);
+    assert.ok(t("onboarding.connect.info").length > 0);
   }
+});
+
+test("connection capabilities are country-aware, provider-backed, and never inferred from display text", () => {
+  const withoutProvider = getFinancialConnectionCapabilities({ country: "CM" });
+  assert.deepEqual(withoutProvider, {
+    manual: true,
+    importStatement: true,
+    bankConnection: false,
+    mobileMoney: false,
+  });
+  assert.equal(connectionMethodSchema.safeParse("IMPORT_STATEMENT").success, true);
+  assert.equal(connectionMethodSchema.safeParse("Import a statement").success, false);
+  assert.equal(isConnectionMethodAvailable("BANK_CONNECTION", withoutProvider), false);
+
+  const withBankProvider = getFinancialConnectionCapabilities(
+    { country: "US" },
+    [{ kind: "BANK_CONNECTION", countryCodes: ["US"], isConfigured: () => true }],
+  );
+  assert.equal(withBankProvider.bankConnection, true);
+  assert.equal(getFinancialConnectionCapabilities(
+    { country: "CM" },
+    [{ kind: "BANK_CONNECTION", countryCodes: ["US"], isConfigured: () => true }],
+  ).bankConnection, false);
+});
+
+test("connection draft defaults to MANUAL, survives refresh, and reconciles stale unavailable choices", () => {
+  const records = new Map<string, string>();
+  const storage = createJSONStorage<OnboardingDraftState>(() => ({
+    getItem: (key) => records.get(key) ?? null,
+    setItem: (key, value) => records.set(key, value),
+    removeItem: (key) => records.delete(key),
+  }));
+  const first = createOnboardingStore({ storage, skipHydration: false });
+  assert.equal(first.getState().connect.selectedMethod, "MANUAL");
+  first.getState().setConnect({ selectedMethod: "IMPORT_STATEMENT" });
+
+  const restored = createOnboardingStore({ storage, skipHydration: false });
+  assert.equal(restored.getState().connect.selectedMethod, "IMPORT_STATEMENT");
+
+  const reconciled = mergeOnboardingServerSnapshot(
+    { ...emptyOnboardingDraft, connect: { ...emptyOnboardingDraft.connect, selectedMethod: "BANK_CONNECTION" } },
+    {
+      currentStep: 4,
+      yourPace: { country: "CM", language: "en", currency: "XAF", timezone: "Africa/Douala" },
+      workspace: { type: "PERSONAL", name: "Private", nameManuallyEdited: true },
+      together: { skipped: true, hasExistingInvitation: false },
+      connect: {
+        selectedMethod: "MANUAL",
+        capabilities: { manual: true, importStatement: true, bankConnection: false, mobileMoney: false },
+      },
+    },
+  );
+  assert.equal(reconciled.connect.selectedMethod, "MANUAL");
+});
+
+test("Step 4 only persists a capability-approved method and advances to Step 5", async () => {
+  const workspaces = new InMemoryWorkspaceRepository();
+  const service = new WorkspaceService(workspaces, "test-pepper");
+  const workspace = await service.createWorkspace(actor, { name: "Private", type: "PERSONAL" });
+  const profiles = repository(profile({
+    onboardingStatus: "IN_PROGRESS",
+    onboardingStep: 4,
+    countryCode: "CM",
+    currency: "XAF",
+    timezone: "Africa/Douala",
+    onboardingWorkspaceId: workspace.id,
+  }));
+
+  const persisted = await persistConnectStep(actor, "IMPORT_STATEMENT", profiles, service);
+  assert.equal(persisted.onboardingStartingMethod, "IMPORT_STATEMENT");
+  assert.equal(persisted.onboardingStep, 5);
+
+  await assert.rejects(
+    () => persistConnectStep(actor, "BANK_CONNECTION", profiles, service),
+    ConnectionMethodUnavailableError,
+  );
+  await assert.rejects(
+    () => persistConnectStep(actor, "MOBILE_MONEY", profiles, service),
+    ConnectionMethodUnavailableError,
+  );
+});
+
+test("selection cards expose selected and unavailable semantics", () => {
+  const unavailable = renderToStaticMarkup(createElement(PaceSelectionCard, {
+    id: "bank",
+    value: "BANK_CONNECTION",
+    selected: false,
+    icon: FiCreditCard,
+    title: "Connect an account",
+    description: "Automatically sync your transactions.",
+    disabled: true,
+    features: ["Secure and read-only connection"],
+    onSelect: () => undefined,
+  }));
+  assert.match(unavailable, /role="radio"/);
+  assert.match(unavailable, /aria-disabled="true"/);
+  assert.match(unavailable, /disabled=""/);
+
+  const selected = renderToStaticMarkup(createElement(PaceSelectionCard, {
+    id: "manual",
+    value: "MANUAL",
+    selected: true,
+    icon: FiCreditCard,
+    title: "Start manually",
+    description: "Add expenses as they happen.",
+    onSelect: () => undefined,
+  }));
+  assert.match(selected, /aria-checked="true"/);
+  assert.match(selected, /aria-label="Selected"/);
 });

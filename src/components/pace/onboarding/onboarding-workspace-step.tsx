@@ -145,6 +145,9 @@ export function OnboardingWorkspaceStep({ initialSnapshot }: WorkspaceStepProps)
           skipped: result.data.type === "PERSONAL",
           hasExistingInvitation: false,
         },
+        connect: current.connect.capabilities
+          ? { ...current.connect, capabilities: current.connect.capabilities }
+          : initialSnapshot.connect,
       });
       router.push(`/onboarding?step=${result.currentStep}`);
     });

@@ -9,7 +9,7 @@ type OnboardingNextStepBoundaryProps = {
   step: OnboardingStep;
 };
 
-/** Minimal safe stop after Step 1; it deliberately does not implement Step 2. */
+
 export function OnboardingNextStepBoundary({ language, step }: OnboardingNextStepBoundaryProps) {
   const t = getOnboardingTranslations(language);
 

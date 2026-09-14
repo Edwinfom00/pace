@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { paceUserProfiles, users } from "@/db/schema";
 
-import type { PaceUserProfileRecord, ValidatedYourPace } from "../profile-domain";
+import type { OnboardingConnectionMethod, PaceUserProfileRecord, ValidatedYourPace } from "../profile-domain";
 
 export interface PaceUserProfileRepository {
   getOrCreate(userId: string): Promise<PaceUserProfileRecord>;
@@ -15,6 +15,7 @@ export interface PaceUserProfileRepository {
     progress: { nextStep: 3 | 4; skipTogether: boolean },
   ): Promise<PaceUserProfileRecord>;
   saveTogetherStep(userId: string, skipped: boolean): Promise<PaceUserProfileRecord>;
+  saveConnectStep(userId: string, method: OnboardingConnectionMethod): Promise<PaceUserProfileRecord>;
   claimOnboardingInvitationId(userId: string, candidateInvitationId: string): Promise<PaceUserProfileRecord>;
   clearOnboardingInvitationId(userId: string, invitationId: string): Promise<PaceUserProfileRecord>;
 }
@@ -138,6 +139,29 @@ export class DatabasePaceUserProfileRepository implements PaceUserProfileReposit
 
     if (!profile) {
       throw new Error("Pace user profile could not save Together progress.");
+    }
+
+    return profile;
+  }
+
+  async saveConnectStep(
+    userId: string,
+    method: OnboardingConnectionMethod,
+  ): Promise<PaceUserProfileRecord> {
+    const [profile] = await db
+      .update(paceUserProfiles)
+      .set({
+        onboardingStartingMethod: method,
+        onboardingStatus: "IN_PROGRESS",
+        onboardingStep: 5,
+        onboardingCompletedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(paceUserProfiles.userId, userId))
+      .returning();
+
+    if (!profile) {
+      throw new Error("Pace user profile could not save connection preferences.");
     }
 
     return profile;

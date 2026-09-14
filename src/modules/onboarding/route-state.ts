@@ -8,7 +8,7 @@ export type OnboardingRouteResolution =
   | { kind: "redirect"; destination: string }
   | { kind: "render"; profile: PaceUserProfileRecord };
 
-/** Keeps the route's server-authoritative access decision easy to test. */
+
 export async function resolveOnboardingRoute(
   userId: string | null,
   profiles: PaceUserProfileRepository,
@@ -27,10 +27,7 @@ export async function resolveOnboardingRoute(
   return { kind: "render", profile };
 }
 
-/**
- * Completion is a server-owned high-water mark. The optional route step is
- * only the screen being reviewed, so Back never mutates persisted progress.
- */
+
 export function resolveOnboardingViewedStep(
   requestedStep: string | undefined,
   completedStep: OnboardingStep,
@@ -49,4 +46,9 @@ export function resolveOnboardingWorkspaceStep(
   workspaceType: WorkspaceType | undefined,
 ): OnboardingStep {
   return workspaceType === "PERSONAL" && step === 3 ? 4 : step;
+}
+
+
+export function resolveConnectBackStep(workspaceType: WorkspaceType | undefined): 2 | 3 {
+  return workspaceType === "PERSONAL" ? 2 : 3;
 }

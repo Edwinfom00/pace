@@ -1,0 +1,2 @@
+CREATE TYPE "public"."onboarding_starting_method" AS ENUM('MANUAL', 'IMPORT_STATEMENT', 'BANK_CONNECTION', 'MOBILE_MONEY');--> statement-breakpoint
+ALTER TABLE "pace_user_profile" ADD COLUMN "onboarding_starting_method" "onboarding_starting_method";

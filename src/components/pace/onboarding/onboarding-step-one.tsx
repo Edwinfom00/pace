@@ -139,6 +139,9 @@ export function OnboardingStepOne({ initialSnapshot }: StepOneProps) {
           skipped: useOnboardingStore.getState().together.skipped,
           hasExistingInvitation: false,
         },
+        connect: useOnboardingStore.getState().connect.capabilities
+          ? { ...useOnboardingStore.getState().connect, capabilities: useOnboardingStore.getState().connect.capabilities }
+          : initialSnapshot.connect,
       });
       router.push("/onboarding?step=2");
     });

@@ -1,12 +1,14 @@
 import type { OnboardingLanguage } from "./metadata";
 import type { WorkspaceRecord } from "../workspaces/domain";
-import type { OnboardingStep, PaceUserProfileRecord, WorkspaceDraft, YourPaceDraft } from "./profile-domain";
+import { getFinancialConnectionCapabilities, type FinancialConnectionCapabilities } from "../financial-connections/capabilities";
+import { reconcileConnectionMethod, type ConnectDraft, type OnboardingStep, type PaceUserProfileRecord, type WorkspaceDraft, type YourPaceDraft } from "./profile-domain";
 
 export type OnboardingServerSnapshot = {
   currentStep: OnboardingStep;
   yourPace: YourPaceDraft;
   workspace: WorkspaceDraft;
   together: { skipped: boolean; hasExistingInvitation: boolean };
+  connect: ConnectDraft & { capabilities: FinancialConnectionCapabilities };
 };
 
 export function createOnboardingServerSnapshot(
@@ -18,6 +20,7 @@ export function createOnboardingServerSnapshot(
     profile.onboardingStatus === "IN_PROGRESS" && profile.onboardingStep
       ? (profile.onboardingStep as OnboardingStep)
       : 1;
+  const capabilities = getFinancialConnectionCapabilities({ country: profile.countryCode });
 
   return {
     currentStep,
@@ -33,6 +36,10 @@ export function createOnboardingServerSnapshot(
     together: {
       skipped: profile.onboardingSkippedSteps.includes(3),
       hasExistingInvitation: Boolean(profile.onboardingInvitationId),
+    },
+    connect: {
+      selectedMethod: reconcileConnectionMethod(profile.onboardingStartingMethod, capabilities),
+      capabilities,
     },
   };
 }

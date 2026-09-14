@@ -9,13 +9,17 @@ import {
 } from "@/modules/workspaces/workspace-service";
 
 import {
+  connectionMethodSchema,
+  isConnectionMethodAvailable,
   onboardingInvitationSchema,
   workspaceStepSchema,
   yourPaceSchema,
   type PaceUserProfileRecord,
+  type OnboardingConnectionMethod,
   type ValidatedWorkspaceStep,
 } from "./profile-domain";
 import type { PaceUserProfileRepository } from "./repositories/pace-user-profile-repository";
+import { getFinancialConnectionCapabilities } from "../financial-connections/capabilities";
 
 export function getPaceUserProfileRepository(): DatabasePaceUserProfileRepository {
   return new DatabasePaceUserProfileRepository();
@@ -168,4 +172,57 @@ export async function persistTogetherStep(
   // safely not-applicable as well.
   const skipped = workspace.type === "PERSONAL" || !profile.onboardingInvitationId;
   return repository.saveTogetherStep(actor.userId, skipped);
+}
+
+export class ConnectionMethodUnavailableError extends Error {
+  readonly code = "CONNECTION_METHOD_UNAVAILABLE";
+
+  constructor() {
+    super("The selected connection method is not available for this profile.");
+  }
+}
+
+export class OnboardingConnectStepUnavailableError extends Error {
+  readonly code = "ONBOARDING_CONNECT_STEP_UNAVAILABLE";
+
+  constructor() {
+    super("The connection step is not available yet.");
+  }
+}
+
+type ConnectOnboardingService = Pick<WorkspaceService, "getWorkspaceForMember">;
+
+/**
+ * Completes Step 4 using only canonical profile and workspace state. The
+ * browser's selected enum is revalidated against freshly resolved provider
+ * capabilities before it can ever be persisted.
+ */
+export async function persistConnectStep(
+  actor: AuthenticatedActor,
+  input: unknown,
+  repository: PaceUserProfileRepository = getPaceUserProfileRepository(),
+  workspaceService: ConnectOnboardingService = getWorkspaceService(),
+): Promise<PaceUserProfileRecord> {
+  const method = connectionMethodSchema.parse(input) as OnboardingConnectionMethod;
+  const profile = await repository.getOrCreate(actor.userId);
+
+  if (profile.onboardingStep !== 4 && profile.onboardingStep !== 5) {
+    throw new OnboardingConnectStepUnavailableError();
+  }
+
+  if (!profile.onboardingWorkspaceId) {
+    throw new OnboardingConnectStepUnavailableError();
+  }
+
+  const workspace = await workspaceService.getWorkspaceForMember(actor, profile.onboardingWorkspaceId);
+  if (!workspace) {
+    throw new OnboardingConnectStepUnavailableError();
+  }
+
+  const capabilities = getFinancialConnectionCapabilities({ country: profile.countryCode });
+  if (!isConnectionMethodAvailable(method, capabilities)) {
+    throw new ConnectionMethodUnavailableError();
+  }
+
+  return repository.saveConnectStep(actor.userId, method);
 }

@@ -16,10 +16,14 @@ export const onboardingStatus = pgEnum("onboarding_status", [
   "COMPLETED",
 ]);
 
-/**
- * Pace-owned product state keyed by Better Auth's immutable user ID.
- * Authentication identity and credentials remain owned by Better Auth.
- */
+export const onboardingStartingMethod = pgEnum("onboarding_starting_method", [
+  "MANUAL",
+  "IMPORT_STATEMENT",
+  "BANK_CONNECTION",
+  "MOBILE_MONEY",
+]);
+
+
 export const paceUserProfiles = pgTable(
   "pace_user_profile",
   {
@@ -31,21 +35,16 @@ export const paceUserProfiles = pgTable(
       .default("NOT_STARTED"),
     onboardingStep: integer("onboarding_step"),
     onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
-    /** ISO 3166-1 alpha-2 value chosen during Pace onboarding. */
     countryCode: text("country_code"),
-    /** ISO 4217 value chosen during Pace onboarding. */
     currency: text("currency"),
-    /** Canonical IANA timezone chosen during Pace onboarding. */
     timezone: text("timezone"),
-    /** Reserved before creation so retries can only ever use one workspace id. */
     onboardingWorkspaceId: text("onboarding_workspace_id"),
-    /** Steps deliberately skipped or not applicable; never an authorization claim. */
     onboardingSkippedSteps: integer("onboarding_skipped_steps")
       .array()
       .notNull()
       .default(sql`'{}'::integer[]`),
-    /** Non-secret server reference for a Step 3 invitation; the credential is never stored here. */
     onboardingInvitationId: text("onboarding_invitation_id"),
+    onboardingStartingMethod: onboardingStartingMethod("onboarding_starting_method"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

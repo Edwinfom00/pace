@@ -31,6 +31,7 @@ function profile(status: PaceUserProfileRecord["onboardingStatus"]): PaceUserPro
         onboardingWorkspaceId: null,
         onboardingSkippedSteps: [],
         onboardingInvitationId: null,
+        onboardingStartingMethod: null,
         createdAt: new Date("2026-01-01"),
         updatedAt: new Date("2026-01-01"),
       };
@@ -45,6 +46,9 @@ function profile(status: PaceUserProfileRecord["onboardingStatus"]): PaceUserPro
       throw new Error("Not used by post-auth resolver tests.");
     },
     async saveTogetherStep() {
+      throw new Error("Not used by post-auth resolver tests.");
+    },
+    async saveConnectStep() {
       throw new Error("Not used by post-auth resolver tests.");
     },
     async claimOnboardingInvitationId() {
