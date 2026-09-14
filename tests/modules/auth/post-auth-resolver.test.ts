@@ -86,6 +86,19 @@ test("a user with onboarding in progress resolves to onboarding", async () => {
   assert.equal(destination, ONBOARDING_DESTINATION);
 });
 
+test("a new user who came through an invite returns to that join route before onboarding", async () => {
+  const repository = new InMemoryWorkspaceRepository();
+  const token = "a".repeat(43);
+
+  const destination = await resolvePostAuthDestination(
+    actor.userId,
+    `/join/${token}?lang=de`,
+    { profiles: profile("NOT_STARTED"), workspaces: repository },
+  );
+
+  assert.equal(destination, `/join/${token}?lang=de`);
+});
+
 test("a completed user resolves to their deterministic accessible workspace overview", async () => {
   const { repository, workspace } = await createWorkspaceFixture();
 

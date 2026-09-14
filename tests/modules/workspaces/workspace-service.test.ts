@@ -89,10 +89,9 @@ test("a link invite is email-bound, single-use, and does not trust a supplied wo
   assert.equal(joined.workspaceId, workspace.id);
   assert.equal((await repository.findMembership(workspace.id, invitee.userId))?.role, "MEMBER");
 
-  await assert.rejects(
-    service.joinInvitation(invitee, { token: created.inviteUrlToken }),
-    ConflictError,
-  );
+  const duplicate = await service.joinInvitation(invitee, { token: created.inviteUrlToken });
+  assert.equal(duplicate.alreadyMember, true);
+  assert.equal(repository.invitationAuditEvents.length, 1);
 });
 
 test("a short code creates the membership only for the recipient", async () => {

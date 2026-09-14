@@ -6,6 +6,7 @@ import {
   ConflictError,
   DomainConflictError,
   NotFoundError,
+  RateLimitError,
 } from "@/authorization/errors";
 import { ImportParseError } from "@/modules/imports/parsers";
 
@@ -47,7 +48,8 @@ export function jsonError(error: unknown): Response {
     error instanceof AuthenticationError ||
     error instanceof AuthorizationError ||
     error instanceof NotFoundError ||
-    error instanceof ConflictError
+    error instanceof ConflictError ||
+    error instanceof RateLimitError
   ) {
     return Response.json({ error: error.message }, { status: error.status });
   }

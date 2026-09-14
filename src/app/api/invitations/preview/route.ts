@@ -11,11 +11,13 @@ export async function POST(request: Request): Promise<Response> {
       requireAuthenticatedActor(),
       parseJson(request, joinInvitationSchema),
     ]);
+
     if (input.code) {
       assertManualInviteLookupAllowed(actor.userId);
     }
-    const membership = await getWorkspaceService().joinInvitation(actor, input);
-    return Response.json({ membership }, { status: 201 });
+
+    const preview = await getWorkspaceService().previewInvitation(actor, input);
+    return Response.json({ preview });
   } catch (error) {
     return jsonError(error);
   }

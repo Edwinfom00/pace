@@ -15,18 +15,24 @@ import {
 import type { AuthenticatedActor } from "@/authorization/session";
 
 import type {
+  JoinInvitationPreview,
+  JoinInvitationStatus,
   WorkspaceInvitationRecord,
   WorkspacePreferenceRecord,
   WorkspacePreferencesInput,
   WorkspaceRecord,
   WorkspaceType,
 } from "./domain";
+import { normalizeInvitationCode } from "./invite-code";
 import {
   createInvitationSecrets,
   formatInvitationCode,
   hashInvitationSecret,
 } from "./invite-secrets";
-import type { WorkspaceRepository } from "./repositories/workspace-repository";
+import type {
+  WorkspaceInvitationLookup,
+  WorkspaceRepository,
+} from "./repositories/workspace-repository";
 import { createWorkspaceSlug, isWorkspaceSlugConflict } from "./slug";
 
 const DEFAULT_PREFERENCES: WorkspacePreferencesInput = {
@@ -216,17 +222,47 @@ export class WorkspaceService {
     }
   }
 
-  async joinInvitation(actor: AuthenticatedActor, input: JoinInvitationInput): Promise<{ workspaceId: string }> {
-    const matcher = input.token ? "token" : "code";
-    const secret = input.token ?? input.code?.replaceAll("-", "").toUpperCase();
+  async previewInvitation(
+    actor: AuthenticatedActor,
+    input: JoinInvitationInput,
+  ): Promise<JoinInvitationPreview> {
+    const credential = this.getJoinCredential(input);
+    const lookup = await this.repository.findInvitationForJoin(
+      credential.matcher,
+      hashInvitationSecret(this.invitationPepper, credential.matcher, credential.secret),
+    );
 
-    if (!secret) {
-      throw new ConflictError("Invitation credentials are invalid or unavailable.");
+    if (!lookup) {
+      return { status: "INVALID" };
     }
 
+    const membership = await this.repository.findMembership(lookup.workspace.id, actor.userId);
+    const status = this.getPreviewStatus(actor, lookup, Boolean(membership));
+
+    if (status !== "VALID" && status !== "ALREADY_MEMBER") {
+      return { status };
+    }
+
+    return {
+      status,
+      workspace: {
+        name: lookup.workspace.name,
+        slug: lookup.workspace.slug,
+        type: lookup.workspace.type,
+      },
+      invitedBy: lookup.invitedByName ?? "A Pace member",
+      role: membership?.role ?? lookup.invitation.role,
+    };
+  }
+
+  async joinInvitation(
+    actor: AuthenticatedActor,
+    input: JoinInvitationInput,
+  ): Promise<{ workspaceId: string; workspaceSlug: string; alreadyMember: boolean }> {
+    const credential = this.getJoinCredential(input);
     const consumed = await this.repository.consumeInvitation({
-      matcher,
-      hash: hashInvitationSecret(this.invitationPepper, matcher, secret),
+      matcher: credential.matcher,
+      hash: hashInvitationSecret(this.invitationPepper, credential.matcher, credential.secret),
       userId: actor.userId,
       email: actor.email.trim().toLowerCase(),
     });
@@ -235,7 +271,39 @@ export class WorkspaceService {
       throw new ConflictError("Invitation credentials are invalid, expired, or already used.");
     }
 
-    return { workspaceId: consumed.workspaceId };
+    return consumed;
+  }
+
+  private getJoinCredential(input: JoinInvitationInput): {
+    matcher: "token" | "code";
+    secret: string;
+  } {
+    const token = input.token?.trim();
+    const code = input.code ? normalizeInvitationCode(input.code) : undefined;
+
+    if (Boolean(token) === Boolean(code)) {
+      throw new ConflictError("Invitation credentials are invalid or unavailable.");
+    }
+
+    return token
+      ? { matcher: "token", secret: token }
+      : { matcher: "code", secret: code! };
+  }
+
+  private getPreviewStatus(
+    actor: AuthenticatedActor,
+    lookup: WorkspaceInvitationLookup,
+    isAlreadyMember: boolean,
+  ): JoinInvitationStatus {
+    if (lookup.workspace.type === "PERSONAL") return "PERSONAL_WORKSPACE_NOT_JOINABLE";
+    if (lookup.invitation.invitedEmail && lookup.invitation.invitedEmail !== actor.email.trim().toLowerCase()) {
+      return "INVALID";
+    }
+    if (isAlreadyMember) return "ALREADY_MEMBER";
+    if (lookup.invitation.revokedAt) return "REVOKED";
+    if (lookup.invitation.expiresAt <= new Date()) return "EXPIRED";
+    if (lookup.invitation.usedAt) return "USED";
+    return "VALID";
   }
 
   private async requireMembership(userId: string, workspaceId: string) {

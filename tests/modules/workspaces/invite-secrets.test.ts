@@ -11,8 +11,8 @@ test("invite token and short code are distinct high-entropy secrets", () => {
   const secrets = createInvitationSecrets();
 
   assert.equal(secrets.token.length >= 43, true);
-  assert.match(secrets.shortCode, /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$/);
-  assert.match(formatInvitationCode(secrets.shortCode), /^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){2}$/);
+  assert.match(secrets.shortCode, /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/);
+  assert.match(formatInvitationCode(secrets.shortCode), /^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
 });
 
 test("stored invitation digests are purpose-bound and never equal the credential", () => {

@@ -11,6 +11,7 @@ import type {
   CreateInvitationRecordInput,
   CreateWorkspaceWithOwnerInput,
   WorkspaceRepository,
+  WorkspaceInvitationLookup,
 } from "@/modules/workspaces/repositories/workspace-repository";
 
 export class InMemoryWorkspaceRepository implements WorkspaceRepository {
@@ -21,6 +22,11 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
     CreateInvitationRecordInput & Pick<WorkspaceInvitationRecord, "createdAt" | "usedAt" | "revokedAt" | "acceptedByUserId">
   >();
   readonly preferences = new Map<string, WorkspacePreferenceRecord>();
+  readonly invitationAuditEvents: Array<{
+    invitationId: string;
+    workspaceId: string;
+    acceptedByUserId: string;
+  }> = [];
 
   async createWorkspaceWithOwner(input: CreateWorkspaceWithOwnerInput): Promise<void> {
     if ([...this.workspaces.values()].some((workspace) => workspace.slug === input.workspace.slug)) {
@@ -104,6 +110,24 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
     return invitation ? this.toInvitationRecord(invitation) : null;
   }
 
+  async findInvitationForJoin(
+    matcher: "token" | "code",
+    hash: string,
+  ): Promise<WorkspaceInvitationLookup | null> {
+    const invitation = [...this.invitations.values()].find((candidate) =>
+      (matcher === "token" ? candidate.tokenHash : candidate.codeHash) === hash,
+    );
+    const workspace = invitation ? this.workspaces.get(invitation.workspaceId) : null;
+
+    return invitation && workspace
+      ? {
+          invitation: this.toInvitationRecord(invitation),
+          workspace,
+          invitedByName: null,
+        }
+      : null;
+  }
+
   async updateWorkspace(
     workspaceId: string,
     values: Pick<WorkspaceRecord, "name" | "type">,
@@ -150,19 +174,26 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
       const hash = input.matcher === "token" ? candidate.tokenHash : candidate.codeHash;
       return hash === input.hash;
     });
-    if (
-      !invitation ||
+    const workspace = invitation ? this.workspaces.get(invitation.workspaceId) : null;
+    if (!invitation || !workspace ||
       (invitation.invitedEmail !== null && invitation.invitedEmail !== input.email) ||
       invitation.revokedAt ||
-      invitation.usedAt ||
-      invitation.expiresAt <= new Date() ||
-      this.workspaces.get(invitation.workspaceId)?.type === "PERSONAL"
-    ) {
+      workspace.type === "PERSONAL") {
       return null;
     }
 
     const key = this.membershipKey(invitation.workspaceId, input.userId);
-    if (this.memberships.has(key)) return null;
+    const existingMembership = this.memberships.get(key);
+    if (existingMembership) {
+      return {
+        workspaceId: workspace.id,
+        workspaceSlug: workspace.slug,
+        role: existingMembership.role,
+        alreadyMember: true,
+      };
+    }
+
+    if (invitation.usedAt || invitation.expiresAt <= new Date()) return null;
 
     this.memberships.set(key, {
       workspaceId: invitation.workspaceId,
@@ -173,7 +204,17 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
     });
     invitation.usedAt = new Date();
     invitation.acceptedByUserId = input.userId;
-    return { workspaceId: invitation.workspaceId, role: invitation.role };
+    this.invitationAuditEvents.push({
+      invitationId: invitation.id,
+      workspaceId: invitation.workspaceId,
+      acceptedByUserId: input.userId,
+    });
+    return {
+      workspaceId: invitation.workspaceId,
+      workspaceSlug: workspace.slug,
+      role: invitation.role,
+      alreadyMember: false,
+    };
   }
 
   addMembership(record: WorkspaceMembershipRecord): void {

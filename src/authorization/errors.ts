@@ -34,10 +34,16 @@ export class ConflictError extends Error {
   }
 }
 
-/**
- * A typed business-rule conflict. API consumers can present translated,
- * context-specific guidance without inspecting an English error message.
- */
+export class RateLimitError extends Error {
+  readonly status = 429;
+
+  constructor(message = "Too many requests. Please try again shortly.") {
+    super(message);
+    this.name = "RateLimitError";
+  }
+}
+
+
 export class DomainConflictError extends ConflictError {
   constructor(
     readonly code: string,

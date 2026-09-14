@@ -60,3 +60,25 @@ export interface InvitationSecrets {
   token: string;
   shortCode: string;
 }
+
+export type JoinInvitationStatus =
+  | "VALID"
+  | "EXPIRED"
+  | "REVOKED"
+  | "USED"
+  | "INVALID"
+  | "ALREADY_MEMBER"
+  | "WORKSPACE_UNAVAILABLE"
+  | "PERSONAL_WORKSPACE_NOT_JOINABLE";
+
+/** Safe, recipient-facing invitation data. It intentionally excludes every secret and internal id. */
+export interface JoinInvitationPreview {
+  status: JoinInvitationStatus;
+  workspace?: {
+    name: string;
+    slug: string;
+    type: WorkspaceType;
+  };
+  invitedBy?: string;
+  role?: WorkspaceMembershipRecord["role"];
+}

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { WORKSPACE_ROLES } from "@/authorization/workspace-permissions";
 
 import { WORKSPACE_TYPES } from "./domain";
+import { isInvitationCode, normalizeInvitationCode } from "./invite-code";
 
 const currencyCode = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/);
 const locale = z.string().trim().min(2).max(35);
@@ -37,7 +38,7 @@ export const createInvitationSchema = z.object({
 export const joinInvitationSchema = z
   .object({
     token: z.string().trim().min(43).max(128).optional(),
-    code: z.string().trim().toUpperCase().transform((value) => value.replaceAll("-", "")).optional(),
+    code: z.string().trim().transform(normalizeInvitationCode).optional(),
   })
   .superRefine((value, context) => {
     if (Boolean(value.token) === Boolean(value.code)) {
@@ -47,7 +48,7 @@ export const joinInvitationSchema = z
       });
     }
 
-    if (value.code && !/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$/.test(value.code)) {
+    if (value.code && !isInvitationCode(value.code)) {
       context.addIssue({
         code: "custom",
         path: ["code"],

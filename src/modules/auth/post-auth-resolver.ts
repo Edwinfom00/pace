@@ -7,6 +7,7 @@ import {
 
 const SAFE_RETURN_URL_ORIGIN = "https://pace.internal";
 const WORKSPACE_OVERVIEW_PATH = /^\/w\/([a-z0-9]+(?:-[a-z0-9]+)*)\/overview$/;
+const JOIN_INVITATION_PATH = /^\/join\/[A-Za-z0-9_-]{43,128}$/;
 
 export const ONBOARDING_DESTINATION = "/onboarding";
 export const WORKSPACE_RECOVERY_DESTINATION = "/onboarding?recovery=workspace";
@@ -21,16 +22,18 @@ const defaultDependencies: PostAuthResolverDependencies = {
   workspaces: new DatabaseWorkspaceRepository(),
 };
 
-/**
- * Resolves every post-auth entry point from persisted server state. Browser
- * route values are never treated as membership, role, or onboarding evidence.
- */
+
 export async function resolvePostAuthDestination(
   userId: string,
   returnTo: string | null | undefined,
   dependencies: PostAuthResolverDependencies = defaultDependencies,
 ): Promise<string> {
   const profile = await dependencies.profiles.getOrCreate(userId);
+
+  const requestedJoinDestination = getSafeJoinReturnTo(returnTo);
+  if (requestedJoinDestination) {
+    return requestedJoinDestination;
+  }
 
   if (profile.onboardingStatus !== "COMPLETED") {
     return ONBOARDING_DESTINATION;
@@ -74,10 +77,18 @@ export function getSafeInternalReturnTo(returnTo: string | null | undefined): st
 
   try {
     const parsed = new URL(returnTo, SAFE_RETURN_URL_ORIGIN);
-    return parsed.origin === SAFE_RETURN_URL_ORIGIN ? parsed.pathname : null;
+    return parsed.origin === SAFE_RETURN_URL_ORIGIN ? `${parsed.pathname}${parsed.search}` : null;
   } catch {
     return null;
   }
+}
+
+function getSafeJoinReturnTo(returnTo: string | null | undefined): string | null {
+  const safeReturnTo = getSafeInternalReturnTo(returnTo);
+  if (!safeReturnTo) return null;
+
+  const pathname = new URL(safeReturnTo, SAFE_RETURN_URL_ORIGIN).pathname;
+  return JOIN_INVITATION_PATH.test(pathname) ? safeReturnTo : null;
 }
 
 async function resolveAuthorizedReturnTo(
@@ -86,7 +97,8 @@ async function resolveAuthorizedReturnTo(
   workspaces: Pick<WorkspaceRepository, "findMemberContextBySlug">,
 ): Promise<string | null> {
   const path = getSafeInternalReturnTo(returnTo);
-  const match = path?.match(WORKSPACE_OVERVIEW_PATH);
+  const pathname = path ? new URL(path, SAFE_RETURN_URL_ORIGIN).pathname : null;
+  const match = pathname?.match(WORKSPACE_OVERVIEW_PATH);
 
   if (!match) {
     return null;

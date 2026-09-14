@@ -122,3 +122,26 @@ export const workspaceInvitations = pgTable(
     check("workspace_invitation_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
   ],
 );
+
+/** Immutable, secret-free record of successful invitation acceptance. */
+export const workspaceInvitationAudit = pgTable(
+  "workspace_invitation_audit",
+  {
+    id: text("id").primaryKey(),
+    invitationId: text("invitation_id")
+      .notNull()
+      .references(() => workspaceInvitations.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    acceptedByUserId: text("accepted_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    eventType: varchar("event_type", { length: 32 }).notNull().default("ACCEPTED"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("workspace_invitation_audit_invitation_idx").on(table.invitationId),
+    index("workspace_invitation_audit_workspace_idx").on(table.workspaceId),
+  ],
+);

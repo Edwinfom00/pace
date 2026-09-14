@@ -1,13 +1,12 @@
 import { createHmac, randomBytes } from "node:crypto";
 
-const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const SHORT_CODE_LENGTH = 12;
+import { INVITE_CODE_ALPHABET, INVITE_CODE_LENGTH } from "./invite-code";
 
 export function createInvitationSecrets(): InvitationSecrets {
   return {
     token: randomBytes(32).toString("base64url"),
-    shortCode: Array.from({ length: SHORT_CODE_LENGTH }, () => {
-      return CODE_ALPHABET[randomBytes(1)[0] % CODE_ALPHABET.length];
+    shortCode: Array.from({ length: INVITE_CODE_LENGTH }, () => {
+      return INVITE_CODE_ALPHABET[randomBytes(1)[0] % INVITE_CODE_ALPHABET.length];
     }).join(""),
   };
 }

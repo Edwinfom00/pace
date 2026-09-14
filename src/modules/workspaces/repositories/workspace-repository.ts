@@ -1,4 +1,6 @@
 import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { alias } from "drizzle-orm/pg-core";
 
 import { db, neonSql } from "@/db/client";
 import {
@@ -7,6 +9,7 @@ import {
   workspacePreferences,
   workspaces,
 } from "@/db/schema";
+import { users } from "@/db/schema/auth";
 
 import type {
   WorkspaceInvitationRecord,
@@ -43,7 +46,15 @@ export interface ConsumeInvitationInput {
 
 export interface ConsumedInvitation {
   workspaceId: string;
+  workspaceSlug: string;
   role: WorkspaceMembershipRecord["role"];
+  alreadyMember: boolean;
+}
+
+export interface WorkspaceInvitationLookup {
+  invitation: WorkspaceInvitationRecord;
+  workspace: WorkspaceRecord;
+  invitedByName: string | null;
 }
 
 export interface WorkspaceRepository {
@@ -57,6 +68,10 @@ export interface WorkspaceRepository {
   countMembers(workspaceId: string): Promise<number>;
   hasActiveInvitations(workspaceId: string): Promise<boolean>;
   findInvitationById(invitationId: string): Promise<WorkspaceInvitationRecord | null>;
+  findInvitationForJoin(
+    matcher: "token" | "code",
+    hash: string,
+  ): Promise<WorkspaceInvitationLookup | null>;
   updateWorkspace(
     workspaceId: string,
     values: Pick<WorkspaceRecord, "name" | "type">,
@@ -211,6 +226,49 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
     return invitation ?? null;
   }
 
+  async findInvitationForJoin(
+    matcher: "token" | "code",
+    hash: string,
+  ): Promise<WorkspaceInvitationLookup | null> {
+    const inviter = alias(users, "workspace_inviter");
+    const predicate =
+      matcher === "token"
+        ? eq(workspaceInvitations.tokenHash, hash)
+        : eq(workspaceInvitations.codeHash, hash);
+    const [record] = await db
+      .select({
+        invitation: {
+          id: workspaceInvitations.id,
+          workspaceId: workspaceInvitations.workspaceId,
+          invitedEmail: workspaceInvitations.invitedEmail,
+          role: workspaceInvitations.role,
+          invitedByUserId: workspaceInvitations.invitedByUserId,
+          acceptedByUserId: workspaceInvitations.acceptedByUserId,
+          expiresAt: workspaceInvitations.expiresAt,
+          usedAt: workspaceInvitations.usedAt,
+          revokedAt: workspaceInvitations.revokedAt,
+          createdAt: workspaceInvitations.createdAt,
+        },
+        workspace: {
+          id: workspaces.id,
+          name: workspaces.name,
+          slug: workspaces.slug,
+          type: workspaces.type,
+          createdByUserId: workspaces.createdByUserId,
+          createdAt: workspaces.createdAt,
+          updatedAt: workspaces.updatedAt,
+        },
+        invitedByName: inviter.name,
+      })
+      .from(workspaceInvitations)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceInvitations.workspaceId))
+      .leftJoin(inviter, eq(inviter.id, workspaceInvitations.invitedByUserId))
+      .where(predicate)
+      .limit(1);
+
+    return record ?? null;
+  }
+
   async updateWorkspace(
     workspaceId: string,
     values: Pick<WorkspaceRecord, "name" | "type">,
@@ -295,28 +353,38 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
     // A single PostgreSQL statement locks the invitation, creates the membership,
     // and consumes the invitation. A concurrent claim cannot produce two members
     // or consume an invite without adding its membership.
+    const auditId = randomUUID();
     const rows = (await neonSql`
       WITH candidate AS (
-        SELECT i.id, i.workspace_id, i.role, i.invited_by_user_id
+        SELECT i.id, i.workspace_id, workspace.slug AS workspace_slug, i.role,
+          i.invited_by_user_id, i.used_at, i.accepted_by_user_id, i.expires_at
         FROM workspace_invitation AS i
         INNER JOIN workspace AS workspace ON workspace.id = i.workspace_id
         WHERE ${digestPredicate}
           AND workspace.type <> 'PERSONAL'
           AND (i.invited_email IS NULL OR i.invited_email = ${input.email})
           AND i.revoked_at IS NULL
-          AND i.used_at IS NULL
-          AND i.expires_at > NOW()
         FOR UPDATE
+      ),
+      eligible AS (
+        SELECT * FROM candidate
+        WHERE (used_at IS NULL AND expires_at > NOW())
+          OR accepted_by_user_id = ${input.userId}
+      ),
+      existing_membership AS (
+        SELECT candidate.workspace_id, candidate.workspace_slug, member.role
+        FROM eligible AS candidate
+        INNER JOIN workspace_member AS member
+          ON member.workspace_id = candidate.workspace_id
+          AND member.user_id = ${input.userId}
       ),
       created_membership AS (
         INSERT INTO workspace_member (workspace_id, user_id, role, invited_by_user_id, joined_at)
         SELECT workspace_id, ${input.userId}, role, invited_by_user_id, NOW()
-        FROM candidate
-        WHERE NOT EXISTS (
+        FROM eligible
+        WHERE used_at IS NULL AND NOT EXISTS (
           SELECT 1
-          FROM workspace_member AS member
-          WHERE member.workspace_id = candidate.workspace_id
-            AND member.user_id = ${input.userId}
+          FROM existing_membership
         )
         ON CONFLICT (workspace_id, user_id) DO NOTHING
         RETURNING workspace_id
@@ -324,12 +392,29 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
       consumed AS (
         UPDATE workspace_invitation AS invitation
         SET used_at = NOW(), accepted_by_user_id = ${input.userId}
-        WHERE invitation.id IN (SELECT id FROM candidate)
+        WHERE invitation.id IN (
+          SELECT candidate.id
+          FROM eligible AS candidate
+          INNER JOIN created_membership ON created_membership.workspace_id = candidate.workspace_id
+        )
           AND EXISTS (SELECT 1 FROM created_membership)
         RETURNING invitation.workspace_id, invitation.role
+      ),
+      audited AS (
+        INSERT INTO workspace_invitation_audit (id, invitation_id, workspace_id, accepted_by_user_id, event_type)
+        SELECT ${auditId}, candidate.id, consumed.workspace_id, ${input.userId}, 'ACCEPTED'
+        FROM consumed
+        INNER JOIN candidate ON candidate.workspace_id = consumed.workspace_id
       )
-      SELECT workspace_id AS "workspaceId", role
-      FROM consumed;
+      SELECT consumed.workspace_id AS "workspaceId", candidate.workspace_slug AS "workspaceSlug", consumed.role,
+        false AS "alreadyMember"
+      FROM consumed
+      INNER JOIN candidate ON candidate.workspace_id = consumed.workspace_id
+      UNION ALL
+      SELECT workspace_id AS "workspaceId", workspace_slug AS "workspaceSlug", role,
+        true AS "alreadyMember"
+      FROM existing_membership
+      LIMIT 1;
     `) as ConsumedInvitation[];
 
     return rows[0] ?? null;
