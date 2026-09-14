@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { HiOutlineArrowRight, HiOutlineEnvelope } from "react-icons/hi2";
 import { FaApple, FaMicrosoft } from "react-icons/fa6";
@@ -8,6 +10,7 @@ import { FcGoogle } from "react-icons/fc";
 
 import { AuthDivider } from "@/components/pace/auth/auth-divider";
 import { AuthProviderButton } from "@/components/pace/auth/auth-provider-button";
+import { authRouteHref } from "@/components/pace/auth/auth-route";
 import { PasswordField } from "@/components/pace/auth/password-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,9 +19,11 @@ import {
   getAuthFormTranslations,
   type AuthFormLanguage,
 } from "@/i18n/messages";
+import { authClient } from "@/lib/auth-client";
 
 type LoginFormProps = {
   language: AuthFormLanguage;
+  returnTo?: string | null;
   errors?: {
     email?: string;
     password?: string;
@@ -27,8 +32,11 @@ type LoginFormProps = {
 
 type ValidationError = "invalid" | "required";
 
-export function LoginForm({ errors, language }: LoginFormProps) {
+export function LoginForm({ errors, language, returnTo }: LoginFormProps) {
   const emailErrorId = "auth-email-error";
+  const router = useRouter();
+  const [submitError, setSubmitError] = useState<string>();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationErrors, setValidationErrors] = useState<{
     email?: ValidationError;
     password?: ValidationError;
@@ -37,7 +45,7 @@ export function LoginForm({ errors, language }: LoginFormProps) {
   const emailError = errors?.email ?? getValidationMessage(validationErrors.email, "email", t);
   const passwordError = errors?.password ?? getValidationMessage(validationErrors.password, "password", t);
 
-  function validateForm(form: HTMLFormElement) {
+  async function submitForm(form: HTMLFormElement) {
     const formData = new FormData(form);
     const email = String(formData.get("email") ?? "").trim();
     const password = String(formData.get("password") ?? "");
@@ -54,6 +62,29 @@ export function LoginForm({ errors, language }: LoginFormProps) {
     }
 
     setValidationErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    setSubmitError(undefined);
+    setIsSubmitting(true);
+
+    try {
+      const result = await authClient.signIn.email({ email, password });
+
+      if (result.error) {
+        setSubmitError(result.error.message || t("auth.form.signIn.error"));
+        return;
+      }
+
+      router.replace(authRouteHref("/login", language, returnTo));
+      router.refresh();
+    } catch {
+      setSubmitError(t("auth.form.signIn.error"));
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -69,7 +100,7 @@ export function LoginForm({ errors, language }: LoginFormProps) {
       }}
       onSubmit={(event) => {
         event.preventDefault();
-        validateForm(event.currentTarget);
+        void submitForm(event.currentTarget);
       }}
     >
       <div className="grid gap-5 [@media(max-height:850px)]:gap-3">
@@ -114,12 +145,17 @@ export function LoginForm({ errors, language }: LoginFormProps) {
       </div>
 
       <Button
+        disabled={isSubmitting}
         className="h-[3.3rem] rounded-[0.65rem] bg-[#101a2b] text-[0.92rem] font-medium text-white shadow-[0_7px_14px_rgb(18_32_55_/_12%)] transition-[background-color,transform,box-shadow] hover:bg-[#1c2940] active:translate-y-px focus-visible:border-[#2360e8] focus-visible:ring-4 focus-visible:ring-[#2360e8]/20 [@media(max-height:850px)]:h-11"
         type="submit"
       >
-        {t("auth.form.signIn")}
+        {isSubmitting ? t("auth.form.submitting") : t("auth.form.signIn")}
         <HiOutlineArrowRight aria-hidden="true" className="size-[1.1rem]" />
       </Button>
+
+      <p aria-live="polite" className={submitError ? "text-center text-[0.8rem] text-[#b42318]" : "sr-only"}>
+        {submitError}
+      </p>
 
       <div className="grid gap-5 pt-0.5 [@media(max-height:850px)]:gap-4">
         <AuthDivider label={t("auth.form.continueWith")} />
@@ -146,13 +182,13 @@ export function LoginForm({ errors, language }: LoginFormProps) {
 
       <div className="mt-1 grid justify-items-center gap-2 rounded-[0.7rem] border border-[#dfe5ee] px-5 py-5 text-center sm:py-[1.35rem] [@media(max-height:850px)]:py-4">
         <p className="text-[0.84rem] text-[#65718a]">{t("auth.form.noAccount")}</p>
-        <span
+        <Link
           className="inline-flex items-center gap-1.5 text-[0.95rem] font-semibold text-[#1556e8]"
-          data-auth-route="/register"
+          href={authRouteHref("/register", language, returnTo)}
         >
           {t("auth.form.createAccount")}
           <HiOutlineArrowRight aria-hidden="true" className="size-[1.1rem]" />
-        </span>
+        </Link>
       </div>
     </form>
   );

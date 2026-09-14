@@ -12,45 +12,51 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 type PasswordFieldProps = {
+  autoComplete?: string;
   error?: string;
-  forgotPasswordLabel: string;
+  forgotPasswordLabel?: string;
   forgotPasswordUrl?: string;
   hidePasswordLabel: string;
+  id?: string;
   label: string;
+  name?: string;
   placeholder: string;
   showPasswordLabel: string;
 };
 
 export function PasswordField({
+  autoComplete = "current-password",
   error,
   forgotPasswordLabel,
   forgotPasswordUrl,
   hidePasswordLabel,
+  id = "auth-password",
   label,
+  name = "password",
   placeholder,
   showPasswordLabel,
 }: PasswordFieldProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const errorId = "auth-password-error";
+  const errorId = `${id}-error`;
 
   return (
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-4">
-        <Label className="text-[0.9rem] font-medium text-[#17213a]" htmlFor="auth-password">
+        <Label className="text-[0.9rem] font-medium text-[#17213a]" htmlFor={id}>
           {label}
         </Label>
-        {forgotPasswordUrl ? (
+        {forgotPasswordLabel && forgotPasswordUrl ? (
           <a
             className="shrink-0 text-[0.81rem] font-medium text-[#1556e8] transition-colors hover:text-[#0b3eae] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2360e8]/40"
             href={forgotPasswordUrl}
           >
             {forgotPasswordLabel}
           </a>
-        ) : (
+        ) : forgotPasswordLabel ? (
           <span className="shrink-0 text-[0.81rem] font-medium text-[#1556e8]">
             {forgotPasswordLabel}
           </span>
-        )}
+        ) : null}
       </div>
       <div className="relative">
         <HiOutlineLockClosed
@@ -60,10 +66,10 @@ export function PasswordField({
         <Input
           aria-describedby={error ? errorId : undefined}
           aria-invalid={Boolean(error)}
-          autoComplete="current-password"
+          autoComplete={autoComplete}
           className="h-[3.25rem] rounded-[0.65rem] border-[#dbe2ec] bg-white pl-11 pr-12 text-[0.92rem] text-[#17213a] placeholder:text-[#75819a] hover:border-[#cbd5e1] focus-visible:border-[#2360e8] focus-visible:ring-4 focus-visible:ring-[#2360e8]/12 [@media(max-height:850px)]:h-11"
-          id="auth-password"
-          name="password"
+          id={id}
+          name={name}
           placeholder={placeholder}
           required
           type={isVisible ? "text" : "password"}

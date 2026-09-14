@@ -12,15 +12,11 @@ type LoginPageProps = {
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const { lang, returnTo } = await searchParams;
   const actor = await getAuthenticatedActor();
+  const safeReturnTo = typeof returnTo === "string" ? returnTo : null;
 
   if (actor) {
-    redirect(
-      await resolvePostAuthDestination(
-        actor.userId,
-        typeof returnTo === "string" ? returnTo : null,
-      ),
-    );
+    redirect(await resolvePostAuthDestination(actor.userId, safeReturnTo));
   }
 
-  return <AuthShell language={toAuthFormLanguage(lang)} />;
+  return <AuthShell language={toAuthFormLanguage(lang)} returnTo={safeReturnTo} />;
 }
