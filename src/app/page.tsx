@@ -1,21 +1,16 @@
-import { AskPace } from "@/app/components/ask-pace";
-import { requireAuthenticatedActor } from "@/authorization/session";
-import { getPersistedUserLanguage } from "@/i18n/server";
+import { redirect } from "next/navigation";
+
+import { getAuthenticatedActor } from "@/authorization/session";
+import { loginPathForReturnTo, workspaceOverviewPath } from "@/modules/auth/post-auth-resolver";
 import { getWorkspaceService } from "@/modules/workspaces/server";
 
 export default async function Home() {
-  let language: "en" | "fr" = "en";
-  let workspaceId: string | null = null;
+  const actor = await getAuthenticatedActor();
+  if (!actor) redirect(loginPathForReturnTo("/"));
 
-  try {
-    const actor = await requireAuthenticatedActor();
-    const [workspaces, persistedLanguage] = await Promise.all([
-      getWorkspaceService().listWorkspaces(actor),
-      getPersistedUserLanguage(actor.userId),
-    ]);
-    language = persistedLanguage;
-    workspaceId = workspaces[0]?.id ?? null;
-  } catch {}
+  const workspaces = await getWorkspaceService().listWorkspaces(actor);
+  const workspace = workspaces[0];
+  if (!workspace) redirect("/onboarding");
 
-  return <AskPace language={language} workspaceId={workspaceId} />;
+  redirect(workspaceOverviewPath(workspace.slug));
 }

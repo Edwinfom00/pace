@@ -47,36 +47,6 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 }
-.pace-shell { min-height: 100vh; padding: 24px; background: linear-gradient(135deg, #f7f8fb 0%, #eef3ff 100%); }
-.pace-panel { width: min(100%, 760px); min-height: calc(100vh - 48px); margin: 0 auto; padding: 28px; border: 1px solid #e4e7ec; border-radius: 16px; background: #fff; box-shadow: 0 18px 48px rgb(16 24 40 / 8%); }
-.pace-empty { display: grid; place-content: center; gap: 8px; }
-.pace-empty h1, .pace-header h1, .pace-card h2 { margin: 0; color: #101828; }
-.pace-empty p, .pace-header p { margin: 0; color: #667085; }
-.pace-header { display: flex; gap: 14px; align-items: flex-start; padding-bottom: 24px; border-bottom: 1px solid #eaecf0; }
-.pace-mark { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 10px; background: #101828; color: #fff; font-weight: 700; }
-.pace-eyebrow, .pace-message-label { margin: 0 0 4px; color: #667085; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.pace-thread { display: grid; gap: 16px; padding: 26px 0 12px; }
-.pace-message { max-width: 84%; padding: 12px 14px; border-radius: 12px; background: #f8fafc; color: #344054; }
-.pace-message p { margin: 0; white-space: pre-wrap; }
-.pace-message-user { justify-self: end; background: #eef4ff; }
-.pace-thinking, .pace-error, .pace-missing { margin: 0; color: #667085; font-size: 14px; }
-.pace-error { color: #b42318; }
-.pace-actions { display: grid; gap: 12px; }
-.pace-card { padding: 16px; border: 1px solid #d0d5dd; border-radius: 12px; background: #fff; }
-.pace-card-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 16px; }
-.pace-status { border-radius: 999px; padding: 5px 9px; background: #f2f4f7; color: #475467; font-size: 12px; font-weight: 600; }
-.pace-draft-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.pace-draft-form label { display: grid; gap: 6px; color: #344054; font-size: 13px; font-weight: 600; }
-.pace-draft-form input, .pace-draft-form select, .pace-composer input { min-width: 0; border: 1px solid #d0d5dd; border-radius: 8px; padding: 10px 11px; color: #101828; background: #fff; }
-.pace-card-buttons { display: flex; grid-column: 1 / -1; gap: 8px; }
-.pace-card-buttons button, .pace-composer button { border: 0; border-radius: 8px; padding: 10px 13px; background: #155eef; color: #fff; font-weight: 650; cursor: pointer; }
-.pace-card-buttons .pace-secondary-button, .pace-card-buttons button[type="button"] { background: #f2f4f7; color: #344054; }
-.pace-card-buttons button:first-child { background: #155eef; color: #fff; }
-.pace-card-buttons button:disabled, .pace-composer button:disabled { cursor: not-allowed; opacity: .55; }
-.pace-composer { display: flex; gap: 10px; margin-top: 22px; padding-top: 20px; border-top: 1px solid #eaecf0; }
-.pace-composer input { flex: 1; }
-@media (max-width: 620px) { .pace-shell { padding: 12px; } .pace-panel { min-height: calc(100vh - 24px); padding: 18px; } .pace-draft-form { grid-template-columns: 1fr; } .pace-message { max-width: 100%; } }
-
 .finance-shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100vh; background: #fbfcfe; color: #17223b; }
 .finance-navigation { display: flex; flex-direction: column; gap: 30px; padding: 28px 16px; border-right: 1px solid #e9edf4; background: #fff; }
 .finance-brand { display: flex; align-items: center; gap: 10px; padding: 0 10px; color: #17223b; font-size: 21px; font-weight: 760; text-decoration: none; }

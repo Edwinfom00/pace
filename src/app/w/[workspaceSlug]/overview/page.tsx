@@ -88,6 +88,8 @@ export default async function WorkspaceOverviewScaffoldPage({
       now={now.toISOString()}
       recentTransactions={recentTransactions}
       timeZone={workspace.preferences.timezone}
+      language={language}
+      workspaceId={workspace.workspace.id}
       workspaceSlug={workspace.workspace.slug}
     />
   );
