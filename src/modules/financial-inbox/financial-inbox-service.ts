@@ -61,6 +61,11 @@ export interface FinancialInboxView {
   } | null;
 }
 
+export interface FinancialInboxPreviewView {
+  unresolvedCount: number;
+  items: FinancialInboxView[];
+}
+
 export interface RecurringPaymentView {
   id: string;
   normalizedMerchant: string;
@@ -209,6 +214,24 @@ export class FinancialInboxService {
     await this.requirePermission(actor.userId, workspaceId, "read");
     const items = await this.repository.listInboxItems(workspaceId);
     return Promise.all(items.map((item) => this.toInboxView(workspaceId, item)));
+  }
+
+  async listInboxPreview(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    limit: number,
+  ): Promise<FinancialInboxPreviewView> {
+    await this.requirePermission(actor.userId, workspaceId, "read");
+    const previewLimit = Math.min(Math.max(Math.floor(limit), 1), 12);
+    const [items, unresolvedCount] = await Promise.all([
+      this.repository.listInboxItems(workspaceId, "OPEN", previewLimit),
+      this.repository.countInboxItems(workspaceId, "OPEN"),
+    ]);
+
+    return {
+      unresolvedCount,
+      items: await Promise.all(items.map((item) => this.toInboxView(workspaceId, item))),
+    };
   }
 
   async listRecurring(actor: AuthenticatedActor, workspaceId: string): Promise<RecurringPaymentView[]> {

@@ -179,7 +179,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     workspaceId: string,
     filters: LedgerTransactionFilters = {},
   ): Promise<LedgerTransactionRecord[]> {
-    return [...this.transactions.values()].filter((transaction) => {
+    const transactions = [...this.transactions.values()].filter((transaction) => {
       if (transaction.workspaceId !== workspaceId) return false;
       if (filters.statuses?.length && !filters.statuses.includes(transaction.status)) return false;
       if (filters.accountId && transaction.accountId !== filters.accountId) return false;
@@ -188,7 +188,12 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       if (filters.occurredFrom && transaction.occurredAt < filters.occurredFrom) return false;
       if (filters.occurredTo && transaction.occurredAt > filters.occurredTo) return false;
       return true;
-    });
+    }).sort((left, right) =>
+      right.occurredAt.getTime() - left.occurredAt.getTime() ||
+      right.createdAt.getTime() - left.createdAt.getTime(),
+    );
+
+    return filters.limit === undefined ? transactions : transactions.slice(0, filters.limit);
   }
 
   async listRefundsForTransaction(

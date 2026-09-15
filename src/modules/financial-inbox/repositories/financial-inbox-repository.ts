@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -92,7 +92,12 @@ export interface FinancialInboxRepository {
     transactionId: string,
     reason: InboxReason,
   ): Promise<FinancialInboxItemRecord | null>;
-  listInboxItems(workspaceId: string, status?: InboxItemStatus): Promise<FinancialInboxItemRecord[]>;
+  listInboxItems(
+    workspaceId: string,
+    status?: InboxItemStatus,
+    limit?: number,
+  ): Promise<FinancialInboxItemRecord[]>;
+  countInboxItems(workspaceId: string, status?: InboxItemStatus): Promise<number>;
   updateInboxItem(
     workspaceId: string,
     inboxItemId: string,
@@ -303,8 +308,9 @@ export class DatabaseFinancialInboxRepository implements FinancialInboxRepositor
   async listInboxItems(
     workspaceId: string,
     status?: InboxItemStatus,
+    limit?: number,
   ): Promise<FinancialInboxItemRecord[]> {
-    return db
+    const query = db
       .select()
       .from(financialInboxItems)
       .where(
@@ -313,6 +319,21 @@ export class DatabaseFinancialInboxRepository implements FinancialInboxRepositor
           : eq(financialInboxItems.workspaceId, workspaceId),
       )
       .orderBy(desc(financialInboxItems.createdAt));
+
+    return limit === undefined ? query : query.limit(limit);
+  }
+
+  async countInboxItems(workspaceId: string, status?: InboxItemStatus): Promise<number> {
+    const [result] = await db
+      .select({ total: count() })
+      .from(financialInboxItems)
+      .where(
+        status
+          ? and(eq(financialInboxItems.workspaceId, workspaceId), eq(financialInboxItems.status, status))
+          : eq(financialInboxItems.workspaceId, workspaceId),
+      );
+
+    return result?.total ?? 0;
   }
 
   async updateInboxItem(

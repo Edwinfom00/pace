@@ -13,6 +13,8 @@ import {
 } from "@/modules/overview/domain/overview-financial-summary";
 import { parseOverviewFilter } from "@/modules/overview/domain/overview.types";
 import { getOverviewFinancialSummary } from "@/modules/overview/queries/get-overview-financial-summary";
+import { getOverviewInboxPreview } from "@/modules/overview/queries/get-overview-inbox-preview";
+import { getOverviewRecentTransactions } from "@/modules/overview/queries/get-overview-recent-transactions";
 import { OverviewFinancialSummaryView } from "@/modules/overview/ui/views/overview-financial-summary-view";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
@@ -53,7 +55,7 @@ export default async function WorkspaceOverviewScaffoldPage({
     overviewPeriodFromKey(undefined, workspace.preferences.timezone, now),
     workspace.preferences.timezone,
   );
-  const [language, summary] = await Promise.all([
+  const [language, summary, recentTransactions, inbox] = await Promise.all([
     getPersistedDashboardLanguage(actor.userId),
     getOverviewFinancialSummary({
       actor,
@@ -64,6 +66,16 @@ export default async function WorkspaceOverviewScaffoldPage({
       locale: workspace.preferences.locale,
       timeZone: workspace.preferences.timezone,
     }),
+    getOverviewRecentTransactions({
+      actor,
+      workspaceId: workspace.workspace.id,
+      limit: 4,
+    }),
+    getOverviewInboxPreview({
+      actor,
+      workspaceId: workspace.workspace.id,
+      limit: 4,
+    }),
   ]);
 
   return (
@@ -72,6 +84,11 @@ export default async function WorkspaceOverviewScaffoldPage({
       labels={getDashboardLabels(language)}
       periodKey={overviewPeriodKey(period, workspace.preferences.timezone)}
       summary={summary}
+      inbox={inbox}
+      now={now.toISOString()}
+      recentTransactions={recentTransactions}
+      timeZone={workspace.preferences.timezone}
+      workspaceSlug={workspace.workspace.slug}
     />
   );
 }

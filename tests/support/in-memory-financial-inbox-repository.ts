@@ -145,10 +145,19 @@ export class InMemoryFinancialInboxRepository implements FinancialInboxRepositor
   async listInboxItems(
     workspaceId: string,
     status?: InboxItemStatus,
+    limit?: number,
   ): Promise<FinancialInboxItemRecord[]> {
-    return [...this.items.values()]
+    const items = [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId && (!status || item.status === status))
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+
+    return limit === undefined ? items : items.slice(0, limit);
+  }
+
+  async countInboxItems(workspaceId: string, status?: InboxItemStatus): Promise<number> {
+    return [...this.items.values()].filter(
+      (item) => item.workspaceId === workspaceId && (!status || item.status === status),
+    ).length;
   }
 
   async updateInboxItem(

@@ -73,6 +73,7 @@ export interface LedgerTransactionFilters {
   merchantId?: string;
   occurredFrom?: Date;
   occurredTo?: Date;
+  limit?: number;
 }
 
 export function normalizeMerchantName(value: string): string {

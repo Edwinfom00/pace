@@ -201,11 +201,13 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     if (filters.occurredFrom) predicates.push(gte(ledgerTransactions.occurredAt, filters.occurredFrom));
     if (filters.occurredTo) predicates.push(lte(ledgerTransactions.occurredAt, filters.occurredTo));
 
-    return db
+    const query = db
       .select()
       .from(ledgerTransactions)
       .where(and(...predicates))
       .orderBy(desc(ledgerTransactions.occurredAt), desc(ledgerTransactions.createdAt));
+
+    return filters.limit === undefined ? query : query.limit(filters.limit);
   }
 
   async listRefundsForTransaction(

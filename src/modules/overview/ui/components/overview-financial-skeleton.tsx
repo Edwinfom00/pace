@@ -8,6 +8,14 @@ export function OverviewFinancialSkeleton() {
         <Skeleton className="h-[104px]" /><Skeleton className="h-[104px]" /><Skeleton className="h-[104px]" />
       </div>
       <Skeleton className="h-[278px] w-full" />
+      <div className="space-y-3 pt-1">
+        <div className="flex justify-between"><Skeleton className="h-7 w-28" /><Skeleton className="h-5 w-12" /></div>
+        <Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" />
+      </div>
+      <div className="space-y-3 pt-2">
+        <div className="flex justify-between"><Skeleton className="h-7 w-20" /><Skeleton className="h-5 w-12" /></div>
+        <Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" />
+      </div>
     </div>
   );
 }
