@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FiArrowDown, FiChevronRight, FiX, FiZap } from "react-icons/fi";
+import { FiArrowDown, FiChevronRight, FiLoader, FiX } from "react-icons/fi";
 import type { ClientSessionState } from "eve/client";
 import { useEveAgent, type EveMessage } from "eve/react";
 
@@ -102,7 +102,8 @@ export function PaceAssistantPanelView({
   const messages = useMemo(() => agent.data.messages, [agent.data.messages]);
   const progress = getAssistantProgress(agent.status, agent.events, labels);
   const loadingConversation = resuming && messages.length === 0;
-  const awaitingFirstResponse = busy && messages.at(-1)?.role === "user";
+  const awaitingFirstResponse = busy && messages.at(-1)?.role !== "assistant";
+  const agentIsShowingLoader = busy && isAssistantMessageLoading(messages.at(-1));
   return (
     <section aria-label={labels.ask} className={`flex h-full min-h-0 flex-col overflow-hidden rounded-[14px] border border-[#e5e9f0] bg-white shadow-[0_8px_30px_rgb(27_43_75/4%)] ${className ?? ""}`}>
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-[#edf0f4] px-3.5">
@@ -111,7 +112,7 @@ export function PaceAssistantPanelView({
       </header>
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <div aria-live="polite" className="absolute inset-0 overflow-y-auto overscroll-contain px-3.5 py-4 touch-pan-y" onScroll={handleConversationScroll} ref={conversationRef} role="log">
-          <div ref={conversationContentRef}>{loadingConversation ? <AssistantLoadingState label={labels.loadingConversation} /> : messages.length === 0 ? <div className="space-y-3"><AssistantEmptyState labels={labels} suggestions={suggestions} onSuggestion={(suggestion) => void send(suggestion)} />{agent.status === "error" ? <AssistantErrorState labels={labels} lastRequest={lastRequest} onRetry={() => void send(lastRequest ?? undefined)} /> : null}</div> : <div className="space-y-5">{messages.map((message) => <AssistantMessage key={message.id} labels={labels} locale={locale} message={message} timeZone={timeZone} />)}{awaitingFirstResponse ? <AssistantLoadingState label={progress} /> : null}<PaceEveActionLifecycle labels={labels} messages={messages} onRequestReview={async (actionId) => send(`Review the existing action ${actionId} and prepare it for approval.`)} onRespond={async (requestId, optionId) => { jumpToConversationEnd(); await agent.respond([{ requestId, optionId }], createPaceAssistantTurnOptions(pageContext)); }} workspaceId={workspaceId} />{busy && !awaitingFirstResponse ? <AssistantProgressIndicator label={progress} /> : resuming ? <AssistantProgressIndicator label={labels.loadingConversation} /> : null}{agent.status === "error" ? <AssistantErrorState labels={labels} lastRequest={lastRequest} onRetry={() => void send(lastRequest ?? undefined)} /> : null}</div>}</div>
+          <div ref={conversationContentRef}>{loadingConversation ? <ConversationLoadingState label={labels.loadingConversation} /> : messages.length === 0 ? <div className="space-y-3">{busy ? <AssistantAgentLoadingState label={progress} /> : <AssistantEmptyState labels={labels} suggestions={suggestions} onSuggestion={(suggestion) => void send(suggestion)} />}{agent.status === "error" ? <AssistantErrorState labels={labels} lastRequest={lastRequest} onRetry={() => void send(lastRequest ?? undefined)} /> : null}</div> : <div className="space-y-5">{messages.map((message) => <AssistantMessage key={message.id} labels={labels} locale={locale} message={message} timeZone={timeZone} />)}{awaitingFirstResponse ? <AssistantAgentLoadingState label={progress} /> : null}<PaceEveActionLifecycle labels={labels} messages={messages} onRequestReview={async (actionId) => send(`Review the existing action ${actionId} and prepare it for approval.`)} onRespond={async (requestId, optionId) => { jumpToConversationEnd(); await agent.respond([{ requestId, optionId }], createPaceAssistantTurnOptions(pageContext)); }} workspaceId={workspaceId} />{busy && !awaitingFirstResponse && !agentIsShowingLoader ? <AssistantProgressIndicator label={progress} /> : resuming ? <AssistantProgressIndicator label={labels.loadingConversation} /> : null}{agent.status === "error" ? <AssistantErrorState labels={labels} lastRequest={lastRequest} onRetry={() => void send(lastRequest ?? undefined)} /> : null}</div>}</div>
         </div>
         {!isAtConversationEnd ? <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center"><button aria-label={labels.scrollToLatest} className="pointer-events-auto inline-flex h-8 items-center gap-1.5 rounded-full border border-[#cbd9f3] bg-white px-3 text-[11px] font-semibold text-[#245ecf] shadow-[0_1px_3px_rgb(27_43_75/12%)] transition-colors hover:border-[#9fbbec] hover:bg-[#f6f9ff] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fed]" onClick={jumpToConversationEnd} type="button"><FiArrowDown aria-hidden className="size-3.5" />{labels.scrollToLatest}</button></div> : null}
       </div>
@@ -132,12 +133,16 @@ function AssistantEmptyState({
   return <div className="flex min-h-full flex-col justify-end pb-2"><div className="rounded-[12px] bg-[#f8faff] p-3.5"><p className="text-[13px] font-medium text-[#34405a]">{labels.noMessages}</p><p className="mt-1 text-[11px] leading-4 text-[#7d889c]">{labels.suggestedQuestions}</p></div><div className="mt-3 flex flex-wrap gap-1.5">{suggestions.map((suggestion) => <button className="rounded-full border border-[#e2e7ef] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#536079] transition-colors hover:border-[#b9cffd] hover:bg-[#f6f9ff] active:translate-y-px" key={suggestion} onClick={() => onSuggestion(suggestion)} type="button">{suggestion}</button>)}</div></div>;
 }
 
-function AssistantLoadingState({ label }: { readonly label: string }) {
-  return <div aria-live="polite" className="max-w-[88%]" role="status"><div className="mb-1.5 flex items-center gap-1.5"><PaceLogo alt="" height={18} variant="icon" width={18} /><span className="text-[11px] font-semibold text-[#4b5870]">Pace</span></div><div className="rounded-[12px] border border-[#e8edf5] bg-[#fbfcff] p-3.5"><p className="text-[12px] font-medium text-[#536079]">{label}</p><div aria-hidden className="mt-3 space-y-2 animate-pulse motion-reduce:animate-none"><span className="block h-2.5 w-[88%] rounded-full bg-[#e8edf6]" /><span className="block h-2.5 w-[66%] rounded-full bg-[#e8edf6]" /><span className="block h-2.5 w-[76%] rounded-full bg-[#e8edf6]" /></div></div></div>;
+function ConversationLoadingState({ label }: { readonly label: string }) {
+  return <div className="flex min-h-full items-center justify-center"><div aria-live="polite" className="flex flex-col items-center gap-3 text-center" role="status"><span className="flex size-9 items-center justify-center rounded-full bg-[#eef4ff] text-[#2f6fed]"><FiLoader aria-hidden className="size-4 animate-spin motion-reduce:animate-none" /></span><p className="text-[13px] font-medium text-[#536079]">{label}</p></div></div>;
+}
+
+function AssistantAgentLoadingState({ label }: { readonly label: string }) {
+  return <div aria-live="polite" className="flex items-center gap-2 text-[12px] text-[#536079]" role="status"><PaceLogo alt="" height={18} variant="icon" width={18} /><FiLoader aria-hidden className="size-3.5 animate-spin text-[#2f6fed] motion-reduce:animate-none" /><span>{label}</span></div>;
 }
 
 function AssistantProgressIndicator({ label }: { readonly label: string }) {
-  return <div aria-live="polite" className="flex items-center gap-2 text-[12px] text-[#536079]" role="status"><span className="flex size-5 items-center justify-center rounded-full bg-[#eef4ff] text-[#2f6fed]"><FiZap aria-hidden className="size-3" /></span>{label}</div>;
+  return <div aria-live="polite" className="flex items-center gap-2 text-[12px] text-[#536079]" role="status"><span className="flex size-5 items-center justify-center rounded-full bg-[#eef4ff] text-[#2f6fed]"><FiLoader aria-hidden className="size-3 animate-spin motion-reduce:animate-none" /></span>{label}</div>;
 }
 
 function AssistantErrorState({ labels, lastRequest, onRetry }: { readonly labels: ReturnType<typeof getPaceAssistantLabels>; readonly lastRequest: string | null; readonly onRetry: () => void }) {
@@ -159,8 +164,9 @@ function AssistantMessage({
   const structured = message.role === "assistant" ? parseStructuredResponse(message.metadata?.result) ?? parseStructuredResponse(text) : null;
   const looksLikeStructuredPayload = message.role === "assistant" && isStructuredPayloadText(text);
   const malformedStructuredPayload = looksLikeStructuredPayload && !structured && message.metadata?.status !== "streaming";
+  const loadingAssistantResponse = isAssistantMessageLoading(message);
   if (message.role === "user") return <article className="ml-auto max-w-[84%]"><p className="mb-1 text-right text-[10px] font-medium text-[#8a94a7]">{labels.you}</p><div className="rounded-[11px] rounded-br-[3px] bg-[#edf4ff] px-3 py-2 text-[13px] leading-5 text-[#31415f]">{text}</div></article>;
-  return <article className="max-w-full"><div className="mb-1.5 flex items-center gap-1.5"><PaceLogo alt="" height={18} variant="icon" width={18} /><span className="text-[11px] font-semibold text-[#4b5870]">{labels.assistant}</span></div>{!structured && !looksLikeStructuredPayload && text ? <div className="mb-3"><TextBlock text={text} /></div> : null}{structured ? <PaceAssistantResponse blocks={structured.blocks} labels={labels} locale={locale} timeZone={timeZone} /> : malformedStructuredPayload ? <AssistantMalformedResponse label={labels.unknownResponse} /> : looksLikeStructuredPayload ? <AssistantProgressIndicator label={labels.preparing} /> : null}</article>;
+  return <article className="max-w-full"><div className="mb-1.5 flex items-center gap-1.5"><PaceLogo alt="" height={18} variant="icon" width={18} /><span className="text-[11px] font-semibold text-[#4b5870]">{labels.assistant}</span></div>{!structured && !looksLikeStructuredPayload && text ? <div className="mb-3"><TextBlock text={text} /></div> : null}{structured ? <PaceAssistantResponse blocks={structured.blocks} labels={labels} locale={locale} timeZone={timeZone} /> : malformedStructuredPayload ? <AssistantMalformedResponse label={labels.unknownResponse} /> : loadingAssistantResponse ? <AssistantAgentLoadingState label={labels.preparing} /> : null}</article>;
 }
 
 function AssistantMalformedResponse({ label }: { readonly label: string }) {
@@ -213,6 +219,12 @@ export function parseStructuredResponse(value: unknown): PaceAssistantResponsePa
 
 function isStructuredPayloadText(value: string): boolean {
   return /^(?:```(?:json)?\s*)?\{\s*"blocks"\s*:/.test(value.trim());
+}
+
+function isAssistantMessageLoading(message: EveMessage | undefined): boolean {
+  if (!message || message.role !== "assistant") return false;
+  const text = message.parts.filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text").map((part) => part.text).join("");
+  return isStructuredPayloadText(text) || (message.metadata?.status === "streaming" && text.trim().length === 0);
 }
 
 function readSavedSession(key: string): ClientSessionState | undefined {
