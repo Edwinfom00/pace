@@ -11,12 +11,14 @@ export function PaceAssistantComposer({
   labels,
   onChange,
   onSend,
+  autoFocus = false,
 }: {
   readonly value: string;
   readonly disabled: boolean;
   readonly labels: PaceAssistantLabels;
   readonly onChange: (value: string) => void;
   readonly onSend: () => void;
+  readonly autoFocus?: boolean;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const canSend = value.trim().length > 0 && !disabled;
@@ -25,6 +27,7 @@ export function PaceAssistantComposer({
       <div className="flex items-end gap-2 rounded-[11px] border border-[#dfe4ec] bg-[#fcfdff] px-2.5 py-2 shadow-[0_1px_2px_rgb(24_35_61/3%)] focus-within:border-[#8db2ff] focus-within:ring-3 focus-within:ring-[#dce8ff]">
         <textarea
           aria-label={labels.placeholder}
+          autoFocus={autoFocus}
           className="max-h-28 min-h-5 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-5 text-[#263149] outline-none placeholder:text-[#98a2b3] disabled:cursor-not-allowed"
           disabled={disabled}
           onChange={(event) => {

@@ -26,6 +26,8 @@ export function PaceAssistantPanelView({
   className,
   onClose,
   onCollapse,
+  initialPrompt,
+  autoFocusComposer = false,
 }: {
   readonly workspaceId: string;
   readonly language: string;
@@ -34,6 +36,8 @@ export function PaceAssistantPanelView({
   readonly className?: string;
   readonly onClose?: () => void;
   readonly onCollapse?: () => void;
+  readonly initialPrompt?: string | null;
+  readonly autoFocusComposer?: boolean;
 }) {
   const pageContext = usePacePageContext();
   const labels = getPaceAssistantLabels(language);
@@ -44,6 +48,7 @@ export function PaceAssistantPanelView({
   const conversationContentRef = useRef<HTMLDivElement>(null);
   const shouldFollowConversationRef = useRef(true);
   const [isAtConversationEnd, setIsAtConversationEnd] = useState(true);
+  const sentInitialPromptRef = useRef<string | null>(null);
   const sessionKey = `pace-assistant:${workspaceId}`;
   const [initialSession] = useState<ClientSessionState | undefined>(() => readSavedSession(sessionKey));
   const agent = useEveAgent({
@@ -99,6 +104,15 @@ export function PaceAssistantPanelView({
     await agent.send<PaceAssistantResponsePayload>(next, createPaceAssistantTurnOptions(pageContext, busy));
   };
 
+  useEffect(() => {
+    if (!initialPrompt || resuming || sentInitialPromptRef.current === initialPrompt) return;
+    sentInitialPromptRef.current = initialPrompt;
+    setDraft("");
+    setLastRequest(initialPrompt);
+    jumpToConversationEnd();
+    void agent.send<PaceAssistantResponsePayload>(initialPrompt, createPaceAssistantTurnOptions(pageContext, busy));
+  }, [agent, busy, initialPrompt, jumpToConversationEnd, pageContext, resuming]);
+
   const messages = useMemo(() => agent.data.messages, [agent.data.messages]);
   const progress = getAssistantProgress(agent.status, agent.events, labels);
   const loadingConversation = resuming && messages.length === 0;
@@ -116,7 +130,7 @@ export function PaceAssistantPanelView({
         </div>
         {!isAtConversationEnd ? <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center"><button aria-label={labels.scrollToLatest} className="pointer-events-auto inline-flex h-8 items-center gap-1.5 rounded-full border border-[#cbd9f3] bg-white px-3 text-[11px] font-semibold text-[#245ecf] shadow-[0_1px_3px_rgb(27_43_75/12%)] transition-colors hover:border-[#9fbbec] hover:bg-[#f6f9ff] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fed]" onClick={jumpToConversationEnd} type="button"><FiArrowDown aria-hidden className="size-3.5" />{labels.scrollToLatest}</button></div> : null}
       </div>
-      <PaceAssistantComposer disabled={resuming} labels={labels} onChange={setDraft} onSend={() => void send()} value={draft} />
+      <PaceAssistantComposer autoFocus={autoFocusComposer} disabled={resuming} labels={labels} onChange={setDraft} onSend={() => void send()} value={draft} />
     </section>
   );
 }

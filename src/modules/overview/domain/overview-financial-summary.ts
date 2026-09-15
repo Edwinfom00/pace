@@ -108,12 +108,14 @@ export function buildOverviewFinancialSummary(
           minor: (pace?.spendingPerElapsedDay ?? money(input.currency, 0n)).minor.toString(),
         }
       : notApplicable(),
-    expectedMonth: supportsSpendingPace && hasSpending && pace?.spendingPerElapsedDay
-      ? {
-          availability: "value",
-          minor: (pace.spendingPerElapsedDay.minor * BigInt(pace.totalDayCount)).toString(),
-        }
-      : notApplicable(),
+    expectedMonth: !supportsSpendingPace
+      ? notApplicable()
+      : hasSpending && pace?.spendingPerElapsedDay
+        ? {
+            availability: "value",
+            minor: (pace.spendingPerElapsedDay.minor * BigInt(pace.totalDayCount)).toString(),
+          }
+        : insufficientData(),
     spendingPace: supportsSpendingPace
       ? buildSpendingPace(input)
       : {
@@ -265,4 +267,8 @@ function formatComparisonMonth(period: Period, locale: string, timeZone: string)
 
 function notApplicable(): OverviewMetric {
   return { availability: "not-applicable", minor: null };
+}
+
+function insufficientData(): OverviewMetric {
+  return { availability: "insufficient-data", minor: null };
 }

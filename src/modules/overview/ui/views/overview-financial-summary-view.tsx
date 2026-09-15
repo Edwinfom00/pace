@@ -1,6 +1,7 @@
 import type { DashboardLabels } from "@/i18n/dashboard-messages";
 
 import type { OverviewFinancialSummary } from "../../domain/overview.types";
+import type { OverviewRightRailData } from "../../queries/get-overview-right-rail";
 import { OverviewFilters } from "../components/overview-filters";
 import { OverviewKpis } from "../components/overview-kpis";
 import { OverviewPeriodControls } from "../components/overview-period-controls";
@@ -10,7 +11,7 @@ import type {
   OverviewRecentTransaction,
 } from "../../domain/overview-activity.types";
 import { OverviewActivityView } from "./overview-activity-view";
-import { PaceAssistantSurface } from "@/modules/pace-assistant/ui/views/pace-assistant-surface";
+import { OverviewRightRailView } from "./overview-right-rail-view";
 
 export function OverviewFinancialSummaryView({
   labels,
@@ -24,6 +25,7 @@ export function OverviewFinancialSummaryView({
   language,
   timeZone,
   now,
+  rightRail,
 }: {
   labels: DashboardLabels;
   currentPeriodKey: string;
@@ -36,20 +38,12 @@ export function OverviewFinancialSummaryView({
   language: "en" | "fr" | "de";
   timeZone: string;
   now: string;
+  rightRail: OverviewRightRailData;
 }) {
   return (
     <main className="min-w-0 px-5 py-7 sm:px-7 sm:py-8 lg:px-10 lg:py-9">
-      <div className="mx-auto grid w-full max-w-[1420px] gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+      <div className="mx-auto grid w-full max-w-[1420px] gap-5 xl:grid-cols-[minmax(0,1fr)_clamp(330px,26vw,370px)] xl:items-start">
         <div className="min-w-0 space-y-4 sm:space-y-5">
-          <div className="xl:hidden">
-            <PaceAssistantSurface
-              language={language}
-              locale={summary.locale}
-              pageContext={{ page: "overview", period: periodKey, transactionType: summary.filter }}
-              timeZone={timeZone}
-              workspaceId={workspaceId}
-            />
-          </div>
           <OverviewPeriodControls
             currentPeriodKey={currentPeriodKey}
             labels={labels}
@@ -69,13 +63,17 @@ export function OverviewFinancialSummaryView({
             workspaceSlug={workspaceSlug}
           />
         </div>
-        <div className="hidden min-w-0 xl:block">
-          <PaceAssistantSurface
+        <div className="min-w-0 xl:sticky xl:top-5">
+          <OverviewRightRailView
+            labels={labels}
             language={language}
             locale={summary.locale}
+            now={now}
             pageContext={{ page: "overview", period: periodKey, transactionType: summary.filter }}
+            rail={rightRail}
             timeZone={timeZone}
             workspaceId={workspaceId}
+            workspaceSlug={workspaceSlug}
           />
         </div>
       </div>

@@ -13,6 +13,7 @@ export function PaceKpiCard({
   value,
   metric,
   notApplicableLabel,
+  insufficientDataLabel,
   noComparisonLabel,
   perDayLabel,
   trendDirectionLabels,
@@ -22,6 +23,7 @@ export function PaceKpiCard({
   value: string | null;
   metric: OverviewMetric;
   notApplicableLabel: string;
+  insufficientDataLabel: string;
   noComparisonLabel: string;
   perDayLabel?: string;
   trendDirectionLabels: Record<"up" | "down" | "neutral", string>;
@@ -30,6 +32,7 @@ export function PaceKpiCard({
   const trend = metric.trend;
   const directionText = trend ? trendDirectionLabels[trend.direction] : "";
   const arrow = trend?.direction === "up" ? "↑" : trend?.direction === "down" ? "↓" : "→";
+  const unavailableLabel = metric.availability === "insufficient-data" ? insufficientDataLabel : notApplicableLabel;
 
   return (
     <article className="flex min-h-[104px] min-w-0 flex-col justify-between rounded-[10px] border border-[#e8ecf2] bg-white px-4 py-4 sm:px-5">
@@ -39,7 +42,7 @@ export function PaceKpiCard({
           {value}{perDayLabel ? <span className="ml-1 text-[16px] font-medium tracking-[-0.015em] text-[#44516a]">/ {perDayLabel}</span> : null}
         </p>
       ) : (
-        <p className="text-[21px] leading-7 font-semibold text-[#98a2b3]" title={notApplicableLabel}>—</p>
+        <p className="text-[21px] leading-7 font-semibold text-[#98a2b3]" title={unavailableLabel}>—</p>
       )}
       {trend && trend.percentage !== null ? (
         <p
@@ -50,7 +53,7 @@ export function PaceKpiCard({
           {trend.percentage}% {versusLabel.toLocaleLowerCase()} {trend.comparisonMonth}
         </p>
       ) : (
-        <p className="text-[13px] leading-5 text-[#98a2b3]">{metric.availability === "value" ? noComparisonLabel : notApplicableLabel}</p>
+        <p className="text-[13px] leading-5 text-[#98a2b3]">{metric.availability === "value" ? noComparisonLabel : unavailableLabel}</p>
       )}
     </article>
   );

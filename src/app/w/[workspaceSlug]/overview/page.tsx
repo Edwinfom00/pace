@@ -15,6 +15,7 @@ import { parseOverviewFilter } from "@/modules/overview/domain/overview.types";
 import { getOverviewFinancialSummary } from "@/modules/overview/queries/get-overview-financial-summary";
 import { getOverviewInboxPreview } from "@/modules/overview/queries/get-overview-inbox-preview";
 import { getOverviewRecentTransactions } from "@/modules/overview/queries/get-overview-recent-transactions";
+import { getOverviewRightRail } from "@/modules/overview/queries/get-overview-right-rail";
 import { OverviewFinancialSummaryView } from "@/modules/overview/ui/views/overview-financial-summary-view";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
@@ -55,8 +56,9 @@ export default async function WorkspaceOverviewScaffoldPage({
     overviewPeriodFromKey(undefined, workspace.preferences.timezone, now),
     workspace.preferences.timezone,
   );
-  const [language, summary, recentTransactions, inbox] = await Promise.all([
-    getPersistedDashboardLanguage(actor.userId),
+  const language = await getPersistedDashboardLanguage(actor.userId);
+  const labels = getDashboardLabels(language);
+  const [summary, recentTransactions, inbox, rightRail] = await Promise.all([
     getOverviewFinancialSummary({
       actor,
       workspaceId: workspace.workspace.id,
@@ -76,17 +78,28 @@ export default async function WorkspaceOverviewScaffoldPage({
       workspaceId: workspace.workspace.id,
       limit: 4,
     }),
+    getOverviewRightRail({
+      actor,
+      workspaceId: workspace.workspace.id,
+      language,
+      labels,
+      locale: workspace.preferences.locale,
+      timeZone: workspace.preferences.timezone,
+      period,
+      now,
+    }),
   ]);
 
   return (
     <OverviewFinancialSummaryView
       currentPeriodKey={currentPeriodKey}
-      labels={getDashboardLabels(language)}
+      labels={labels}
       periodKey={overviewPeriodKey(period, workspace.preferences.timezone)}
       summary={summary}
       inbox={inbox}
       now={now.toISOString()}
       recentTransactions={recentTransactions}
+      rightRail={rightRail}
       timeZone={workspace.preferences.timezone}
       language={language}
       workspaceId={workspace.workspace.id}

@@ -87,6 +87,21 @@ test("INCOME and TRANSFER retain their own semantics and never fabricate a spend
   assert.equal(transfer.expectedMonth.availability, "not-applicable");
 });
 
+test("ALL keeps Expected month meaningful but honest when spending data is not available", () => {
+  const withoutSpending = buildOverviewFinancialSummary({
+    filter: "ALL",
+    currency: "XAF",
+    locale: "fr-CM",
+    now,
+    period: february,
+    timeZone,
+    transactions: [entry("income-only", "INCOME", 50_000n, "2026-02-04")],
+  });
+
+  assert.equal(withoutSpending.expectedMonth.availability, "insufficient-data");
+  assert.equal(withoutSpending.expectedMonth.minor, null);
+});
+
 test("cumulative chart keeps every selected-month day, stops actual data after today, and exposes a real current-day marker", () => {
   const pace = summary().spendingPace;
 

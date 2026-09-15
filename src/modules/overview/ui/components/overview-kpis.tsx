@@ -23,6 +23,7 @@ export function OverviewKpis({ summary, labels }: { summary: OverviewFinancialSu
       <PaceKpiCard
         label={primaryLabel}
         metric={summary.primary}
+        insufficientDataLabel={labels["overview.kpi.insufficientData"]}
         notApplicableLabel={labels["overview.kpi.notApplicable"]}
         noComparisonLabel={labels["overview.kpi.noComparison"]}
         trendDirectionLabels={trendDirectionLabels}
@@ -32,6 +33,7 @@ export function OverviewKpis({ summary, labels }: { summary: OverviewFinancialSu
       <PaceKpiCard
         label={labels["overview.kpi.yourPace"]}
         metric={summary.pace}
+        insufficientDataLabel={labels["overview.kpi.insufficientData"]}
         notApplicableLabel={labels["overview.kpi.notApplicable"]}
         noComparisonLabel={labels["overview.kpi.noComparison"]}
         perDayLabel={summary.pace.availability === "value" ? labels["overview.kpi.perDay"] : undefined}
@@ -42,6 +44,7 @@ export function OverviewKpis({ summary, labels }: { summary: OverviewFinancialSu
       <PaceKpiCard
         label={labels["overview.kpi.expectedMonth"]}
         metric={summary.expectedMonth}
+        insufficientDataLabel={labels["overview.kpi.insufficientData"]}
         notApplicableLabel={labels["overview.kpi.notApplicable"]}
         noComparisonLabel={labels["overview.kpi.noComparison"]}
         trendDirectionLabels={trendDirectionLabels}

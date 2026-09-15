@@ -1,7 +1,7 @@
 export const OVERVIEW_FILTERS = ["ALL", "EXPENSE", "INCOME", "TRANSFER"] as const;
 
 export type OverviewFilter = (typeof OVERVIEW_FILTERS)[number];
-export type OverviewMetricAvailability = "value" | "not-applicable";
+export type OverviewMetricAvailability = "value" | "not-applicable" | "insufficient-data";
 export type OverviewTrendDirection = "up" | "down" | "neutral";
 export type OverviewTrendSentiment = "positive" | "negative" | "neutral";
 
