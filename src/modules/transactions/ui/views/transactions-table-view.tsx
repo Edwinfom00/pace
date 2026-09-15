@@ -29,6 +29,7 @@ export function TransactionsTableView({
   filterState,
   filterOptions,
   amountSortingAvailable,
+  defaultCurrency,
   workspaceId,
   workspaceSlug,
   language,
@@ -43,6 +44,7 @@ export function TransactionsTableView({
   readonly filterState: TransactionFilterState & { readonly page: number };
   readonly filterOptions: TransactionFilterOptions;
   readonly amountSortingAvailable: boolean;
+  readonly defaultCurrency: string;
   readonly workspaceId: string;
   readonly workspaceSlug: string;
   readonly language: "en" | "fr" | "de";
@@ -77,7 +79,7 @@ export function TransactionsTableView({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <TransactionsAskPace language={language} locale={locale} pageContext={pageContext} timeZone={timeZone} workspaceId={workspaceId} />
-          <TransactionCreateControl />
+          <TransactionCreateControl defaultCurrency={defaultCurrency} labels={labels} language={language} />
         </div>
       </header>
       <TransactionToolbar amountSortingAvailable={amountSortingAvailable} labels={labels} locale={locale} options={filterOptions} pathname={pathname} state={filterState} />

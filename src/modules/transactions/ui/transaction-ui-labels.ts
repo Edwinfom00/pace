@@ -56,6 +56,11 @@ export type TransactionUiLabels = {
   readonly paginationPage: string;
   readonly paginationSummary: string;
   readonly paginationPerPage: string;
+  readonly formAmount: string;
+  readonly formAmountExpenseHelper: string;
+  readonly formCurrency: string;
+  readonly formCurrencySearch: string;
+  readonly formCurrencyEmpty: string;
 };
 
 export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLabels {
@@ -115,5 +120,10 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     paginationPage: labels["transactions.pagination.page"],
     paginationSummary: labels["transactions.pagination.summary"],
     paginationPerPage: labels["transactions.pagination.perPage"],
+    formAmount: labels["transactions.form.amount"],
+    formAmountExpenseHelper: labels["transactions.form.amountExpenseHelper"],
+    formCurrency: labels["transactions.form.currency"],
+    formCurrencySearch: labels["transactions.form.currencySearch"],
+    formCurrencyEmpty: labels["transactions.form.currencyEmpty"],
   };
 }

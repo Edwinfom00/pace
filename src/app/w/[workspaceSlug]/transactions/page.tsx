@@ -4,6 +4,7 @@ import { getAuthenticatedActor } from "@/authorization/session";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import { getPersistedDashboardLanguage } from "@/i18n/dashboard-server";
 import { loginPathForReturnTo } from "@/modules/auth/post-auth-resolver";
+import { isSupportedCurrency } from "@/modules/onboarding/metadata";
 import { transactionListHref } from "@/modules/transactions/domain/transaction-list-url";
 import { parseTransactionSearchParams } from "@/modules/transactions/queries/transaction-search-params";
 import { getServerTransactionsPage } from "@/modules/transactions/server/get-transactions-page";
@@ -45,13 +46,13 @@ export default async function TransactionsPage({ params, searchParams }: Transac
   const canonicalHref = transactionListHref(destination, { ...page.filters, page: page.page });
   const requestedHref = requestHref(destination, query);
 
-  // Invalid, stale, out-of-bounds, or currency-unsafe URL state is normalized
-  // once on the server so every refresh and shared link describes the view it renders.
+
   if (requestedHref !== canonicalHref) redirect(canonicalHref);
 
   return (
     <TransactionsTableView
       amountSortingAvailable={page.amountSortingAvailable}
+      defaultCurrency={isSupportedCurrency(workspace.preferences.currency) ? workspace.preferences.currency : "USD"}
       filterOptions={page.options}
       filterState={{ ...page.filters, page: page.page }}
       labels={labels}

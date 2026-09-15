@@ -4,16 +4,28 @@ import { useState } from "react";
 import { FiPlus } from "react-icons/fi";
 
 import { Button } from "@/components/ui/button";
+import type { TransactionUiLabels } from "../transaction-ui-labels";
 
 import { TransactionFormDialog } from "./transaction-form-dialog";
+import { TransactionAmountField } from "./transaction-amount-field";
 import {
   transactionFormKindLabels,
   type TransactionFormKind,
 } from "./transaction-type-selector";
 
-export function TransactionCreateControl() {
+export function TransactionCreateControl({
+  defaultCurrency,
+  labels,
+  language,
+}: {
+  readonly defaultCurrency: string;
+  readonly labels: TransactionUiLabels;
+  readonly language: "en" | "fr" | "de";
+}) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<TransactionFormKind>("EXPENSE");
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState(defaultCurrency);
 
   return (
     <>
@@ -29,7 +41,22 @@ export function TransactionCreateControl() {
       </Button>
 
       <TransactionFormDialog kind={kind} onKindChange={setKind} onOpenChange={setOpen} open={open}>
-        {transactionFormKindLabels[kind]} form content
+        {kind === "EXPENSE" ? (
+          <TransactionAmountField
+            currency={currency}
+            currencyEmptyLabel={labels.formCurrencyEmpty}
+            currencyLabel={labels.formCurrency}
+            currencySearchPlaceholder={labels.formCurrencySearch}
+            helperText={labels.formAmountExpenseHelper}
+            label={labels.formAmount}
+            language={language}
+            onCurrencyChange={setCurrency}
+            onValueChange={setAmount}
+            value={amount}
+          />
+        ) : (
+          `${transactionFormKindLabels[kind]} form content`
+        )}
       </TransactionFormDialog>
     </>
   );
