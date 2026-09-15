@@ -10,7 +10,7 @@ import { parsePacePageContext } from "@/modules/pace-assistant/domain/page-conte
 import { createPaceAssistantTurnOptions } from "@/modules/pace-assistant/domain/turn-options";
 import { getPaceAssistantLabels } from "@/modules/pace-assistant/ui/assistant-labels";
 import { TextBlock } from "@/modules/pace-assistant/ui/components/blocks/text-block";
-import { getAssistantProgress } from "@/modules/pace-assistant/ui/views/pace-assistant-panel-view";
+import { getAssistantProgress, isConversationAtEnd, parseStructuredResponse } from "@/modules/pace-assistant/ui/views/pace-assistant-panel-view";
 import { PaceAssistantBlockRenderer, PaceAssistantResponse } from "@/modules/pace-assistant/ui/components/pace-assistant-response";
 import { PACE_ASSISTANT_BLOCK_TYPES, paceAssistantResponseSchema, type PaceAssistantBlock } from "@/modules/pace-assistant/types/pace-assistant";
 
@@ -83,6 +83,11 @@ test("streaming progress reports the active user-facing Eve step", () => {
   assert.equal(getAssistantProgress("streaming", [{ type: "turn.started" }, { type: "action.result" }], labels), labels.verifying);
 });
 
+test("long conversations keep following the end only while the reader is already there", () => {
+  assert.equal(isConversationAtEnd({ scrollHeight: 1_500, scrollTop: 1_052, clientHeight: 400 }), true);
+  assert.equal(isConversationAtEnd({ scrollHeight: 1_500, scrollTop: 700, clientHeight: 400 }), false);
+});
+
 test("unknown renderer blocks degrade to a safe notice", () => {
   const markup = renderToStaticMarkup(createElement(PaceAssistantBlockRenderer, {
     block: { type: "unknown-block" } as unknown as PaceAssistantBlock,
@@ -92,6 +97,13 @@ test("unknown renderer blocks degrade to a safe notice", () => {
     timeZone: "Africa/Douala",
   }));
   assert.match(markup, /unsupported response/i);
+});
+
+test("structured JSON emitted as text is validated and rendered as Pace blocks", () => {
+  const payload = { blocks: [{ type: "text", text: "Safe structured reply." }] };
+  assert.deepEqual(parseStructuredResponse(JSON.stringify(payload)), payload);
+  assert.deepEqual(parseStructuredResponse(`\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``), payload);
+  assert.equal(parseStructuredResponse('{"blocks":[{"type":"unknown"}]}'), null);
 });
 
 test("money formatting preserves bigint precision and transfers remain neutral rather than spending", () => {
