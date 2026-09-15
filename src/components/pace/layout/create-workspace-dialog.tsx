@@ -2,18 +2,26 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import {
+  HiOutlineCheck,
+  HiOutlineEllipsisHorizontal,
+  HiOutlineHome,
+  HiOutlineUser,
+  HiOutlineUserGroup,
+} from "react-icons/hi2";
 
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogClose,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogFooter,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { Input } from "@/components/ui/input";
+import type { WorkspaceType } from "@/modules/workspaces/domain";
 
 import type { PaceSidebarLabels } from "./sidebar-types";
 import { WorkspaceAvatar } from "./workspace-avatar";
@@ -28,6 +36,18 @@ type CreateWorkspaceErrorResponse = {
   error?: string;
 };
 
+const workspaceTypeOptions = [
+  { value: "PERSONAL", icon: HiOutlineUser, titleKey: "workspace.create.type.personal.title", descriptionKey: "workspace.create.type.personal.description" },
+  { value: "COUPLE", icon: HiOutlineUserGroup, titleKey: "workspace.create.type.couple.title", descriptionKey: "workspace.create.type.couple.description" },
+  { value: "FAMILY", icon: HiOutlineHome, titleKey: "workspace.create.type.family.title", descriptionKey: "workspace.create.type.family.description" },
+  { value: "CUSTOM", icon: HiOutlineEllipsisHorizontal, titleKey: "workspace.create.type.custom.title", descriptionKey: "workspace.create.type.custom.description" },
+] as const satisfies ReadonlyArray<{
+  value: WorkspaceType;
+  icon: typeof HiOutlineUser;
+  titleKey: "workspace.create.type.personal.title" | "workspace.create.type.couple.title" | "workspace.create.type.family.title" | "workspace.create.type.custom.title";
+  descriptionKey: "workspace.create.type.personal.description" | "workspace.create.type.couple.description" | "workspace.create.type.family.description" | "workspace.create.type.custom.description";
+}>;
+
 export function CreateWorkspaceDialog({
   labels,
   onOpenChange,
@@ -39,6 +59,7 @@ export function CreateWorkspaceDialog({
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [type, setType] = useState<WorkspaceType>("PERSONAL");
   const [error, setError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const trimmedName = name.trim();
@@ -50,6 +71,7 @@ export function CreateWorkspaceDialog({
     onOpenChange(nextOpen);
     if (!nextOpen) {
       setName("");
+      setType("PERSONAL");
       setError("");
     }
   }
@@ -67,7 +89,7 @@ export function CreateWorkspaceDialog({
 
     try {
       const response = await fetch("/api/workspaces", {
-        body: JSON.stringify({ name: trimmedName, type: "CUSTOM" }),
+        body: JSON.stringify({ name: trimmedName, type }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -79,6 +101,7 @@ export function CreateWorkspaceDialog({
       }
 
       setName("");
+      setType("PERSONAL");
       setError("");
       onOpenChange(false);
       router.push(`/w/${data.workspace.slug}/overview`);
@@ -90,28 +113,57 @@ export function CreateWorkspaceDialog({
   }
 
   return (
-    <Dialog onOpenChange={handleOpenChange} open={open}>
-      <DialogContent
-        className="gap-0 overflow-hidden rounded-[14px] p-0 text-[#344054] sm:max-w-[26rem]"
-        onEscapeKeyDown={(event) => {
-          if (isCreating) event.preventDefault();
-        }}
-        onPointerDownOutside={(event) => {
-          if (isCreating) event.preventDefault();
-        }}
+    <ResponsiveDialog onOpenChange={handleOpenChange} open={open}>
+      <ResponsiveDialogContent
+        className="gap-0 overflow-hidden rounded-[14px] p-0 text-[#344054] sm:max-w-[32rem]"
+        drawerClassName="max-h-[calc(100svh-1rem)] rounded-t-[16px]"
       >
-        <form onSubmit={handleSubmit}>
-          <DialogHeader className="gap-2 px-6 pt-6 pb-5">
-            <DialogTitle className="text-[18px] font-semibold tracking-[-0.015em] text-[#101828]">
+        <form className="flex max-h-[calc(100svh-1rem)] flex-col lg:block lg:max-h-none" onSubmit={handleSubmit}>
+          <ResponsiveDialogHeader className="px-5 pt-6 pb-5 lg:px-6">
+            <ResponsiveDialogTitle className="text-[18px] font-semibold tracking-[-0.015em] text-[#101828]">
               {labels["workspace.create.title"]}
-            </DialogTitle>
-            <DialogDescription className="leading-5 text-[#667085]">
+            </ResponsiveDialogTitle>
+            <ResponsiveDialogDescription className="leading-5 text-[#667085]">
               {labels["workspace.create.description"]}
-            </DialogDescription>
-          </DialogHeader>
+            </ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
 
-          <div className="px-6 pb-6">
-            <div className="flex items-center gap-3 rounded-[10px] bg-[#f6f8ff] px-3 py-3">
+          <div className="min-h-0 overflow-y-auto px-5 pb-5 lg:overflow-visible lg:px-6 lg:pb-6">
+            <fieldset>
+              <legend className="text-sm font-medium text-[#344054]">{labels["workspace.create.typeLabel"]}</legend>
+              <div aria-label={labels["workspace.create.typeLabel"]} className="mt-2.5 grid grid-cols-2 gap-2" role="radiogroup">
+                {workspaceTypeOptions.map((option) => {
+                  const Icon = option.icon;
+                  const isSelected = type === option.value;
+
+                  return (
+                    <button
+                      aria-checked={isSelected}
+                      className="relative flex min-h-[82px] cursor-pointer items-start gap-2.5 rounded-[9px] border border-[#e4e7ec] bg-white px-3 py-3 text-left outline-none transition-colors hover:border-[#cbd5e6] hover:bg-[#fafbff] focus-visible:border-[#5282ee] focus-visible:ring-3 focus-visible:ring-[#5282ee]/15 aria-checked:border-[#5282ee] aria-checked:bg-[#f5f8ff]"
+                      key={option.value}
+                      onClick={() => setType(option.value)}
+                      role="radio"
+                      type="button"
+                    >
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-[#eef3ff] text-[#2457c5]">
+                        <Icon aria-hidden="true" className="size-4" />
+                      </span>
+                      <span className="min-w-0 pr-3">
+                        <span className="block text-sm font-semibold leading-5 text-[#344054]">{labels[option.titleKey]}</span>
+                        <span className="mt-0.5 block text-xs leading-4 text-[#667085]">{labels[option.descriptionKey]}</span>
+                      </span>
+                      {isSelected ? (
+                        <span className="absolute top-2.5 right-2.5 flex size-4 items-center justify-center rounded-full bg-[#2457c5] text-white">
+                          <HiOutlineCheck aria-hidden="true" className="size-3" />
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            <div className="mt-5 flex items-center gap-3 rounded-[10px] bg-[#f6f8ff] px-3 py-3">
               <WorkspaceAvatar className="size-12 rounded-[10px]" name={previewName} />
               <div className="min-w-0">
                 <p className="text-xs font-medium text-[#667085]">{labels["workspace.create.preview"]}</p>
@@ -146,18 +198,18 @@ export function CreateWorkspaceDialog({
             ) : null}
           </div>
 
-          <DialogFooter className="mx-0 mb-0 gap-2 rounded-none border-[#eaecf0] bg-[#fcfcfd] px-6 py-4 sm:justify-end">
-            <DialogClose asChild>
+          <ResponsiveDialogFooter className="mx-0 mb-0 rounded-none border-[#eaecf0] bg-[#fcfcfd] px-5 py-4 lg:px-6">
+            <ResponsiveDialogClose>
               <Button className="border-[#d0d5dd] bg-white text-[#344054] hover:bg-[#f9fafb]" disabled={isCreating} type="button" variant="outline">
                 {labels["workspace.create.cancel"]}
               </Button>
-            </DialogClose>
+            </ResponsiveDialogClose>
             <Button className="bg-[#2457c5] text-white hover:bg-[#1d4aae]" disabled={isCreating} type="submit">
               {isCreating ? labels["workspace.create.submitting"] : labels["workspace.create.submit"]}
             </Button>
-          </DialogFooter>
+          </ResponsiveDialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }
