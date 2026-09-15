@@ -9,6 +9,10 @@ export type LedgerTransactionStatus = (typeof LEDGER_TRANSACTION_STATUSES)[numbe
 
 export type SourceMetadata = Record<string, unknown>;
 
+
+export const LEDGER_ACCOUNT_TYPES = ["CASH", "CHECKING", "SAVINGS", "CREDIT_CARD", "MOBILE_MONEY", "OTHER"] as const;
+export type LedgerAccountType = (typeof LEDGER_ACCOUNT_TYPES)[number];
+
 export interface LedgerAccountRecord {
   id: string;
   workspaceId: string;

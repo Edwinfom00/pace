@@ -77,6 +77,33 @@ export type TransactionUiLabels = {
   readonly accountsCreate: string;
   readonly accountsCreateFirst: string;
   readonly accountsSearchNoResults: string;
+  readonly accountCreateTitle: string;
+  readonly accountCreateSubtitle: string;
+  readonly accountCreateBackToExpense: string;
+  readonly accountName: string;
+  readonly accountNamePlaceholder: string;
+  readonly accountType: string;
+  readonly accountTypePlaceholder: string;
+  readonly accountTypeSearch: string;
+  readonly accountTypeEmpty: string;
+  readonly accountCurrency: string;
+  readonly accountCurrencyPlaceholder: string;
+  readonly accountOpeningBalance: string;
+  readonly accountOpeningBalanceOptional: string;
+  readonly accountOpeningBalanceHelper: string;
+  readonly accountCancel: string;
+  readonly accountTypeCash: string;
+  readonly accountTypeCashDescription: string;
+  readonly accountTypeChecking: string;
+  readonly accountTypeCheckingDescription: string;
+  readonly accountTypeSavings: string;
+  readonly accountTypeSavingsDescription: string;
+  readonly accountTypeCreditCard: string;
+  readonly accountTypeCreditCardDescription: string;
+  readonly accountTypeMobileMoney: string;
+  readonly accountTypeMobileMoneyDescription: string;
+  readonly accountTypeOther: string;
+  readonly accountTypeOtherDescription: string;
 };
 
 export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLabels {
@@ -157,5 +184,32 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     accountsCreate: labels["accounts.actions.create"],
     accountsCreateFirst: labels["accounts.actions.createFirst"],
     accountsSearchNoResults: labels["accounts.search.noResults"],
+    accountCreateTitle: labels["accounts.create.title"],
+    accountCreateSubtitle: labels["accounts.create.subtitle"],
+    accountCreateBackToExpense: labels["accounts.create.backToExpense"],
+    accountName: labels["accounts.fields.name"],
+    accountNamePlaceholder: labels["accounts.fields.namePlaceholder"],
+    accountType: labels["accounts.fields.type"],
+    accountTypePlaceholder: labels["accounts.fields.typePlaceholder"],
+    accountTypeSearch: labels["accounts.fields.typeSearch"],
+    accountTypeEmpty: labels["accounts.fields.typeEmpty"],
+    accountCurrency: labels["accounts.fields.currency"],
+    accountCurrencyPlaceholder: labels["accounts.fields.currencyPlaceholder"],
+    accountOpeningBalance: labels["accounts.fields.openingBalance"],
+    accountOpeningBalanceOptional: labels["accounts.fields.openingBalanceOptional"],
+    accountOpeningBalanceHelper: labels["accounts.fields.openingBalanceHelper"],
+    accountCancel: labels["accounts.actions.cancel"],
+    accountTypeCash: labels["accounts.type.cash.label"],
+    accountTypeCashDescription: labels["accounts.type.cash.description"],
+    accountTypeChecking: labels["accounts.type.checking.label"],
+    accountTypeCheckingDescription: labels["accounts.type.checking.description"],
+    accountTypeSavings: labels["accounts.type.savings.label"],
+    accountTypeSavingsDescription: labels["accounts.type.savings.description"],
+    accountTypeCreditCard: labels["accounts.type.creditCard.label"],
+    accountTypeCreditCardDescription: labels["accounts.type.creditCard.description"],
+    accountTypeMobileMoney: labels["accounts.type.mobileMoney.label"],
+    accountTypeMobileMoneyDescription: labels["accounts.type.mobileMoney.description"],
+    accountTypeOther: labels["accounts.type.other.label"],
+    accountTypeOtherDescription: labels["accounts.type.other.description"],
   };
 }

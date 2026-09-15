@@ -21,6 +21,7 @@ type CurrencySelectProps = {
   emptyLabel: string;
   ariaLabel: string;
   invalid?: boolean;
+  triggerClassName?: string;
 };
 
 export function CurrencySelect({ language, ...props }: CurrencySelectProps) {

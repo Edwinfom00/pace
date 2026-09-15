@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { FiX } from "react-icons/fi";
+import { FiArrowLeft, FiX } from "react-icons/fi";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,18 +15,26 @@ import {
 
 import { TransactionTypeSelector, type TransactionFormKind } from "./transaction-type-selector";
 
+export type TransactionDialogView = "transaction" | "create-account";
+
 export function TransactionFormDialog({
   children,
+  createAccountHeader,
   kind,
+  onBackToTransaction,
   onKindChange,
   onOpenChange,
   open,
+  view,
 }: {
   readonly children: ReactNode;
+  readonly createAccountHeader: { readonly backLabel: string; readonly description: string; readonly title: string };
   readonly kind: TransactionFormKind;
+  readonly onBackToTransaction: () => void;
   readonly onKindChange: (kind: TransactionFormKind) => void;
   readonly onOpenChange: (open: boolean) => void;
   readonly open: boolean;
+  readonly view: TransactionDialogView;
 }) {
   return (
     <ResponsiveDialog onOpenChange={onOpenChange} open={open}>
@@ -47,17 +55,39 @@ export function TransactionFormDialog({
         </ResponsiveDialogClose>
 
         <ResponsiveDialogHeader className="gap-1 px-4 pt-5 pb-4 pr-12 sm:px-7 sm:pt-6 sm:pb-5 sm:pr-14">
-          <ResponsiveDialogTitle className="text-[20px] leading-6 font-semibold tracking-[-0.025em] text-[#101a35]">
-            Add transaction
-          </ResponsiveDialogTitle>
-          <ResponsiveDialogDescription className="text-[13px] leading-5 text-[#71809a]">
-            Record a new movement in your workspace.
-          </ResponsiveDialogDescription>
+          {view === "create-account" ? (
+            <>
+              <Button
+                className="-ml-2 h-7 w-fit gap-1 rounded-[6px] px-2 text-[12px] font-medium text-[#526987] hover:bg-[#f3f6fa] hover:text-[#263550] focus-visible:ring-[#5e8fe8]/30"
+                onClick={onBackToTransaction}
+                type="button"
+                variant="ghost"
+              >
+                <FiArrowLeft aria-hidden="true" className="size-[15px]" />
+                {createAccountHeader.backLabel}
+              </Button>
+              <ResponsiveDialogTitle className="mt-1 text-[20px] leading-6 font-semibold tracking-[-0.025em] text-[#101a35]">
+                {createAccountHeader.title}
+              </ResponsiveDialogTitle>
+              <ResponsiveDialogDescription className="text-[13px] leading-5 text-[#71809a]">
+                {createAccountHeader.description}
+              </ResponsiveDialogDescription>
+            </>
+          ) : (
+            <>
+              <ResponsiveDialogTitle className="text-[20px] leading-6 font-semibold tracking-[-0.025em] text-[#101a35]">
+                Add transaction
+              </ResponsiveDialogTitle>
+              <ResponsiveDialogDescription className="text-[13px] leading-5 text-[#71809a]">
+                Record a new movement in your workspace.
+              </ResponsiveDialogDescription>
+            </>
+          )}
         </ResponsiveDialogHeader>
 
         <div className="px-4 pb-5 sm:px-7 sm:pb-7">
-          <TransactionTypeSelector onValueChange={onKindChange} value={kind} />
-          <div aria-live="polite" className="mt-5 text-[13px] leading-5 text-[#71809a]">
+          {view === "transaction" ? <TransactionTypeSelector onValueChange={onKindChange} value={kind} /> : null}
+          <div className={view === "transaction" ? "mt-5 text-[13px] leading-5 text-[#71809a]" : "text-[13px] leading-5 text-[#71809a]"}>
             {children}
           </div>
         </div>

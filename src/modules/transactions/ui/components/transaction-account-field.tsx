@@ -4,22 +4,21 @@ import * as React from "react";
 import { Command, CommandInput, CommandItem, CommandList } from "cmdk";
 import { Popover } from "radix-ui";
 import {
-  FiBriefcase,
   FiCheck,
   FiChevronDown,
-  FiCreditCard,
   FiDollarSign,
-  FiHome,
   FiPlus,
-  FiSmartphone,
 } from "react-icons/fi";
 
 import { cn } from "@/lib/utils";
+import type { LedgerAccountType } from "@/modules/ledger/domain";
 
-import type { TransactionAccountFixture, TransactionAccountType } from "./transaction-account-fixtures";
+import { getAccountTypeMetadata } from "./transaction-account-metadata";
+import type { TransactionAccountOption } from "./transaction-account.types";
 
 export type TransactionAccountFieldProps<T extends string = string> = {
-  readonly accounts: readonly (TransactionAccountFixture & { readonly id: T })[];
+  readonly accounts: readonly (TransactionAccountOption & { readonly id: T })[];
+  readonly accountTypeLabels: Readonly<Record<LedgerAccountType, string>>;
   readonly emptyDescription: string;
   readonly emptyTitle: string;
   readonly helperText: string;
@@ -36,47 +35,22 @@ export type TransactionAccountFieldProps<T extends string = string> = {
   readonly createFirstAccountLabel: string;
 };
 
-function AccountIcon({ type }: { readonly type: TransactionAccountType }) {
-  const Icon =
-    type === "CASH"
-      ? FiDollarSign
-      : type === "CHECKING"
-        ? FiHome
-        : type === "SAVINGS"
-          ? FiBriefcase
-          : type === "CREDIT_CARD"
-            ? FiCreditCard
-            : type === "MOBILE_MONEY"
-              ? FiSmartphone
-              : FiBriefcase;
+function AccountIcon({ type }: { readonly type: LedgerAccountType }) {
+  const { icon: Icon } = getAccountTypeMetadata(type);
 
   return <Icon aria-hidden="true" className="size-[17px]" />;
 }
 
-function getAccountMetadata(account: TransactionAccountFixture) {
-  const typeLabel =
-    account.type === "CASH"
-      ? "Cash"
-      : account.type === "CHECKING"
-        ? "Main account"
-        : account.type === "SAVINGS"
-          ? "Savings"
-          : account.type === "CREDIT_CARD"
-            ? "Credit card"
-            : account.type === "MOBILE_MONEY"
-              ? "Mobile money"
-              : "Other";
+function getAccountMetadata(account: TransactionAccountOption, accountTypeLabels: Readonly<Record<LedgerAccountType, string>>) {
+  const typeLabel = accountTypeLabels[account.type];
 
   return account.type === "CASH" ? account.currency : `${typeLabel} · ${account.currency}`;
 }
 
-/**
- * Transactions-local account combobox. It intentionally accepts real account
- * shaped data so account loading and currency eligibility can be added later
- * without replacing this UI.
- */
+
 export function TransactionAccountField<T extends string = string>({
   accounts,
+  accountTypeLabels,
   createAccountLabel,
   createFirstAccountLabel,
   emptyDescription,
@@ -99,7 +73,7 @@ export function TransactionAccountField<T extends string = string>({
   const selectedAccount = accounts.find((account) => account.id === value);
   const filteredAccounts = normalizedQuery
     ? accounts.filter((account) =>
-        [account.name, account.type, getAccountMetadata(account), account.currency]
+        [account.name, account.type, getAccountMetadata(account, accountTypeLabels), account.currency]
           .join(" ")
           .toLocaleLowerCase()
           .includes(normalizedQuery),
@@ -206,7 +180,7 @@ export function TransactionAccountField<T extends string = string>({
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px] font-medium">{account.name}</span>
                             <span className="mt-0.5 block truncate text-[11px] leading-4 text-[#71809a]">
-                              {getAccountMetadata(account)}
+                              {getAccountMetadata(account, accountTypeLabels)}
                             </span>
                           </span>
                           {isSelected ? <FiCheck aria-hidden="true" className="size-4 shrink-0 text-[#2f67e9]" /> : null}

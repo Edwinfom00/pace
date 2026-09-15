@@ -1,20 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { FiPlus } from "react-icons/fi";
 
 import { Button } from "@/components/ui/button";
+import type { LedgerAccountType } from "@/modules/ledger/domain";
+import { transactionAccountFixtures } from "@/modules/transactions/dev/transaction-form.fixtures";
 import type { TransactionUiLabels } from "../transaction-ui-labels";
 
-import { TransactionFormDialog } from "./transaction-form-dialog";
+import { CreateAccountForm, type CreateAccountFormDraft } from "./create-account-form";
+import { TransactionFormDialog, type TransactionDialogView } from "./transaction-form-dialog";
 import { TransactionAmountField } from "./transaction-amount-field";
 import { TransactionCategoryField } from "./transaction-category-field";
 import type { TransactionCategoryFixtureId } from "./transaction-category-fixtures";
 import { TransactionAccountField } from "./transaction-account-field";
-import {
-  transactionAccountFixtures,
-  type TransactionAccountFixtureId,
-} from "./transaction-account-fixtures";
+import type { AccountDraftOption } from "./transaction-account.types";
 import { TransactionMerchantField } from "./transaction-merchant-field";
 import {
   transactionFormKindLabels,
@@ -31,16 +31,60 @@ export function TransactionCreateControl({
   readonly language: "en" | "fr" | "de";
 }) {
   const [open, setOpen] = useState(false);
+  const [view, setView] = useState<TransactionDialogView>("transaction");
   const [kind, setKind] = useState<TransactionFormKind>("EXPENSE");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState(defaultCurrency);
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState<TransactionCategoryFixtureId>("other-expense");
-  const [account, setAccount] = useState<TransactionAccountFixtureId | "">("");
+  const [account, setAccount] = useState("");
+  const [createdAccounts, setCreatedAccounts] = useState<readonly AccountDraftOption[]>([]);
+  const [createAccountDraft, setCreateAccountDraft] = useState<CreateAccountFormDraft>({
+    name: "",
+    type: "",
+    currency: "",
+    openingBalance: "",
+  });
+  const localAccountId = useRef(0);
+  const accountTypeLabels = {
+    CASH: labels.accountTypeCash,
+    CHECKING: labels.accountTypeChecking,
+    SAVINGS: labels.accountTypeSavings,
+    CREDIT_CARD: labels.accountTypeCreditCard,
+    MOBILE_MONEY: labels.accountTypeMobileMoney,
+    OTHER: labels.accountTypeOther,
+  } satisfies Readonly<Record<LedgerAccountType, string>>;
+  const accounts = [...transactionAccountFixtures, ...createdAccounts];
 
   function handleCreateAccountRequest() {
-    // M8.5C.5 owns the creation view. This boundary deliberately only receives
-    // the request so the selector remains reusable when that view arrives.
+    setCreateAccountDraft((draft) => (draft.currency ? draft : { ...draft, currency }));
+    setView("create-account");
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+    if (nextOpen) return;
+
+    setView("transaction");
+    setCreatedAccounts([]);
+    setAccount((current) => (current.startsWith("draft-account-") ? "" : current));
+    setCreateAccountDraft({ name: "", type: "", currency: "", openingBalance: "" });
+  }
+
+  function handleCreateAccountDraft(draft: CreateAccountFormDraft & { readonly type: LedgerAccountType }) {
+    const createdAccount: AccountDraftOption = {
+      id: `draft-account-${localAccountId.current += 1}`,
+      name: draft.name,
+      type: draft.type,
+      currency: draft.currency,
+      openingBalance: draft.openingBalance,
+      source: "local-draft",
+    };
+
+    setCreatedAccounts((current) => [...current, createdAccount]);
+    setAccount(createdAccount.id);
+    setCreateAccountDraft({ name: "", type: "", currency: "", openingBalance: "" });
+    setView("transaction");
   }
 
   return (
@@ -56,8 +100,29 @@ export function TransactionCreateControl({
         Add transaction
       </Button>
 
-      <TransactionFormDialog kind={kind} onKindChange={setKind} onOpenChange={setOpen} open={open}>
-        {kind === "EXPENSE" ? (
+      <TransactionFormDialog
+        createAccountHeader={{
+          backLabel: labels.accountCreateBackToExpense,
+          description: labels.accountCreateSubtitle,
+          title: labels.accountCreateTitle,
+        }}
+        kind={kind}
+        onBackToTransaction={() => setView("transaction")}
+        onKindChange={setKind}
+        onOpenChange={handleOpenChange}
+        open={open}
+        view={view}
+      >
+        {view === "create-account" ? (
+          <CreateAccountForm
+            draft={createAccountDraft}
+            labels={labels}
+            language={language}
+            onCancel={() => setView("transaction")}
+            onCreateDraft={handleCreateAccountDraft}
+            onDraftChange={setCreateAccountDraft}
+          />
+        ) : kind === "EXPENSE" ? (
           <div className="grid gap-4">
             <TransactionAmountField
               currency={currency}
@@ -92,7 +157,8 @@ export function TransactionCreateControl({
             </div>
 
             <TransactionAccountField
-              accounts={transactionAccountFixtures}
+              accountTypeLabels={accountTypeLabels}
+              accounts={accounts}
               createAccountLabel={labels.accountsCreate}
               createFirstAccountLabel={labels.accountsCreateFirst}
               emptyDescription={labels.accountsEmptyDescription}
