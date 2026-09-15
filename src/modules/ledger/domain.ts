@@ -76,6 +76,33 @@ export interface LedgerTransactionFilters {
   limit?: number;
 }
 
+
+export const LEDGER_TRANSACTION_LIST_SORTS = ["NEWEST", "OLDEST", "HIGHEST", "LOWEST"] as const;
+export type LedgerTransactionListSort = (typeof LEDGER_TRANSACTION_LIST_SORTS)[number];
+
+export interface LedgerTransactionListFilters {
+  kind?: LedgerTransactionKind;
+  accountId?: string;
+  categoryId?: string;
+  occurredFrom?: Date;
+  occurredToExclusive?: Date;
+  search?: string;
+}
+
+export interface LedgerTransactionListPageInput extends LedgerTransactionListFilters {
+  offset: number;
+  limit: number;
+  sort: LedgerTransactionListSort;
+}
+
+
+export interface LedgerTransactionListRow {
+  transaction: LedgerTransactionRecord;
+  account: LedgerAccountRecord | null;
+  category: LedgerCategoryRecord | null;
+  merchant: LedgerMerchantRecord | null;
+}
+
 export function normalizeMerchantName(value: string): string {
   return value.normalize("NFKC").trim().replaceAll(/\s+/g, " ").toLocaleLowerCase("en-US");
 }

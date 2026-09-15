@@ -2,6 +2,9 @@ import type {
   LedgerAccountRecord,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
+  LedgerTransactionListFilters,
+  LedgerTransactionListPageInput,
+  LedgerTransactionListRow,
   LedgerTransactionFilters,
   LedgerTransactionRecord,
 } from "@/modules/ledger/domain";
@@ -196,6 +199,41 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     return filters.limit === undefined ? transactions : transactions.slice(0, filters.limit);
   }
 
+  async countTransactionList(
+    workspaceId: string,
+    filters: LedgerTransactionListFilters,
+  ): Promise<number> {
+    return this.transactionListRows(workspaceId, filters).length;
+  }
+
+  async listTransactionListCurrencies(
+    workspaceId: string,
+    filters: LedgerTransactionListFilters,
+  ): Promise<readonly string[]> {
+    return [...new Set(this.transactionListRows(workspaceId, filters).map(({ transaction }) => transaction.currency))].slice(0, 2);
+  }
+
+  async listTransactionListPage(
+    workspaceId: string,
+    input: LedgerTransactionListPageInput,
+  ): Promise<readonly LedgerTransactionListRow[]> {
+    const rows = this.transactionListRows(workspaceId, input);
+    rows.sort((left, right) => {
+      switch (input.sort) {
+        case "OLDEST":
+          return compareRows(left, right, 1);
+        case "HIGHEST":
+          return compareBigints(right.transaction.amountMinor, left.transaction.amountMinor) || compareRows(left, right, -1);
+        case "LOWEST":
+          return compareBigints(left.transaction.amountMinor, right.transaction.amountMinor) || compareRows(left, right, 1);
+        case "NEWEST":
+        default:
+          return compareRows(left, right, -1);
+      }
+    });
+    return rows.slice(input.offset, input.offset + input.limit);
+  }
+
   async listRefundsForTransaction(
     workspaceId: string,
     transactionId: string,
@@ -207,4 +245,46 @@ export class InMemoryLedgerRepository implements LedgerRepository {
         transaction.refundedTransactionId === transactionId,
     );
   }
+
+  private transactionListRows(
+    workspaceId: string,
+    filters: LedgerTransactionListFilters,
+  ): LedgerTransactionListRow[] {
+    return [...this.transactions.values()].flatMap((transaction) => {
+      if (transaction.workspaceId !== workspaceId) return [];
+      if (filters.kind && transaction.kind !== filters.kind) return [];
+      if (filters.accountId && transaction.accountId !== filters.accountId) return [];
+      if (filters.categoryId && transaction.categoryId !== filters.categoryId) return [];
+      if (filters.occurredFrom && transaction.occurredAt < filters.occurredFrom) return [];
+      if (filters.occurredToExclusive && transaction.occurredAt >= filters.occurredToExclusive) return [];
+
+      const merchant = transaction.merchantId ? this.merchants.get(transaction.merchantId) ?? null : null;
+      if (filters.search) {
+        const query = filters.search.toLocaleLowerCase("en-US");
+        const matchesMerchant = merchant?.name.toLocaleLowerCase("en-US").includes(query) ?? false;
+        const matchesNote = transaction.note?.toLocaleLowerCase("en-US").includes(query) ?? false;
+        if (!matchesMerchant && !matchesNote) return [];
+      }
+
+      return [{
+        transaction,
+        account: transaction.accountId ? this.accounts.get(transaction.accountId) ?? null : null,
+        category: transaction.categoryId ? this.categories.get(transaction.categoryId) ?? null : null,
+        merchant,
+      }];
+    });
+  }
+}
+
+function compareRows(left: LedgerTransactionListRow, right: LedgerTransactionListRow, direction: 1 | -1): number {
+  const occurred = left.transaction.occurredAt.getTime() - right.transaction.occurredAt.getTime();
+  if (occurred) return occurred * direction;
+  const created = left.transaction.createdAt.getTime() - right.transaction.createdAt.getTime();
+  if (created) return created * direction;
+  return left.transaction.id.localeCompare(right.transaction.id) * direction;
+}
+
+function compareBigints(left: bigint, right: bigint): number {
+  if (left === right) return 0;
+  return left > right ? 1 : -1;
 }

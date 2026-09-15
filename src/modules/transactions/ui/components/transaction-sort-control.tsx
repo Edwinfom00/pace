@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { HiOutlineArrowsUpDown, HiOutlineChevronDown } from "react-icons/hi2";
 
 import { Button } from "@/components/ui/button";
@@ -21,13 +20,14 @@ export function TransactionSortControl({
   labels,
   value,
   onValueChange,
+  amountSortingAvailable = true,
 }: {
   readonly labels: TransactionUiLabels;
-  readonly value?: TransactionSortValue;
+  readonly value: TransactionSortValue;
   readonly onValueChange?: (value: TransactionSortValue) => void;
+  readonly amountSortingAvailable?: boolean;
 }) {
-  const [internalValue, setInternalValue] = useState<TransactionSortValue>("NEWEST");
-  const selected = value ?? internalValue;
+  const selected = value;
   const sortLabel: Record<TransactionSortValue, string> = {
     NEWEST: labels.sortNewest,
     OLDEST: labels.sortOldest,
@@ -36,7 +36,6 @@ export function TransactionSortControl({
   };
 
   const selectValue = (next: TransactionSortValue) => {
-    if (value === undefined) setInternalValue(next);
     onValueChange?.(next);
   };
 
@@ -56,6 +55,8 @@ export function TransactionSortControl({
             className={cn("rounded-[7px] px-2.5 py-2 text-[13px] text-[#34405d] focus:bg-[#f3f6fa]", selected === sort && "bg-[#f3f6fa] font-medium text-[#1b2844]")}
             key={sort}
             onSelect={() => selectValue(sort)}
+            disabled={!amountSortingAvailable && (sort === "HIGHEST" || sort === "LOWEST")}
+            title={!amountSortingAvailable && (sort === "HIGHEST" || sort === "LOWEST") ? labels.sortAmountUnavailable : undefined}
           >
             {sortLabel[sort]}
           </DropdownMenuItem>

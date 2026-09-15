@@ -1,6 +1,6 @@
-import type { TransactionListItem, TransactionPaginationState } from "../types/transaction-ui.types";
+import type { TransactionListItem, TransactionPaginationState } from "../../types/transaction-ui.types";
 
-
+/** Visual/test-only examples. Production routes query the authorized ledger. */
 export const transactionUiFixtures: readonly TransactionListItem[] = [
   { id: "fixture-carrefour", merchant: { name: "Carrefour Market", description: "Weekly groceries" }, amount: { currency: "XAF", minor: "24850" }, kind: "EXPENSE", category: { key: "groceries", label: "Groceries" }, account: { id: "fixture-checking", displayName: "Main account" }, occurredAt: "2026-09-15T10:24:00.000Z", status: "POSTED" },
   { id: "fixture-yango", merchant: { name: "Yango" }, amount: { currency: "XAF", minor: "3500" }, kind: "EXPENSE", category: { key: "transport", label: "Transport" }, account: { id: "fixture-checking", displayName: "Main account" }, occurredAt: "2026-09-14T17:48:00.000Z", status: "POSTED" },

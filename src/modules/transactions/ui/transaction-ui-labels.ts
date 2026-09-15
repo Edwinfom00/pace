@@ -16,11 +16,18 @@ export type TransactionUiLabels = {
   readonly filterDate: string;
   readonly filterMore: string;
   readonly filtersAvailableSoon: string;
+  readonly filterAllCategories: string;
+  readonly filterAllAccounts: string;
+  readonly filterFrom: string;
+  readonly filterTo: string;
+  readonly filterApply: string;
+  readonly filterClear: string;
   readonly sortLabel: string;
   readonly sortNewest: string;
   readonly sortOldest: string;
   readonly sortHighest: string;
   readonly sortLowest: string;
+  readonly sortAmountUnavailable: string;
   readonly columnTransaction: string;
   readonly columnCategory: string;
   readonly columnAccount: string;
@@ -37,6 +44,12 @@ export type TransactionUiLabels = {
   readonly actionsMenu: string;
   readonly emptyTitle: string;
   readonly emptyDescription: string;
+  readonly emptyNoTransactions: string;
+  readonly emptyNoResults: string;
+  readonly emptyClearFilters: string;
+  readonly unknownMerchant: string;
+  readonly errorTitle: string;
+  readonly errorRetry: string;
   readonly paginationPrevious: string;
   readonly paginationNext: string;
   readonly paginationPage: string;
@@ -61,11 +74,18 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     filterDate: labels["transactions.filters.date"],
     filterMore: labels["transactions.filters.more"],
     filtersAvailableSoon: labels["transactions.filters.availableSoon"],
+    filterAllCategories: labels["transactions.filters.allCategories"],
+    filterAllAccounts: labels["transactions.filters.allAccounts"],
+    filterFrom: labels["transactions.filters.from"],
+    filterTo: labels["transactions.filters.to"],
+    filterApply: labels["transactions.filters.apply"],
+    filterClear: labels["transactions.filters.clear"],
     sortLabel: labels["transactions.sort.label"],
     sortNewest: labels["transactions.sort.newest"],
     sortOldest: labels["transactions.sort.oldest"],
     sortHighest: labels["transactions.sort.highest"],
     sortLowest: labels["transactions.sort.lowest"],
+    sortAmountUnavailable: labels["transactions.sort.amountUnavailable"],
     columnTransaction: labels["transactions.columns.transaction"],
     columnCategory: labels["transactions.columns.category"],
     columnAccount: labels["transactions.columns.account"],
@@ -82,6 +102,12 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     actionsMenu: labels["transactions.actions.menu"],
     emptyTitle: labels["transactions.empty.title"],
     emptyDescription: labels["transactions.empty.description"],
+    emptyNoTransactions: labels["transactions.empty.noTransactions"],
+    emptyNoResults: labels["transactions.empty.noResults"],
+    emptyClearFilters: labels["transactions.empty.clearFilters"],
+    unknownMerchant: labels["transactions.merchant.unknown"],
+    errorTitle: labels["transactions.error.title"],
+    errorRetry: labels["transactions.error.retry"],
     paginationPrevious: labels["transactions.pagination.previous"],
     paginationNext: labels["transactions.pagination.next"],
     paginationPage: labels["transactions.pagination.page"],

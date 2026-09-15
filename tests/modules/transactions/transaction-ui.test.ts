@@ -5,19 +5,19 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
-import { transactionUiFixtures } from "@/modules/transactions/fixtures/transaction-ui-fixtures";
+import { transactionUiFixtures } from "@/modules/transactions/test/fixtures/transaction-ui-fixtures";
 import { TransactionAmountCell } from "@/modules/transactions/ui/components/transaction-amount-cell";
 import { TransactionCategoryBadge } from "@/modules/transactions/ui/components/transaction-category-badge";
 import { TransactionEmptyState } from "@/modules/transactions/ui/components/transaction-empty-state";
 import { formatTransactionAmount, formatTransactionDate } from "@/modules/transactions/ui/components/transaction-formatters";
 import { TransactionMerchantCell } from "@/modules/transactions/ui/components/transaction-merchant-cell";
+import { TransactionMobileCard } from "@/modules/transactions/ui/components/transaction-mobile-card";
 import { visiblePages } from "@/modules/transactions/ui/components/transaction-pagination";
 import { TransactionRowActions } from "@/modules/transactions/ui/components/transaction-row-actions";
 import { TransactionStatusBadge } from "@/modules/transactions/ui/components/transaction-status-badge";
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
 import { TransactionTableSkeleton } from "@/modules/transactions/ui/components/transaction-table-skeleton";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
-import { TransactionsTableView } from "@/modules/transactions/ui/views/transactions-table-view";
 
 const labels = getTransactionUiLabels(getDashboardLabels("en"));
 const now = "2026-09-15T14:00:00.000Z";
@@ -80,9 +80,15 @@ test("table, skeleton, empty state, and mobile presentation expose the foundatio
   const empty = renderToStaticMarkup(createElement(TransactionEmptyState, { labels }));
   assert.match(empty, /No transactions yet/);
 
-  const mobileView = renderToStaticMarkup(createElement(TransactionsTableView, { labels, locale: "en-US", now, timeZone: "UTC", transactions: transactionUiFixtures.slice(0, 1) }));
-  assert.match(mobileView, /md:hidden/);
-  assert.match(mobileView, /hidden overflow-hidden/);
+  const mobileCard = renderToStaticMarkup(createElement(TransactionMobileCard, {
+    labels,
+    locale: "en-US",
+    now,
+    timeZone: "UTC",
+    transaction: transactionUiFixtures[0]!,
+  }));
+  assert.match(mobileCard, /Carrefour Market/);
+  assert.match(mobileCard, /md:hidden|Weekly groceries/);
 });
 
 test("pagination produces a compact stable page window", () => {

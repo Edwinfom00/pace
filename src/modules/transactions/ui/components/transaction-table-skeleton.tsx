@@ -2,8 +2,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export function TransactionTableSkeleton({ rows = 7 }: { readonly rows?: number }) {
   return (
-    <div aria-busy="true" aria-label="Loading transactions" className="hidden overflow-hidden rounded-[12px] border border-[#e7ebf1] bg-white md:block">
-      <table className="w-full min-w-[640px] border-collapse">
+    <div aria-busy="true" aria-label="Loading transactions">
+      <div className="hidden overflow-hidden rounded-[12px] border border-[#e7ebf1] bg-white md:block">
+        <table className="w-full min-w-[640px] border-collapse">
         <thead>
           <tr className="border-b border-[#e7ebf1] bg-[#fcfdff]">
             {["merchant", "category", "account", "date", "amount", "status", "actions"].map((column) => (
@@ -24,7 +25,16 @@ export function TransactionTableSkeleton({ rows = 7 }: { readonly rows?: number 
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
+      <div className="space-y-2.5 md:hidden">
+        {Array.from({ length: Math.min(rows, 5) }, (_, index) => (
+          <article className="rounded-[12px] border border-[#e7ebf1] bg-white px-4 py-3.5" key={index}>
+            <div className="flex items-start gap-3"><Skeleton className="size-8 rounded-[9px] bg-[#eef1f5]" /><div className="min-w-0 flex-1 space-y-2"><Skeleton className="h-3 w-40 max-w-full bg-[#eef1f5]" /><Skeleton className="h-2.5 w-24 bg-[#f3f5f8]" /></div><Skeleton className="h-3 w-16 bg-[#eef1f5]" /></div>
+            <div className="mt-3 ml-11 flex justify-between border-t border-[#f0f2f5] pt-3"><Skeleton className="h-2.5 w-20 bg-[#f3f5f8]" /><Skeleton className="h-2.5 w-16 bg-[#f3f5f8]" /></div>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }

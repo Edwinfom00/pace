@@ -1,7 +1,14 @@
-import type { TransactionListItem, TransactionPaginationState } from "../../types/transaction-ui.types";
+import { hasActiveTransactionFilters, transactionListHref } from "../../domain/transaction-list-url";
+import type {
+  TransactionFilterOptions,
+  TransactionFilterState,
+  TransactionListItem,
+  TransactionPaginationState,
+} from "../../types/transaction-ui.types";
 import { TransactionEmptyState } from "../components/transaction-empty-state";
 import { TransactionMobileCard } from "../components/transaction-mobile-card";
 import { TransactionPagination } from "../components/transaction-pagination";
+import { TransactionsAskPace } from "../components/transactions-ask-pace";
 import { TransactionTable } from "../components/transaction-table";
 import { TransactionTableSkeleton } from "../components/transaction-table-skeleton";
 import { TransactionToolbar } from "../components/transaction-toolbar";
@@ -14,6 +21,12 @@ export function TransactionsTableView({
   timeZone,
   now,
   pagination,
+  filterState,
+  filterOptions,
+  amountSortingAvailable,
+  workspaceId,
+  workspaceSlug,
+  language,
   loading = false,
 }: {
   readonly transactions: readonly TransactionListItem[];
@@ -21,10 +34,30 @@ export function TransactionsTableView({
   readonly locale: string;
   readonly timeZone: string;
   readonly now: string;
-  readonly pagination?: TransactionPaginationState;
+  readonly pagination: TransactionPaginationState;
+  readonly filterState: TransactionFilterState & { readonly page: number };
+  readonly filterOptions: TransactionFilterOptions;
+  readonly amountSortingAvailable: boolean;
+  readonly workspaceId: string;
+  readonly workspaceSlug: string;
+  readonly language: "en" | "fr" | "de";
   readonly loading?: boolean;
 }) {
-  const totalCount = pagination?.totalCount ?? transactions.length;
+  const pathname = `/w/${workspaceSlug}/transactions`;
+  const filtered = hasActiveTransactionFilters(filterState);
+  const totalCount = pagination.totalCount;
+  const pageContext = {
+    page: "transactions" as const,
+    filters: {
+      ...(filterState.search ? { search: filterState.search } : {}),
+      ...(filterState.kind !== "ALL" ? { type: filterState.kind } : {}),
+      ...(filterState.categoryId ? { categoryId: filterState.categoryId } : {}),
+      ...(filterState.accountId ? { accountId: filterState.accountId } : {}),
+      ...(filterState.from ? { from: filterState.from } : {}),
+      ...(filterState.to ? { to: filterState.to } : {}),
+      ...(filterState.sort !== "NEWEST" ? { sort: filterState.sort } : {}),
+    },
+  };
 
   return (
     <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
@@ -36,13 +69,14 @@ export function TransactionsTableView({
           </div>
           <p className="mt-1 text-[13px] text-[#71809a]">{labels.description}</p>
         </div>
+        <TransactionsAskPace language={language} locale={locale} pageContext={pageContext} timeZone={timeZone} workspaceId={workspaceId} />
       </header>
-      <TransactionToolbar labels={labels} />
+      <TransactionToolbar amountSortingAvailable={amountSortingAvailable} labels={labels} locale={locale} options={filterOptions} pathname={pathname} state={filterState} />
       <section aria-label={labels.title} className="pt-5">
         {loading ? (
           <TransactionTableSkeleton />
         ) : transactions.length === 0 ? (
-          <TransactionEmptyState labels={labels} />
+          <TransactionEmptyState clearFiltersHref={filtered ? transactionListHref(pathname, { kind: "ALL", page: 1, search: "", sort: "NEWEST" }) : undefined} filtered={filtered} labels={labels} />
         ) : (
           <>
             <TransactionTable labels={labels} locale={locale} now={now} timeZone={timeZone} transactions={transactions} />
@@ -58,7 +92,7 @@ export function TransactionsTableView({
                 />
               ))}
             </div>
-            {pagination ? <TransactionPagination labels={labels} pagination={pagination} /> : null}
+            <TransactionPagination labels={labels} pagination={pagination} pathname={pathname} state={filterState} />
           </>
         )}
       </section>

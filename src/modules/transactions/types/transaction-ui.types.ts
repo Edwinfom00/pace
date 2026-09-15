@@ -42,9 +42,24 @@ export type TransactionSortValue = (typeof TRANSACTION_SORT_VALUES)[number];
 
 export type TransactionFilterState = {
   readonly kind: TransactionFilterKind;
-  readonly category?: string;
-  readonly account?: string;
-  readonly dateRange?: string;
+  readonly search: string;
+  readonly categoryId?: string;
+  readonly accountId?: string;
+  /** ISO calendar date in the workspace's canonical timezone. */
+  readonly from?: string;
+  /** ISO calendar date in the workspace's canonical timezone. */
+  readonly to?: string;
+  readonly sort: TransactionSortValue;
+};
+
+export type TransactionFilterOption = {
+  readonly id: string;
+  readonly label: string;
+};
+
+export type TransactionFilterOptions = {
+  readonly categories: readonly TransactionFilterOption[];
+  readonly accounts: readonly TransactionFilterOption[];
 };
 
 export type TransactionPaginationState = {
