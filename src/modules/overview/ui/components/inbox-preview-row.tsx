@@ -43,6 +43,7 @@ export function InboxPreviewRow({
     <article className="grid min-w-0 grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-x-3 py-3 sm:grid-cols-[32px_minmax(130px,1fr)_96px_minmax(180px,1.15fr)_auto_28px] sm:gap-x-4 sm:py-2.5">
       <TransactionIcon
         iconKey={item.iconKey}
+        merchantLogoKey={item.merchantLogoKey}
         merchantName={item.merchantName}
         size="sm"
         transactionKind={item.kind}

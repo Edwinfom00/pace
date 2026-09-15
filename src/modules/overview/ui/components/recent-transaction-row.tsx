@@ -47,6 +47,7 @@ export function RecentTransactionRow({
         categoryKey={transaction.categoryKey}
         categoryName={transaction.categoryName}
         iconKey={transaction.iconKey}
+        merchantLogoKey={transaction.merchantLogoKey}
         merchantName={transaction.merchantName}
         size="sm"
         transactionKind={transaction.kind}

@@ -1,4 +1,5 @@
 import type { AuthenticatedActor } from "@/authorization/session";
+import { resolveMerchantLogo } from "@/lib/transaction-visuals/merchant-logo-matcher";
 import { resolveTransactionIcon } from "@/lib/transaction-visuals/transaction-icon-matcher";
 import { getFinancialInboxService } from "@/modules/financial-inbox/server";
 
@@ -31,6 +32,7 @@ export async function getOverviewInboxPreview({
         merchantName: item.transaction.merchantName,
         transactionKind: item.transaction.kind,
       }).iconKey,
+      merchantLogoKey: resolveMerchantLogo({ merchantName: item.transaction.merchantName })?.key ?? null,
     })),
   };
 }

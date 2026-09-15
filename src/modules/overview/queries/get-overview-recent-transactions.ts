@@ -1,4 +1,5 @@
 import type { AuthenticatedActor } from "@/authorization/session";
+import { resolveMerchantLogo } from "@/lib/transaction-visuals/merchant-logo-matcher";
 import { resolveTransactionIcon } from "@/lib/transaction-visuals/transaction-icon-matcher";
 import { DatabaseLedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import { getLedgerService } from "@/modules/ledger/server";
@@ -38,6 +39,7 @@ export async function getOverviewRecentTransactions({
         categoryKey: category?.systemKey,
         transactionKind: transaction.kind,
       });
+      const merchantLogo = resolveMerchantLogo({ merchantName });
 
       return {
         id: transaction.id,
@@ -49,6 +51,7 @@ export async function getOverviewRecentTransactions({
         categoryName: category?.name ?? null,
         categoryKey: category?.systemKey ?? null,
         iconKey: icon.iconKey,
+        merchantLogoKey: merchantLogo?.key ?? null,
         status: transaction.status,
       };
     }),

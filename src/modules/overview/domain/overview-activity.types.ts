@@ -1,4 +1,5 @@
 import type { TransactionIconKey } from "@/lib/transaction-visuals/transaction-icon.types";
+import type { MerchantLogoKey } from "@/lib/transaction-visuals/merchant-logo-catalog";
 import type { InboxReason } from "@/modules/financial-inbox/domain";
 import type {
   LedgerTransactionKind,
@@ -15,6 +16,7 @@ export interface OverviewRecentTransaction {
   readonly categoryName: string | null;
   readonly categoryKey: string | null;
   readonly iconKey: TransactionIconKey;
+  readonly merchantLogoKey: MerchantLogoKey | null;
   readonly status: LedgerTransactionStatus;
 }
 
@@ -26,6 +28,7 @@ export interface OverviewInboxPreviewItem {
   readonly reason: InboxReason;
   readonly kind: LedgerTransactionKind;
   readonly iconKey: TransactionIconKey;
+  readonly merchantLogoKey: MerchantLogoKey | null;
 }
 
 export interface OverviewInboxPreview {

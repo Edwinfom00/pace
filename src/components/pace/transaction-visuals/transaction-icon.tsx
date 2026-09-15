@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { resolveMerchantLogo } from "@/lib/transaction-visuals/merchant-logo-matcher";
 import { resolveTransactionIcon } from "@/lib/transaction-visuals/transaction-icon-matcher";
 import type { TransactionIconKey } from "@/lib/transaction-visuals/transaction-icon.types";
 
@@ -34,6 +35,7 @@ export function TransactionIcon({
   categoryName,
   categoryKey,
   iconKey,
+  merchantLogoKey,
   transactionKind,
   size = "md",
   decorative = true,
@@ -44,6 +46,7 @@ export function TransactionIcon({
   readonly categoryName?: string | null;
   readonly categoryKey?: string | null;
   readonly iconKey?: TransactionIconKey | string | null;
+  readonly merchantLogoKey?: string | null;
   readonly transactionKind?: "EXPENSE" | "INCOME" | "TRANSFER" | "REFUND" | string | null;
   readonly size?: keyof typeof sizeClasses;
   readonly decorative?: boolean;
@@ -57,7 +60,8 @@ export function TransactionIcon({
     iconKey,
     transactionKind,
   });
-  const accessibleLabel = label ?? visual.iconKey.replaceAll("-", " ");
+  const merchantLogo = resolveMerchantLogo({ merchantName, merchantLogoKey });
+  const accessibleLabel = label ?? merchantLogo?.label ?? visual.iconKey.replaceAll("-", " ");
 
   return (
     <span
@@ -66,14 +70,22 @@ export function TransactionIcon({
       className={cn(
         "inline-flex shrink-0 items-center justify-center border border-white/80",
         sizeClasses[size],
-        toneClasses[visual.category],
+        merchantLogo ? "bg-white shadow-[0_1px_2px_rgb(16_24_40/6%)]" : toneClasses[visual.category],
         className,
       )}
       role={decorative ? undefined : "img"}
     >
       {/* Static SVG assets intentionally bypass next/image so only rendered icons are requested. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img alt="" className="block" decoding="async" height="20" loading="lazy" src={visual.iconPath} width="20" />
+      <img
+        alt=""
+        className="block"
+        decoding="async"
+        height="20"
+        loading="lazy"
+        src={merchantLogo?.path ?? visual.iconPath}
+        width="20"
+      />
     </span>
   );
 }
