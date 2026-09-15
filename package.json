@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.44",
+    "@dicebear/core": "^9.4.3",
+    "@dicebear/initials": "^9.4.2",
     "@neondatabase/serverless": "^1.1.0",
     "ai": "^7.0.99",
     "better-auth": "^1.7.4",

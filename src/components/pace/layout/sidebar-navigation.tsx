@@ -86,13 +86,13 @@ export function SidebarNavigation({
 
   return (
     <SidebarContent className="px-0">
-      <SidebarGroup className="px-3 pt-6 pb-0">
-        <nav aria-label={labels["navigation.label"]}>
+      <SidebarGroup className="px-3 pt-6 pb-0 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-4">
+        <nav aria-label={labels["navigation.label"]} className="group-data-[collapsible=icon]:w-8">
           <SidebarMenu className="gap-1">{renderNavigation(primaryNavigation)}</SidebarMenu>
         </nav>
       </SidebarGroup>
-      <SidebarGroup className="px-3 py-0">
-        <nav aria-label={labels["navigation.secondaryLabel"]}>
+      <SidebarGroup className="px-3 py-0 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-4">
+        <nav aria-label={labels["navigation.secondaryLabel"]} className="group-data-[collapsible=icon]:w-8">
           <SidebarMenu className="gap-1">{renderNavigation(secondaryNavigation)}</SidebarMenu>
         </nav>
       </SidebarGroup>

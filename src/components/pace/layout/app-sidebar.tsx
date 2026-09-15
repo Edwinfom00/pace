@@ -78,11 +78,11 @@ function AppSidebar({
         labels={labels}
         workspaceSlug={activeWorkspaceSlug}
       />
-      <SidebarFooter className="px-6 pt-2 pb-7 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-2">
+      <SidebarFooter className="px-6 pt-2 pb-7 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-3">
         <div className="flex w-full items-center group-data-[collapsible=icon]:flex-col">
           <WorkspaceSwitcher
             activeWorkspaceSlug={activeWorkspaceSlug}
-            className="h-11 min-w-0 flex-1 rounded-[8px] px-0 text-[#34405d] hover:bg-[#f6f8fc] group-data-[collapsible=icon]:size-9!"
+            className="h-11 min-w-0 flex-1 rounded-[8px] px-0 text-[#34405d] hover:bg-[#f6f8fc] group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-0!"
             labels={labels}
             workspaces={workspaces}
           />
@@ -109,7 +109,7 @@ export function PaceDashboardShell({
   return (
     <TooltipProvider>
       <SidebarProvider
-        style={{ "--sidebar-width": "15rem", "--sidebar-width-icon": "3rem" } as CSSProperties}
+        style={{ "--sidebar-width": "15rem", "--sidebar-width-icon": "4rem" } as CSSProperties}
       >
         <AppSidebar
           activeWorkspaceSlug={activeWorkspaceSlug}
