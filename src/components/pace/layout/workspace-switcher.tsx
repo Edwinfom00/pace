@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition, type MouseEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   HiOutlineCheck,
   HiOutlineChevronUpDown,
@@ -34,7 +35,10 @@ export function WorkspaceSwitcher({
   className?: string;
 }) {
   const { isMobile, setOpenMobile } = useSidebar();
+  const router = useRouter();
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
+  const [pendingWorkspace, setPendingWorkspace] = useState<SidebarWorkspace | null>(null);
+  const [, startNavigation] = useTransition();
   const activeWorkspace = workspaces.find((workspace) => workspace.slug === activeWorkspaceSlug) ?? workspaces[0];
 
   if (!activeWorkspace) return null;
@@ -42,6 +46,29 @@ export function WorkspaceSwitcher({
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
   };
+
+  const switchWorkspace = (
+    event: MouseEvent<HTMLAnchorElement>,
+    workspace: SidebarWorkspace,
+  ) => {
+    if (pendingWorkspace) {
+      event.preventDefault();
+      return;
+    }
+
+    if (workspace.slug === activeWorkspaceSlug) return;
+
+    event.preventDefault();
+    setPendingWorkspace(workspace);
+    closeMobileSidebar();
+    startNavigation(() => {
+      router.push(`/w/${workspace.slug}/overview`);
+    });
+  };
+
+  const workspaceBeingOpened = pendingWorkspace?.slug === activeWorkspaceSlug
+    ? null
+    : pendingWorkspace;
 
   return (
     <>
@@ -70,7 +97,11 @@ export function WorkspaceSwitcher({
             const isActive = workspace.slug === activeWorkspaceSlug;
             return (
               <DropdownMenuItem asChild className="min-h-10 cursor-pointer gap-2.5 rounded-[7px] px-2 text-[#344054] focus:bg-[#f4f6fb]" key={workspace.id} onSelect={closeMobileSidebar}>
-                <Link aria-current={isActive ? "page" : undefined} href={`/w/${workspace.slug}/overview`}>
+                <Link
+                  aria-current={isActive ? "page" : undefined}
+                  href={`/w/${workspace.slug}/overview`}
+                  onClick={(event) => switchWorkspace(event, workspace)}
+                >
                   <WorkspaceAvatar className="size-7 rounded-[7px]" name={workspace.name} />
                   <span className="min-w-0 flex-1 truncate font-medium">{workspace.name}</span>
                   {isActive ? <HiOutlineCheck aria-hidden="true" className="size-4 text-[#2457c5]" /> : null}
@@ -99,6 +130,22 @@ export function WorkspaceSwitcher({
         onOpenChange={setIsCreateWorkspaceOpen}
         open={isCreateWorkspaceOpen}
       />
+      {workspaceBeingOpened ? (
+        <div
+          aria-atomic="true"
+          aria-live="polite"
+          className="fixed inset-0 z-50 grid place-items-center bg-[#17223b]/12 px-6 backdrop-blur-[1px] motion-reduce:backdrop-blur-none"
+          role="status"
+        >
+          <div className="flex w-full max-w-xs items-center gap-3 rounded-xl bg-white px-4 py-3 text-[#17223b] shadow-[0_8px_8px_rgb(16_24_40/0.08)]">
+            <span aria-hidden="true" className="size-5 shrink-0 animate-spin rounded-full border-2 border-[#d6e1f6] border-t-[#2457c5] motion-reduce:animate-none" />
+            <span className="grid min-w-0 gap-0.5">
+              <span className="truncate text-sm font-semibold">Opening {workspaceBeingOpened.name}</span>
+              <span className="text-xs text-[#667085]">Preparing your workspace</span>
+            </span>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
