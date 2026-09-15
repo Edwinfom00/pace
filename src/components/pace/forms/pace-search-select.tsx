@@ -24,10 +24,11 @@ type PaceSearchSelectProps<T extends string> = {
   options: readonly SelectOption<T>[];
   placeholder: string;
   searchPlaceholder: string;
-  emptyLabel: string;
+  emptyLabel?: string;
   ariaLabel: string;
   renderOption?: (option: SelectOption<T>, selected: boolean) => React.ReactNode;
   renderValue?: (option: SelectOption<T>) => React.ReactNode;
+  triggerClassName?: string;
   invalid?: boolean;
 };
 
@@ -48,6 +49,7 @@ export function PaceSearchSelect<T extends string>({
   ariaLabel,
   renderOption,
   renderValue,
+  triggerClassName,
   invalid = false,
 }: PaceSearchSelectProps<T>) {
   const [open, setOpen] = React.useState(false);
@@ -87,6 +89,7 @@ export function PaceSearchSelect<T extends string>({
             "flex h-14 w-full items-center gap-3 rounded-[10px] border bg-white px-4 text-left text-[15px] font-medium text-[#13213f] outline-none transition-colors",
             "border-[#d9e2ef] hover:border-[#bac9df] focus-visible:border-[#3973ef] focus-visible:ring-4 focus-visible:ring-[#3973ef]/10",
             "data-[invalid=true]:border-red-400 data-[invalid=true]:ring-4 data-[invalid=true]:ring-red-100",
+            triggerClassName,
           )}
           type="button"
         >
@@ -124,9 +127,11 @@ export function PaceSearchSelect<T extends string>({
               />
             </div>
             <CommandList className="max-h-64 overflow-y-auto overscroll-contain p-0.5" id={listboxId} role="listbox">
-              <CommandEmpty className="px-3 py-8 text-center text-sm text-[#7182a1]">
-                {emptyLabel}
-              </CommandEmpty>
+              {emptyLabel ? (
+                <CommandEmpty className="px-3 py-8 text-center text-sm text-[#7182a1]">
+                  {emptyLabel}
+                </CommandEmpty>
+              ) : null}
               {filteredOptions.map((option) => {
                 const isSelected = option.value === value;
                 return (

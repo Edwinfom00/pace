@@ -61,6 +61,13 @@ export type TransactionUiLabels = {
   readonly formCurrency: string;
   readonly formCurrencySearch: string;
   readonly formCurrencyEmpty: string;
+  readonly formMerchant: string;
+  readonly formMerchantPlaceholder: string;
+  readonly formMerchantHelper: string;
+  readonly formCategory: string;
+  readonly formCategoryPlaceholder: string;
+  readonly formCategoryHelper: string;
+  readonly formCategorySearch: string;
 };
 
 export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLabels {
@@ -125,5 +132,12 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     formCurrency: labels["transactions.form.currency"],
     formCurrencySearch: labels["transactions.form.currencySearch"],
     formCurrencyEmpty: labels["transactions.form.currencyEmpty"],
+    formMerchant: labels["transactions.form.merchant"],
+    formMerchantPlaceholder: labels["transactions.form.merchantPlaceholder"],
+    formMerchantHelper: labels["transactions.form.merchantHelper"],
+    formCategory: labels["transactions.form.category"],
+    formCategoryPlaceholder: labels["transactions.form.categoryPlaceholder"],
+    formCategoryHelper: labels["transactions.form.categoryHelper"],
+    formCategorySearch: labels["transactions.form.categorySearch"],
   };
 }
