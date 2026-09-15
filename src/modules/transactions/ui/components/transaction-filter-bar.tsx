@@ -38,12 +38,14 @@ export function TransactionFilterBar({
   options,
   locale,
   onStateChange,
+  loading = false,
 }: {
   readonly labels: TransactionUiLabels;
   readonly state: TransactionFilterState & { readonly page: number };
   readonly options: TransactionFilterOptions;
   readonly locale: string;
   readonly onStateChange: (next: Partial<TransactionFilterState & { readonly page: number }>, replace?: boolean) => void;
+  readonly loading?: boolean;
 }) {
   const [search, setSearch] = useState(state.search);
   const [range, setRange] = useState({ from: state.from ?? "", to: state.to ?? "" });
@@ -65,7 +67,8 @@ export function TransactionFilterBar({
   }, [onStateChange, search, state.search]);
 
   return (
-    <div className="space-y-2.5">
+    <fieldset className="contents" disabled={loading}>
+    <div aria-busy={loading} className="space-y-2.5">
       <label className="relative block max-w-[420px]">
         <span className="sr-only">{labels.searchLabel}</span>
         <HiOutlineMagnifyingGlass aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#7b879e]" />
@@ -159,6 +162,7 @@ export function TransactionFilterBar({
         ) : null}
       </div>
     </div>
+    </fieldset>
   );
 }
 

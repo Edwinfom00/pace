@@ -21,11 +21,13 @@ export function TransactionSortControl({
   value,
   onValueChange,
   amountSortingAvailable = true,
+  loading = false,
 }: {
   readonly labels: TransactionUiLabels;
   readonly value: TransactionSortValue;
   readonly onValueChange?: (value: TransactionSortValue) => void;
   readonly amountSortingAvailable?: boolean;
+  readonly loading?: boolean;
 }) {
   const selected = value;
   const sortLabel: Record<TransactionSortValue, string> = {
@@ -42,7 +44,7 @@ export function TransactionSortControl({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button aria-label={labels.sortLabel} className="h-9 shrink-0 rounded-[8px] border-[#e3e8ef] bg-white px-2.5 text-[12px] font-medium text-[#53627b] hover:border-[#d5ddea] hover:bg-[#f8fafc]" variant="outline">
+        <Button aria-label={labels.sortLabel} className="h-9 shrink-0 rounded-[8px] border-[#e3e8ef] bg-white px-2.5 text-[12px] font-medium text-[#53627b] hover:border-[#d5ddea] hover:bg-[#f8fafc]" disabled={loading} variant="outline">
           <HiOutlineArrowsUpDown aria-hidden="true" className="size-3.5" />
           <span className="hidden sm:inline">{sortLabel[selected]}</span>
           <span className="sm:hidden">{labels.sortLabel}</span>

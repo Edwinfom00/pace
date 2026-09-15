@@ -7,6 +7,10 @@ import type {
 } from "../../types/transaction-ui.types";
 import { TransactionEmptyState } from "../components/transaction-empty-state";
 import { TransactionMobileCard } from "../components/transaction-mobile-card";
+import {
+  TransactionNavigationProgress,
+  TransactionNavigationProvider,
+} from "../components/transaction-navigation";
 import { TransactionPagination } from "../components/transaction-pagination";
 import { TransactionsAskPace } from "../components/transactions-ask-pace";
 import { TransactionTable } from "../components/transaction-table";
@@ -60,6 +64,7 @@ export function TransactionsTableView({
   };
 
   return (
+    <TransactionNavigationProvider>
     <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <header className="flex flex-wrap items-end justify-between gap-3 pb-5">
         <div>
@@ -73,6 +78,7 @@ export function TransactionsTableView({
       </header>
       <TransactionToolbar amountSortingAvailable={amountSortingAvailable} labels={labels} locale={locale} options={filterOptions} pathname={pathname} state={filterState} />
       <section aria-label={labels.title} className="pt-5">
+        <TransactionNavigationProgress label={labels.loading} />
         {loading ? (
           <TransactionTableSkeleton />
         ) : transactions.length === 0 ? (
@@ -97,5 +103,6 @@ export function TransactionsTableView({
         )}
       </section>
     </main>
+    </TransactionNavigationProvider>
   );
 }

@@ -1,14 +1,12 @@
 "use client";
 
 import { HiOutlineChevronLeft, HiOutlineChevronRight } from "react-icons/hi2";
-import { useRouter } from "next/navigation";
-
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { transactionListHref } from "../../domain/transaction-list-url";
 import type { TransactionFilterState, TransactionPaginationState } from "../../types/transaction-ui.types";
 import type { TransactionUiLabels } from "../transaction-ui-labels";
+import { useTransactionNavigation } from "./transaction-navigation";
 
 export function TransactionPagination({
   pagination,
@@ -21,7 +19,7 @@ export function TransactionPagination({
   readonly pathname: string;
   readonly state: TransactionFilterState & { readonly page: number };
 }) {
-  const router = useRouter();
+  const { isPending, navigate } = useTransactionNavigation();
   const totalPages = Math.max(1, Math.ceil(pagination.totalCount / pagination.pageSize));
   const currentPage = Math.min(Math.max(1, pagination.page), totalPages);
   const from = pagination.totalCount === 0 ? 0 : (currentPage - 1) * pagination.pageSize + 1;
@@ -29,7 +27,7 @@ export function TransactionPagination({
   const pageNumbers = visiblePages(currentPage, totalPages);
 
   if (pagination.totalCount === 0) return null;
-  const goToPage = (page: number) => router.push(transactionListHref(pathname, { ...state, page }), { scroll: false });
+  const goToPage = (page: number) => navigate(pathname, { ...state, page });
 
   return (
     <nav aria-label={labels.paginationPage} className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -43,7 +41,7 @@ export function TransactionPagination({
         <Button
           aria-label={labels.paginationPrevious}
           className="size-8 rounded-[8px] border-[#e3e8ef] bg-white p-0 text-[#53627b] hover:bg-[#f8fafc]"
-          disabled={currentPage === 1}
+          disabled={isPending || currentPage === 1}
           onClick={() => goToPage(currentPage - 1)}
           size="icon"
           variant="outline"
@@ -61,6 +59,7 @@ export function TransactionPagination({
                 : "border-transparent bg-transparent text-[#667895] hover:bg-[#f3f6fa]",
             )}
             key={page}
+            disabled={isPending}
             onClick={() => goToPage(page)}
             size="icon"
             variant={page === currentPage ? "outline" : "ghost"}
@@ -71,7 +70,7 @@ export function TransactionPagination({
         <Button
           aria-label={labels.paginationNext}
           className="size-8 rounded-[8px] border-[#e3e8ef] bg-white p-0 text-[#53627b] hover:bg-[#f8fafc]"
-          disabled={currentPage === totalPages}
+          disabled={isPending || currentPage === totalPages}
           onClick={() => goToPage(currentPage + 1)}
           size="icon"
           variant="outline"

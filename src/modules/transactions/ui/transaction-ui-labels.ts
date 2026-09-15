@@ -50,6 +50,7 @@ export type TransactionUiLabels = {
   readonly unknownMerchant: string;
   readonly errorTitle: string;
   readonly errorRetry: string;
+  readonly loading: string;
   readonly paginationPrevious: string;
   readonly paginationNext: string;
   readonly paginationPage: string;
@@ -108,6 +109,7 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     unknownMerchant: labels["transactions.merchant.unknown"],
     errorTitle: labels["transactions.error.title"],
     errorRetry: labels["transactions.error.retry"],
+    loading: labels["transactions.loading"],
     paginationPrevious: labels["transactions.pagination.previous"],
     paginationNext: labels["transactions.pagination.next"],
     paginationPage: labels["transactions.pagination.page"],
