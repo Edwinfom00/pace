@@ -17,6 +17,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { SidebarNavigation } from "./sidebar-navigation";
 import type { PaceSidebarLabels, SidebarWorkspace } from "./sidebar-types";
+import { WorkspaceHeader } from "./workspace-header";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 
 function PaceSidebarTrigger({ labels }: { labels: PaceSidebarLabels }) {
@@ -118,9 +119,11 @@ export function PaceDashboardShell({
         workspaces={workspaces}
         />
         <SidebarInset className="min-h-svh bg-[#fbfcfe]">
-          <div className="absolute top-3 left-3 z-20 md:hidden">
-            <PaceSidebarTrigger labels={labels} />
-          </div>
+          <WorkspaceHeader
+            activeWorkspaceSlug={activeWorkspaceSlug}
+            labels={labels}
+            workspaces={workspaces}
+          />
           {children}
         </SidebarInset>
       </SidebarProvider>
