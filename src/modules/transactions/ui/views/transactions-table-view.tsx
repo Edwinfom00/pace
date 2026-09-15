@@ -16,6 +16,7 @@ import { TransactionsAskPace } from "../components/transactions-ask-pace";
 import { TransactionTable } from "../components/transaction-table";
 import { TransactionTableSkeleton } from "../components/transaction-table-skeleton";
 import { TransactionToolbar } from "../components/transaction-toolbar";
+import { TransactionCreateControl } from "../components/transaction-create-control";
 import type { TransactionUiLabels } from "../transaction-ui-labels";
 
 export function TransactionsTableView({
@@ -74,7 +75,10 @@ export function TransactionsTableView({
           </div>
           <p className="mt-1 text-[13px] text-[#71809a]">{labels.description}</p>
         </div>
-        <TransactionsAskPace language={language} locale={locale} pageContext={pageContext} timeZone={timeZone} workspaceId={workspaceId} />
+        <div className="flex flex-wrap items-center gap-2">
+          <TransactionsAskPace language={language} locale={locale} pageContext={pageContext} timeZone={timeZone} workspaceId={workspaceId} />
+          <TransactionCreateControl />
+        </div>
       </header>
       <TransactionToolbar amountSortingAvailable={amountSortingAvailable} labels={labels} locale={locale} options={filterOptions} pathname={pathname} state={filterState} />
       <section aria-label={labels.title} className="pt-5">
