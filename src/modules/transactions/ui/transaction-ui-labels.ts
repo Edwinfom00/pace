@@ -68,6 +68,15 @@ export type TransactionUiLabels = {
   readonly formCategoryPlaceholder: string;
   readonly formCategoryHelper: string;
   readonly formCategorySearch: string;
+  readonly formAccount: string;
+  readonly formAccountPlaceholder: string;
+  readonly formAccountHelper: string;
+  readonly formAccountSearch: string;
+  readonly accountsEmptyTitle: string;
+  readonly accountsEmptyDescription: string;
+  readonly accountsCreate: string;
+  readonly accountsCreateFirst: string;
+  readonly accountsSearchNoResults: string;
 };
 
 export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLabels {
@@ -139,5 +148,14 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     formCategoryPlaceholder: labels["transactions.form.categoryPlaceholder"],
     formCategoryHelper: labels["transactions.form.categoryHelper"],
     formCategorySearch: labels["transactions.form.categorySearch"],
+    formAccount: labels["transactions.form.account"],
+    formAccountPlaceholder: labels["transactions.form.accountPlaceholder"],
+    formAccountHelper: labels["transactions.form.accountHelper"],
+    formAccountSearch: labels["transactions.form.accountSearch"],
+    accountsEmptyTitle: labels["accounts.empty.title"],
+    accountsEmptyDescription: labels["accounts.empty.description"],
+    accountsCreate: labels["accounts.actions.create"],
+    accountsCreateFirst: labels["accounts.actions.createFirst"],
+    accountsSearchNoResults: labels["accounts.search.noResults"],
   };
 }

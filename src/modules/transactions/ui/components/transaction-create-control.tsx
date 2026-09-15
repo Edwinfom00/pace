@@ -10,6 +10,11 @@ import { TransactionFormDialog } from "./transaction-form-dialog";
 import { TransactionAmountField } from "./transaction-amount-field";
 import { TransactionCategoryField } from "./transaction-category-field";
 import type { TransactionCategoryFixtureId } from "./transaction-category-fixtures";
+import { TransactionAccountField } from "./transaction-account-field";
+import {
+  transactionAccountFixtures,
+  type TransactionAccountFixtureId,
+} from "./transaction-account-fixtures";
 import { TransactionMerchantField } from "./transaction-merchant-field";
 import {
   transactionFormKindLabels,
@@ -31,6 +36,12 @@ export function TransactionCreateControl({
   const [currency, setCurrency] = useState(defaultCurrency);
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState<TransactionCategoryFixtureId>("other-expense");
+  const [account, setAccount] = useState<TransactionAccountFixtureId | "">("");
+
+  function handleCreateAccountRequest() {
+    // M8.5C.5 owns the creation view. This boundary deliberately only receives
+    // the request so the selector remains reusable when that view arrives.
+  }
 
   return (
     <>
@@ -79,6 +90,23 @@ export function TransactionCreateControl({
                 value={category}
               />
             </div>
+
+            <TransactionAccountField
+              accounts={transactionAccountFixtures}
+              createAccountLabel={labels.accountsCreate}
+              createFirstAccountLabel={labels.accountsCreateFirst}
+              emptyDescription={labels.accountsEmptyDescription}
+              emptyTitle={labels.accountsEmptyTitle}
+              helperText={labels.formAccountHelper}
+              label={labels.formAccount}
+              noResultsLabel={labels.accountsSearchNoResults}
+              onCreateAccount={handleCreateAccountRequest}
+              onValueChange={setAccount}
+              placeholder={labels.formAccountPlaceholder}
+              preferredCurrency={currency}
+              searchPlaceholder={labels.formAccountSearch}
+              value={account}
+            />
           </div>
         ) : (
           `${transactionFormKindLabels[kind]} form content`
