@@ -1,5 +1,6 @@
 import { requireAuthenticatedActor } from "@/authorization/session";
 import { createExpense } from "@/modules/ledger/create-expense";
+import { createIncome } from "@/modules/ledger/create-income";
 import { presentLedgerTransaction } from "@/modules/ledger/presenters";
 import { getLedgerService } from "@/modules/ledger/server";
 import { getFinancialInboxService } from "@/modules/financial-inbox/server";
@@ -45,13 +46,25 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
     const [{ workspaceId }, input] = await Promise.all([context.params, request.json()]);
 
     
+    if (isCanonicalIncomeRequest(input)) {
+      const command = { ...input, workspaceId };
+      const result = await createIncome(command);
+      if (!result.ok) {
+        return Response.json(
+          { error: "Income creation failed.", code: result.code },
+          { status: canonicalManualCreationStatus(result.code) },
+        );
+      }
+      return Response.json({ income: result.income }, { status: 201 });
+    }
+
     if (isCanonicalExpenseRequest(input)) {
       const command = { ...input, workspaceId };
       const result = await createExpense(command);
       if (!result.ok) {
         return Response.json(
           { error: "Expense creation failed.", code: result.code },
-          { status: expenseCreationStatus(result.code) },
+          { status: canonicalManualCreationStatus(result.code) },
         );
       }
       return Response.json({ expense: result.expense }, { status: 201 });
@@ -85,7 +98,17 @@ function isCanonicalExpenseRequest(input: unknown): input is Record<string, unkn
   );
 }
 
-function expenseCreationStatus(code: string): number {
+function isCanonicalIncomeRequest(input: unknown): input is Record<string, unknown> {
+  return Boolean(
+    input
+    && typeof input === "object"
+    && !Array.isArray(input)
+    && !("kind" in input)
+    && Object.hasOwn(input, "source"),
+  );
+}
+
+function canonicalManualCreationStatus(code: string): number {
   if (code === "UNAUTHENTICATED") return 401;
   if (code === "WORKSPACE_FORBIDDEN") return 403;
   if (code === "ACCOUNT_UNAVAILABLE" || code === "CURRENCY_MISMATCH") return 409;

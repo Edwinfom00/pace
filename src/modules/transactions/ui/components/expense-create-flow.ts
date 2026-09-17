@@ -1,5 +1,10 @@
 import type { CreatedExpenseDTO } from "@/modules/ledger/create-expense-contract";
 import type { ExpenseFormInput, TransactionFormDraft, TransactionFormErrors, TransactionFormField } from "@/modules/transactions/schemas/transaction-form.schema";
+import {
+  formatManualTransactionDate,
+  manualTransactionCreationErrorCode,
+  parseCreatedManualTransactionDTO,
+} from "./manual-transaction-create-flow";
 
 export type ExpenseCreateFailure = {
   readonly field?: TransactionFormField;
@@ -18,7 +23,7 @@ export function createExpenseCommand(
     currency: draft.currency,
     categoryId: draft.category || undefined,
     merchant: draft.merchant || undefined,
-    date: formatExpenseDate(draft.date),
+    date: formatManualTransactionDate(draft.date),
     time: draft.time || undefined,
     note: draft.note || undefined,
   };
@@ -49,11 +54,6 @@ export async function submitCanonicalExpense(
   return expense
     ? { ok: true, expense }
     : { ok: false, failure: mapExpenseCreateFailure(undefined) };
-}
-
-
-export function formatExpenseDate(date: Date): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
 
@@ -103,33 +103,11 @@ export function serverExpenseFieldErrors(failure: ExpenseCreateFailure): Transac
 }
 
 export function expenseCreationErrorCode(payload: unknown): string | undefined {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
-  const code = (payload as { readonly code?: unknown }).code;
-  return typeof code === "string" ? code : undefined;
+  return manualTransactionCreationErrorCode(payload);
 }
 
 export function parseCreatedExpenseDTO(payload: unknown): CreatedExpenseDTO | null {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  const expense = (payload as { readonly expense?: unknown }).expense;
-  if (!expense || typeof expense !== "object" || Array.isArray(expense)) return null;
-  const value = expense as Record<string, unknown>;
-
-  if (
-    typeof value.id !== "string"
-    || value.type !== "EXPENSE"
-    || typeof value.amountMinor !== "string"
-    || typeof value.currency !== "string"
-    || typeof value.accountId !== "string"
-    || (value.categoryId !== null && typeof value.categoryId !== "string")
-    || (value.merchantId !== null && typeof value.merchantId !== "string")
-    || typeof value.occurredAt !== "string"
-    || (value.note !== null && typeof value.note !== "string")
-    || (value.status !== "POSTED" && value.status !== "PENDING")
-  ) {
-    return null;
-  }
-
-  return value as CreatedExpenseDTO;
+  return parseCreatedManualTransactionDTO(payload, "expense", "EXPENSE");
 }
 
 

@@ -51,6 +51,14 @@ import {
   serverExpenseFieldErrors,
   submitCanonicalExpense,
 } from "./expense-create-flow";
+import {
+  canStartIncomeSubmission,
+  createIncomeCommand,
+  incomeReconciliationPlan,
+  resetIncomeTransactionDraft,
+  serverIncomeFieldErrors,
+  submitCanonicalIncome,
+} from "./income-create-flow";
 import { TransactionFormDialog, type TransactionDialogView } from "./transaction-form-dialog";
 import { TransactionAmountField } from "./transaction-amount-field";
 import { TransactionCategoryField } from "./transaction-category-field";
@@ -245,6 +253,9 @@ export function TransactionCreateControl({
   const [isCreatingExpense, setIsCreatingExpense] = useState(false);
   const [expenseFormError, setExpenseFormError] = useState<string | null>(null);
   const [expenseAnnouncement, setExpenseAnnouncement] = useState("");
+  const [isCreatingIncome, setIsCreatingIncome] = useState(false);
+  const [incomeFormError, setIncomeFormError] = useState<string | null>(null);
+  const [incomeAnnouncement, setIncomeAnnouncement] = useState("");
   const [validationErrors, setValidationErrors] = useState<TransactionFormErrorsByKind>(emptyTransactionFormErrors);
   const [submittedKinds, setSubmittedKinds] = useState<SubmittedTransactionFormKinds>(emptySubmittedTransactionFormKinds);
   const amountInputRef = useRef<HTMLInputElement>(null);
@@ -259,6 +270,7 @@ export function TransactionCreateControl({
   const noteTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const workspaceIdRef = useRef(workspaceId);
   const isCreatingExpenseRef = useRef(false);
+  const isCreatingIncomeRef = useRef(false);
   const kind = formDraft.kind;
   const activeAccountDraft = kind === "INCOME" ? formDraft.income : formDraft.expense;
   const authoritativeAccounts = accountOptions.accounts;
@@ -331,6 +343,7 @@ export function TransactionCreateControl({
   ) {
     setFormDraft(nextDraft);
     if (nextDraft.kind === "EXPENSE") setExpenseFormError(null);
+    if (nextDraft.kind === "INCOME") setIncomeFormError(null);
     if (!submittedKinds[nextDraft.kind]) return;
 
     const result = validateTransactionDraft(nextDraft, accountsForValidation, categoriesForValidation);
@@ -347,8 +360,9 @@ export function TransactionCreateControl({
 
   function handlePrimaryAction() {
     const result = validateActiveTransactionDraft();
-    if (!result.isValid || kind !== "EXPENSE") return;
-    void submitExpense();
+    if (!result.isValid) return;
+    if (kind === "EXPENSE") void submitExpense();
+    if (kind === "INCOME") void submitIncome();
   }
 
   function updateCurrentDraft(update: Partial<TransactionFormCommonDraft>) {
@@ -370,7 +384,7 @@ export function TransactionCreateControl({
   }
 
   function handleKindChange(nextKind: TransactionFormKind) {
-    if (isCreatingExpenseRef.current) return;
+    if (isCreatingExpenseRef.current || isCreatingIncomeRef.current) return;
     setFormDraft({ ...formDraft, kind: nextKind });
   }
 
@@ -402,7 +416,7 @@ export function TransactionCreateControl({
   }
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen && (isCreatingAccount || isCreatingExpenseRef.current)) return;
+    if (!nextOpen && (isCreatingAccount || isCreatingExpenseRef.current || isCreatingIncomeRef.current)) return;
     setOpen(nextOpen);
     if (nextOpen) return;
 
@@ -416,6 +430,8 @@ export function TransactionCreateControl({
     setCreateAccountDraft(createEmptyCreateAccountFormDraft(defaultCurrency));
     setExpenseFormError(null);
     setExpenseAnnouncement("");
+    setIncomeFormError(null);
+    setIncomeAnnouncement("");
   }
 
   function updateCreateAccountDraft(nextDraft: CreateAccountFormDraft) {
@@ -571,6 +587,67 @@ export function TransactionCreateControl({
     }
   }
 
+  async function submitIncome() {
+    if (!canStartIncomeSubmission(isCreatingIncomeRef.current)) return;
+
+    const incomeValidation = validateTransactionForm({ kind: "INCOME", ...formDraft.income });
+    if (!incomeValidation.isValid) return;
+    if (incomeValidation.value.kind !== "INCOME") return;
+
+    const requestWorkspaceId = workspaceIdRef.current;
+    const command = createIncomeCommand(requestWorkspaceId, incomeValidation.value);
+    isCreatingIncomeRef.current = true;
+    setIsCreatingIncome(true);
+    setIncomeFormError(null);
+    setIncomeAnnouncement("");
+
+    try {
+      const result = await submitCanonicalIncome(command, async (input) => {
+        const response = await fetch(`/api/workspaces/${encodeURIComponent(requestWorkspaceId)}/ledger/transactions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        return { ok: response.ok, payload: await response.json().catch(() => null) };
+      });
+
+      if (!result.ok) {
+        const failure = result.failure;
+        const errors = serverIncomeFieldErrors(failure);
+        if (Object.keys(errors).length > 0) {
+          setValidationErrors((current) => ({ ...current, INCOME: { ...current.INCOME, ...errors } }));
+          setIncomeFormError(null);
+          focusFirstInvalidField(errors);
+        } else {
+          setIncomeFormError(labels.incomeCreateErrorGeneric);
+        }
+        return;
+      }
+
+      const reconciliation = incomeReconciliationPlan(requestWorkspaceId, workspaceIdRef.current);
+      if (!reconciliation.shouldResetIncomeDraft) {
+        if (reconciliation.shouldRefreshData) router.refresh();
+        return;
+      }
+
+      setFormDraft((current) => resetIncomeTransactionDraft(
+        current,
+        createTransactionFormDraft(defaultCurrency, timeZone).income,
+      ));
+      setValidationErrors((current) => ({ ...current, INCOME: {} }));
+      setSubmittedKinds((current) => ({ ...current, INCOME: false }));
+      setIncomeFormError(null);
+      setIncomeAnnouncement(labels.incomeCreated);
+      if (reconciliation.shouldCloseDialog) setOpen(false);
+      if (reconciliation.shouldRefreshData) router.refresh();
+    } catch {
+      setIncomeFormError(labels.incomeCreateErrorGeneric);
+    } finally {
+      isCreatingIncomeRef.current = false;
+      setIsCreatingIncome(false);
+    }
+  }
+
   function retryAccounts() {
     startAccountRetry(() => router.refresh());
   }
@@ -591,6 +668,7 @@ export function TransactionCreateControl({
   return (
     <>
       <p aria-live="polite" className="sr-only" role="status">{expenseAnnouncement}</p>
+      <p aria-live="polite" className="sr-only" role="status">{incomeAnnouncement}</p>
       <Button
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -611,16 +689,16 @@ export function TransactionCreateControl({
         footer={(
           <TransactionFormFooter
             cancelLabel={labels.actionCancel}
-            formError={kind === "EXPENSE" ? expenseFormError : null}
-            isPending={kind === "EXPENSE" && isCreatingExpense}
+            formError={kind === "EXPENSE" ? expenseFormError : kind === "INCOME" ? incomeFormError : null}
+            isPending={kind === "EXPENSE" ? isCreatingExpense : kind === "INCOME" && isCreatingIncome}
             onCancel={() => handleOpenChange(false)}
             onPrimaryAction={handlePrimaryAction}
-            primaryActionLabel={kind === "EXPENSE" && isCreatingExpense ? labels.actionSavingExpense : kind === "TRANSFER" ? labels.actionTransferMoney : kind === "INCOME" ? labels.actionAddIncome : labels.actionAddExpense}
+            primaryActionLabel={kind === "EXPENSE" && isCreatingExpense ? labels.actionSavingExpense : kind === "INCOME" && isCreatingIncome ? labels.actionSavingIncome : kind === "TRANSFER" ? labels.actionTransferMoney : kind === "INCOME" ? labels.actionAddIncome : labels.actionAddExpense}
           />
         )}
         kind={kind}
         isCreateAccountPending={isCreatingAccount}
-        isTransactionPending={isCreatingExpense}
+        isTransactionPending={isCreatingExpense || isCreatingIncome}
         onBackToTransaction={returnToTransaction}
         onKindChange={handleKindChange}
         onOpenChange={handleOpenChange}
