@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import { transactionUiFixtures } from "@/modules/transactions/test/fixtures/transaction-ui-fixtures";
 import { TransactionAmountCell } from "@/modules/transactions/ui/components/transaction-amount-cell";
+import { formatTransactionFormDate, getTransactionFormToday } from "@/modules/transactions/ui/components/transaction-date-field";
 import { TransactionCategoryBadge } from "@/modules/transactions/ui/components/transaction-category-badge";
 import { TransactionEmptyState } from "@/modules/transactions/ui/components/transaction-empty-state";
 import { formatTransactionAmount, formatTransactionDate } from "@/modules/transactions/ui/components/transaction-formatters";
@@ -17,6 +18,7 @@ import { TransactionRowActions } from "@/modules/transactions/ui/components/tran
 import { TransactionStatusBadge } from "@/modules/transactions/ui/components/transaction-status-badge";
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
 import { TransactionTableSkeleton } from "@/modules/transactions/ui/components/transaction-table-skeleton";
+import { formatTransactionFormTime } from "@/modules/transactions/ui/components/transaction-time-field";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 
 const labels = getTransactionUiLabels(getDashboardLabels("en"));
@@ -67,6 +69,18 @@ test("transaction dates use the supplied canonical locale and timezone context",
   );
 });
 
+test("manual transaction date and time values preserve the workspace timezone and locale", () => {
+  const now = new Date("2026-09-17T00:30:00.000Z");
+  const losAngelesToday = getTransactionFormToday("America/Los_Angeles", now);
+  const doualaToday = getTransactionFormToday("Africa/Douala", now);
+
+  assert.equal(formatTransactionFormDate(losAngelesToday, "en-US"), "09/16/2026");
+  assert.equal(formatTransactionFormDate(doualaToday, "fr-FR"), "17/09/2026");
+  assert.equal(formatTransactionFormDate(doualaToday, "de-DE"), "17.09.2026");
+  assert.equal(formatTransactionFormTime("14:30", "fr-FR"), "14:30");
+  assert.match(formatTransactionFormTime("14:30", "en-US"), /2:30 PM/);
+});
+
 test("table, skeleton, empty state, and mobile presentation expose the foundation states", () => {
   const table = renderToStaticMarkup(createElement(TransactionTable, { labels, locale: "en-US", now, timeZone: "UTC", transactions: transactionUiFixtures.slice(0, 2) }));
   assert.match(table, /<table/);
@@ -101,4 +115,7 @@ test("transactions labels are complete across English, French, and German", () =
   assert.equal(getTransactionUiLabels(getDashboardLabels("en")).searchPlaceholder, "Search transactions…");
   assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).statusPending, "En attente");
   assert.equal(getTransactionUiLabels(getDashboardLabels("de")).sortNewest, "Neueste zuerst");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("en")).formTimePlaceholder, "Add time");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).formOptional, "Facultatif");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("de")).formDate, "Datum");
 });

@@ -16,6 +16,8 @@ import type { TransactionCategoryFixtureId } from "./transaction-category-fixtur
 import { TransactionAccountField } from "./transaction-account-field";
 import type { AccountDraftOption } from "./transaction-account.types";
 import { TransactionMerchantField } from "./transaction-merchant-field";
+import { TransactionDateField, getTransactionFormToday } from "./transaction-date-field";
+import { TransactionTimeField } from "./transaction-time-field";
 import {
   transactionFormKindLabels,
   type TransactionFormKind,
@@ -25,10 +27,14 @@ export function TransactionCreateControl({
   defaultCurrency,
   labels,
   language,
+  locale,
+  timeZone,
 }: {
   readonly defaultCurrency: string;
   readonly labels: TransactionUiLabels;
   readonly language: "en" | "fr" | "de";
+  readonly locale: string;
+  readonly timeZone: string;
 }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<TransactionDialogView>("transaction");
@@ -38,6 +44,8 @@ export function TransactionCreateControl({
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState<TransactionCategoryFixtureId>("other-expense");
   const [account, setAccount] = useState("");
+  const [date, setDate] = useState(() => getTransactionFormToday(timeZone));
+  const [time, setTime] = useState("");
   const [createdAccounts, setCreatedAccounts] = useState<readonly AccountDraftOption[]>([]);
   const [createAccountDraft, setCreateAccountDraft] = useState<CreateAccountFormDraft>({
     name: "",
@@ -173,6 +181,25 @@ export function TransactionCreateControl({
               searchPlaceholder={labels.formAccountSearch}
               value={account}
             />
+
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+              <TransactionDateField
+                label={labels.formDate}
+                locale={locale}
+                onValueChange={setDate}
+                timeZone={timeZone}
+                value={date}
+              />
+              <TransactionTimeField
+                clearLabel={labels.actionRemove}
+                label={labels.formTime}
+                locale={locale}
+                onValueChange={setTime}
+                optionalLabel={labels.formOptional}
+                placeholder={labels.formTimePlaceholder}
+                value={time}
+              />
+            </div>
           </div>
         ) : (
           `${transactionFormKindLabels[kind]} form content`

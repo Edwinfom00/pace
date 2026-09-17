@@ -72,6 +72,11 @@ export type TransactionUiLabels = {
   readonly formAccountPlaceholder: string;
   readonly formAccountHelper: string;
   readonly formAccountSearch: string;
+  readonly formDate: string;
+  readonly formTime: string;
+  readonly formOptional: string;
+  readonly formTimePlaceholder: string;
+  readonly actionRemove: string;
   readonly accountsEmptyTitle: string;
   readonly accountsEmptyDescription: string;
   readonly accountsCreate: string;
@@ -179,6 +184,11 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     formAccountPlaceholder: labels["transactions.form.accountPlaceholder"],
     formAccountHelper: labels["transactions.form.accountHelper"],
     formAccountSearch: labels["transactions.form.accountSearch"],
+    formDate: labels["transactions.form.date"],
+    formTime: labels["transactions.form.time"],
+    formOptional: labels["transactions.form.optional"],
+    formTimePlaceholder: labels["transactions.form.timePlaceholder"],
+    actionRemove: labels["transactions.actions.remove"],
     accountsEmptyTitle: labels["accounts.empty.title"],
     accountsEmptyDescription: labels["accounts.empty.description"],
     accountsCreate: labels["accounts.actions.create"],

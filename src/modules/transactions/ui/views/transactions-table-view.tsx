@@ -79,7 +79,7 @@ export function TransactionsTableView({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <TransactionsAskPace language={language} locale={locale} pageContext={pageContext} timeZone={timeZone} workspaceId={workspaceId} />
-          <TransactionCreateControl defaultCurrency={defaultCurrency} labels={labels} language={language} />
+          <TransactionCreateControl defaultCurrency={defaultCurrency} labels={labels} language={language} locale={locale} timeZone={timeZone} />
         </div>
       </header>
       <TransactionToolbar amountSortingAvailable={amountSortingAvailable} labels={labels} locale={locale} options={filterOptions} pathname={pathname} state={filterState} />
