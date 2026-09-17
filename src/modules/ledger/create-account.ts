@@ -16,7 +16,7 @@ const currencySchema = z
   .toUpperCase()
   .refine(isCurrencyCode, "Currency must be a supported ISO 4217 monetary currency code.");
 
-/** The sole untrusted-input contract for manual account creation. */
+
 export const createAccountSchema = z
   .object({
     workspaceId: workspaceIdSchema,
