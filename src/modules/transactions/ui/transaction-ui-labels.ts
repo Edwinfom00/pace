@@ -59,6 +59,7 @@ export type TransactionUiLabels = {
   readonly formAmount: string;
   readonly formAmountExpenseHelper: string;
   readonly formAmountIncomeHelper: string;
+  readonly formAmountTransferHelper: string;
   readonly formCurrency: string;
   readonly formCurrencySearch: string;
   readonly formCurrencyEmpty: string;
@@ -76,6 +77,11 @@ export type TransactionUiLabels = {
   readonly formAccountPlaceholder: string;
   readonly formAccountHelper: string;
   readonly formAccountIncomeHelper: string;
+  readonly formFromAccount: string;
+  readonly formFromAccountPlaceholder: string;
+  readonly formToAccount: string;
+  readonly formToAccountPlaceholder: string;
+  readonly formAccountUnavailable: string;
   readonly formAccountSearch: string;
   readonly formDate: string;
   readonly formTime: string;
@@ -86,10 +92,12 @@ export type TransactionUiLabels = {
   readonly formTipTitle: string;
   readonly formTipExpense: string;
   readonly formTipIncome: string;
+  readonly formTipTransfer: string;
   readonly actionRemove: string;
   readonly actionCancel: string;
   readonly actionAddExpense: string;
   readonly actionAddIncome: string;
+  readonly actionTransferMoney: string;
   readonly accountsEmptyTitle: string;
   readonly accountsEmptyDescription: string;
   readonly accountsCreate: string;
@@ -98,6 +106,7 @@ export type TransactionUiLabels = {
   readonly accountCreateTitle: string;
   readonly accountCreateSubtitle: string;
   readonly accountCreateBackToExpense: string;
+  readonly accountCreateBackToTransfer: string;
   readonly accountName: string;
   readonly accountNamePlaceholder: string;
   readonly accountType: string;
@@ -184,6 +193,7 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     formAmount: labels["transactions.form.amount"],
     formAmountExpenseHelper: labels["transactions.form.amountExpenseHelper"],
     formAmountIncomeHelper: labels["transactions.form.amountIncomeHelper"],
+    formAmountTransferHelper: labels["transactions.form.amountTransferHelper"],
     formCurrency: labels["transactions.form.currency"],
     formCurrencySearch: labels["transactions.form.currencySearch"],
     formCurrencyEmpty: labels["transactions.form.currencyEmpty"],
@@ -201,6 +211,11 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     formAccountPlaceholder: labels["transactions.form.accountPlaceholder"],
     formAccountHelper: labels["transactions.form.accountHelper"],
     formAccountIncomeHelper: labels["transactions.form.accountIncomeHelper"],
+    formFromAccount: labels["transactions.form.fromAccount"],
+    formFromAccountPlaceholder: labels["transactions.form.fromAccountPlaceholder"],
+    formToAccount: labels["transactions.form.toAccount"],
+    formToAccountPlaceholder: labels["transactions.form.toAccountPlaceholder"],
+    formAccountUnavailable: labels["transactions.form.accountUnavailable"],
     formAccountSearch: labels["transactions.form.accountSearch"],
     formDate: labels["transactions.form.date"],
     formTime: labels["transactions.form.time"],
@@ -211,10 +226,12 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     formTipTitle: labels["transactions.form.tip.title"],
     formTipExpense: labels["transactions.form.tip.expense"],
     formTipIncome: labels["transactions.form.tip.income"],
+    formTipTransfer: labels["transactions.form.tip.transfer"],
     actionRemove: labels["transactions.actions.remove"],
     actionCancel: labels["transactions.actions.cancel"],
     actionAddExpense: labels["transactions.actions.addExpense"],
     actionAddIncome: labels["transactions.actions.addIncome"],
+    actionTransferMoney: labels["transactions.actions.transferMoney"],
     accountsEmptyTitle: labels["accounts.empty.title"],
     accountsEmptyDescription: labels["accounts.empty.description"],
     accountsCreate: labels["accounts.actions.create"],
@@ -223,6 +240,7 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     accountCreateTitle: labels["accounts.create.title"],
     accountCreateSubtitle: labels["accounts.create.subtitle"],
     accountCreateBackToExpense: labels["accounts.create.backToExpense"],
+    accountCreateBackToTransfer: labels["accounts.create.backToTransfer"],
     accountName: labels["accounts.fields.name"],
     accountNamePlaceholder: labels["accounts.fields.namePlaceholder"],
     accountType: labels["accounts.fields.type"],

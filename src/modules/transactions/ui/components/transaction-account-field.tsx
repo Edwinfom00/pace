@@ -19,9 +19,11 @@ import type { TransactionAccountOption } from "./transaction-account.types";
 export type TransactionAccountFieldProps<T extends string = string> = {
   readonly accounts: readonly (TransactionAccountOption & { readonly id: T })[];
   readonly accountTypeLabels: Readonly<Record<LedgerAccountType, string>>;
+  readonly disabledAccountIds?: readonly T[];
+  readonly disabledAccountLabel?: string;
   readonly emptyDescription: string;
   readonly emptyTitle: string;
-  readonly helperText: string;
+  readonly helperText?: string;
   readonly label: string;
   readonly noResultsLabel: string;
   readonly onCreateAccount: () => void;
@@ -30,6 +32,7 @@ export type TransactionAccountFieldProps<T extends string = string> = {
   /** Reserved for the later currency-eligibility policy. */
   readonly preferredCurrency?: string;
   readonly searchPlaceholder: string;
+  readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
   readonly value: T | "";
   readonly createAccountLabel: string;
   readonly createFirstAccountLabel: string;
@@ -53,6 +56,8 @@ export function TransactionAccountField<T extends string = string>({
   accountTypeLabels,
   createAccountLabel,
   createFirstAccountLabel,
+  disabledAccountIds = [],
+  disabledAccountLabel,
   emptyDescription,
   emptyTitle,
   helperText,
@@ -62,6 +67,7 @@ export function TransactionAccountField<T extends string = string>({
   onValueChange,
   placeholder,
   searchPlaceholder,
+  triggerRef,
   value,
 }: TransactionAccountFieldProps<T>) {
   const [open, setOpen] = React.useState(false);
@@ -71,6 +77,7 @@ export function TransactionAccountField<T extends string = string>({
   const listboxId = React.useId();
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const selectedAccount = accounts.find((account) => account.id === value);
+  const disabledAccountIdSet = new Set(disabledAccountIds);
   const filteredAccounts = normalizedQuery
     ? accounts.filter((account) =>
         [account.name, account.type, getAccountMetadata(account, accountTypeLabels), account.currency]
@@ -87,6 +94,7 @@ export function TransactionAccountField<T extends string = string>({
   }
 
   function choose(nextValue: T) {
+    if (disabledAccountIdSet.has(nextValue)) return;
     onValueChange(nextValue);
     handleOpenChange(false);
   }
@@ -106,7 +114,7 @@ export function TransactionAccountField<T extends string = string>({
         <Popover.Trigger asChild>
           <button
             aria-controls={listboxId}
-            aria-describedby={helperId}
+            aria-describedby={helperText ? helperId : undefined}
             aria-expanded={open}
             aria-haspopup="listbox"
             aria-label={`${label}: ${selectedAccount?.name ?? placeholder}`}
@@ -115,6 +123,7 @@ export function TransactionAccountField<T extends string = string>({
               "hover:border-[#bac9df] focus-visible:border-[#4e7fe3] focus-visible:ring-3 focus-visible:ring-[#5e8fe8]/15",
             )}
             id={triggerId}
+            ref={triggerRef}
             role="combobox"
             type="button"
           >
@@ -166,10 +175,13 @@ export function TransactionAccountField<T extends string = string>({
                   {filteredAccounts.length > 0 ? (
                     filteredAccounts.map((account) => {
                       const isSelected = account.id === value;
+                      const isDisabled = disabledAccountIdSet.has(account.id);
                       return (
                         <CommandItem
+                          aria-disabled={isDisabled || undefined}
                           aria-selected={isSelected}
-                          className="flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-[#172442] outline-none data-[selected=true]:bg-[#edf3ff]"
+                          className="flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-[#172442] outline-none data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-50 data-[selected=true]:bg-[#edf3ff]"
+                          disabled={isDisabled}
                           key={account.id}
                           onSelect={() => choose(account.id)}
                           value={`${account.name} ${account.type} ${account.currency}`}
@@ -183,7 +195,11 @@ export function TransactionAccountField<T extends string = string>({
                               {getAccountMetadata(account, accountTypeLabels)}
                             </span>
                           </span>
-                          {isSelected ? <FiCheck aria-hidden="true" className="size-4 shrink-0 text-[#2f67e9]" /> : null}
+                          {isDisabled ? (
+                            <span className="shrink-0 text-right text-[10px] leading-4 font-medium text-[#71809a]">
+                              {disabledAccountLabel}
+                            </span>
+                          ) : isSelected ? <FiCheck aria-hidden="true" className="size-4 shrink-0 text-[#2f67e9]" /> : null}
                         </CommandItem>
                       );
                     })
@@ -224,9 +240,7 @@ export function TransactionAccountField<T extends string = string>({
         </Popover.Portal>
       </Popover.Root>
 
-      <p className="min-h-5 text-[12px] leading-5 text-[#71809a]" id={helperId}>
-        {helperText}
-      </p>
+      {helperText ? <p className="min-h-5 text-[12px] leading-5 text-[#71809a]" id={helperId}>{helperText}</p> : null}
     </div>
   );
 }

@@ -24,13 +24,10 @@ import { TransactionFormFooter } from "./transaction-form-footer";
 import { TransactionFormTip } from "./transaction-form-tip";
 import { TransactionNoteField } from "./transaction-note-field";
 import { TransactionTimeField } from "./transaction-time-field";
-import {
-  transactionFormKindLabels,
-  type TransactionFormKind,
-} from "./transaction-type-selector";
+import { TransactionTransferForm, type TransferTransactionFormDraft } from "./transaction-transfer-form";
+import type { TransactionFormKind } from "./transaction-type-selector";
 
 type TransactionFormCommonDraft = {
-  readonly account: string;
   readonly amount: string;
   readonly currency: string;
   readonly date: Date;
@@ -38,21 +35,27 @@ type TransactionFormCommonDraft = {
   readonly time: string;
 };
 
-type ExpenseTransactionFormDraft = TransactionFormCommonDraft & {
+type AccountTransactionFormDraft = TransactionFormCommonDraft & {
+  readonly account: string;
+};
+
+type ExpenseTransactionFormDraft = AccountTransactionFormDraft & {
   readonly category: ExpenseTransactionCategoryFixtureId;
   readonly merchant: string;
 };
 
-type IncomeTransactionFormDraft = TransactionFormCommonDraft & {
+type IncomeTransactionFormDraft = AccountTransactionFormDraft & {
   readonly category: IncomeTransactionCategoryFixtureId;
   readonly source: string;
 };
+
+type AccountCreationTarget = "EXPENSE_ACCOUNT" | "INCOME_ACCOUNT" | "FROM" | "TO";
 
 type TransactionFormDraft = {
   readonly expense: ExpenseTransactionFormDraft;
   readonly income: IncomeTransactionFormDraft;
   readonly kind: TransactionFormKind;
-  readonly transfer: TransactionFormCommonDraft;
+  readonly transfer: TransferTransactionFormDraft;
 };
 
 export function TransactionCreateControl({
@@ -73,22 +76,23 @@ export function TransactionCreateControl({
   const [formDraft, setFormDraft] = useState<TransactionFormDraft>(() => {
     const date = getTransactionFormToday(timeZone);
     const commonDraft = {
-      account: "",
       amount: "",
       currency: defaultCurrency,
       date,
       note: "",
       time: "",
     } satisfies TransactionFormCommonDraft;
+    const accountDraft = { ...commonDraft, account: "" } satisfies AccountTransactionFormDraft;
 
     return {
       kind: "EXPENSE",
-      expense: { ...commonDraft, category: "other-expense", merchant: "" },
-      income: { ...commonDraft, category: "salary", source: "" },
-      transfer: commonDraft,
+      expense: { ...accountDraft, category: "other-expense", merchant: "" },
+      income: { ...accountDraft, category: "salary", source: "" },
+      transfer: { ...commonDraft, fromAccount: "", toAccount: "" },
     };
   });
   const [createdAccounts, setCreatedAccounts] = useState<readonly AccountDraftOption[]>([]);
+  const [createAccountTarget, setCreateAccountTarget] = useState<AccountCreationTarget>("EXPENSE_ACCOUNT");
   const [createAccountDraft, setCreateAccountDraft] = useState<CreateAccountFormDraft>({
     name: "",
     type: "",
@@ -96,8 +100,10 @@ export function TransactionCreateControl({
     openingBalance: "",
   });
   const localAccountId = useRef(0);
+  const fromAccountTriggerRef = useRef<HTMLButtonElement>(null);
+  const toAccountTriggerRef = useRef<HTMLButtonElement>(null);
   const kind = formDraft.kind;
-  const activeDraft = kind === "EXPENSE" ? formDraft.expense : kind === "INCOME" ? formDraft.income : formDraft.transfer;
+  const activeAccountDraft = kind === "INCOME" ? formDraft.income : formDraft.expense;
   const accountTypeLabels = {
     CASH: labels.accountTypeCash,
     CHECKING: labels.accountTypeChecking,
@@ -128,9 +134,25 @@ export function TransactionCreateControl({
     setFormDraft((current) => ({ ...current, kind: nextKind }));
   }
 
-  function handleCreateAccountRequest() {
-    setCreateAccountDraft((draft) => (draft.currency ? draft : { ...draft, currency: activeDraft.currency }));
+  function handleCreateAccountRequest(target: AccountCreationTarget) {
+    const currency = target === "INCOME_ACCOUNT"
+      ? formDraft.income.currency
+      : target === "EXPENSE_ACCOUNT"
+        ? formDraft.expense.currency
+        : formDraft.transfer.currency;
+
+    setCreateAccountTarget(target);
+    setCreateAccountDraft((draft) => (draft.currency ? draft : { ...draft, currency }));
     setView("create-account");
+  }
+
+  function returnToTransaction() {
+    setView("transaction");
+    if (createAccountTarget !== "FROM" && createAccountTarget !== "TO") return;
+
+    requestAnimationFrame(() => {
+      (createAccountTarget === "FROM" ? fromAccountTriggerRef : toAccountTriggerRef).current?.focus();
+    });
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -138,6 +160,7 @@ export function TransactionCreateControl({
     if (nextOpen) return;
 
     setView("transaction");
+    setCreateAccountTarget("EXPENSE_ACCOUNT");
     setCreatedAccounts([]);
     setFormDraft((current) => ({
       ...current,
@@ -151,7 +174,8 @@ export function TransactionCreateControl({
       },
       transfer: {
         ...current.transfer,
-        account: current.transfer.account.startsWith("draft-account-") ? "" : current.transfer.account,
+        fromAccount: current.transfer.fromAccount.startsWith("draft-account-") ? "" : current.transfer.fromAccount,
+        toAccount: current.transfer.toAccount.startsWith("draft-account-") ? "" : current.transfer.toAccount,
       },
     }));
     setCreateAccountDraft({ name: "", type: "", currency: "", openingBalance: "" });
@@ -168,9 +192,20 @@ export function TransactionCreateControl({
     };
 
     setCreatedAccounts((current) => [...current, createdAccount]);
-    updateCurrentDraft({ account: createdAccount.id });
+    setFormDraft((current) => {
+      if (createAccountTarget === "INCOME_ACCOUNT") {
+        return { ...current, income: { ...current.income, account: createdAccount.id } };
+      }
+      if (createAccountTarget === "FROM") {
+        return { ...current, transfer: { ...current.transfer, fromAccount: createdAccount.id } };
+      }
+      if (createAccountTarget === "TO") {
+        return { ...current, transfer: { ...current.transfer, toAccount: createdAccount.id } };
+      }
+      return { ...current, expense: { ...current.expense, account: createdAccount.id } };
+    });
     setCreateAccountDraft({ name: "", type: "", currency: "", openingBalance: "" });
-    setView("transaction");
+    returnToTransaction();
   }
 
   return (
@@ -188,19 +223,19 @@ export function TransactionCreateControl({
 
       <TransactionFormDialog
         createAccountHeader={{
-          backLabel: labels.accountCreateBackToExpense,
+          backLabel: createAccountTarget === "FROM" || createAccountTarget === "TO" ? labels.accountCreateBackToTransfer : labels.accountCreateBackToExpense,
           description: labels.accountCreateSubtitle,
           title: labels.accountCreateTitle,
         }}
-        footer={kind === "TRANSFER" ? undefined : (
+        footer={(
           <TransactionFormFooter
             cancelLabel={labels.actionCancel}
             onCancel={() => handleOpenChange(false)}
-            primaryActionLabel={kind === "INCOME" ? labels.actionAddIncome : labels.actionAddExpense}
+            primaryActionLabel={kind === "TRANSFER" ? labels.actionTransferMoney : kind === "INCOME" ? labels.actionAddIncome : labels.actionAddExpense}
           />
         )}
         kind={kind}
-        onBackToTransaction={() => setView("transaction")}
+        onBackToTransaction={returnToTransaction}
         onKindChange={handleKindChange}
         onOpenChange={handleOpenChange}
         open={open}
@@ -211,16 +246,31 @@ export function TransactionCreateControl({
             draft={createAccountDraft}
             labels={labels}
             language={language}
-            onCancel={() => setView("transaction")}
+            onCancel={returnToTransaction}
             onCreateDraft={handleCreateAccountDraft}
             onDraftChange={setCreateAccountDraft}
           />
         ) : kind === "TRANSFER" ? (
-          `${transactionFormKindLabels[kind]} form content`
+          <TransactionTransferForm
+            accountTypeLabels={accountTypeLabels}
+            accounts={accounts}
+            draft={formDraft.transfer}
+            fromAccountTriggerRef={fromAccountTriggerRef}
+            labels={labels}
+            language={language}
+            locale={locale}
+            onCreateAccount={handleCreateAccountRequest}
+            onDraftChange={(update) => setFormDraft((current) => ({
+              ...current,
+              transfer: { ...current.transfer, ...update },
+            }))}
+            timeZone={timeZone}
+            toAccountTriggerRef={toAccountTriggerRef}
+          />
         ) : (
           <div className="grid gap-4">
             <TransactionAmountField
-              currency={activeDraft.currency}
+              currency={activeAccountDraft.currency}
               currencyEmptyLabel={labels.formCurrencyEmpty}
               currencyLabel={labels.formCurrency}
               currencySearchPlaceholder={labels.formCurrencySearch}
@@ -229,7 +279,7 @@ export function TransactionCreateControl({
               language={language}
               onCurrencyChange={(currency) => updateCurrentDraft({ currency })}
               onValueChange={(amount) => updateCurrentDraft({ amount })}
-              value={activeDraft.amount}
+              value={activeAccountDraft.amount}
             />
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -278,12 +328,15 @@ export function TransactionCreateControl({
               helperText={kind === "INCOME" ? labels.formAccountIncomeHelper : labels.formAccountHelper}
               label={labels.formAccount}
               noResultsLabel={labels.accountsSearchNoResults}
-              onCreateAccount={handleCreateAccountRequest}
-              onValueChange={(account) => updateCurrentDraft({ account })}
+              onCreateAccount={() => handleCreateAccountRequest(kind === "INCOME" ? "INCOME_ACCOUNT" : "EXPENSE_ACCOUNT")}
+              onValueChange={(account) => {
+                if (kind === "INCOME") updateIncomeDraft({ account });
+                else updateExpenseDraft({ account });
+              }}
               placeholder={labels.formAccountPlaceholder}
-              preferredCurrency={activeDraft.currency}
+              preferredCurrency={activeAccountDraft.currency}
               searchPlaceholder={labels.formAccountSearch}
-              value={activeDraft.account}
+              value={activeAccountDraft.account}
             />
 
             <div className="grid gap-4 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -292,7 +345,7 @@ export function TransactionCreateControl({
                 locale={locale}
                 onValueChange={(date) => updateCurrentDraft({ date })}
                 timeZone={timeZone}
-                value={activeDraft.date}
+                value={activeAccountDraft.date}
               />
               <TransactionTimeField
                 clearLabel={labels.actionRemove}
@@ -301,7 +354,7 @@ export function TransactionCreateControl({
                 onValueChange={(time) => updateCurrentDraft({ time })}
                 optionalLabel={labels.formOptional}
                 placeholder={labels.formTimePlaceholder}
-                value={activeDraft.time}
+                value={activeAccountDraft.time}
               />
             </div>
 
@@ -310,7 +363,7 @@ export function TransactionCreateControl({
               onValueChange={(note) => updateCurrentDraft({ note })}
               optionalLabel={labels.formOptional}
               placeholder={labels.formNotePlaceholder}
-              value={activeDraft.note}
+              value={activeAccountDraft.note}
             />
 
             <TransactionFormTip
