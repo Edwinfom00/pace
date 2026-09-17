@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+
+import { toCurrencyCode } from "@/money/currency";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -298,7 +300,7 @@ test("language changes immediately in the draft and Step 1 progresses to 2 on pe
   store.getState().setYourPace({ language: "de" });
   assert.equal(store.getState().yourPace.language, "de");
 
-  const input: ValidatedYourPace = { country: "DE", language: "de", currency: "EUR", timezone: "Europe/Berlin" };
+  const input: ValidatedYourPace = { country: "DE", language: "de", currency: toCurrencyCode("EUR"), timezone: "Europe/Berlin" };
   const saved = await persistYourPaceStep("user-1", input, repository());
   store.getState().hydrateFromServer({
     currentStep: 2,

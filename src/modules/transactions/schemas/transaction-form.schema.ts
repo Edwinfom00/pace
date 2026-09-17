@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { isCurrencyCode } from "@/money/currency";
+import { isCurrencyCode, type CurrencyCode } from "@/money/currency";
 
 export const TRANSACTION_FORM_VALIDATION_ERROR_CODES = {
   amountRequired: "transactions.validation.amountRequired",
@@ -31,7 +31,7 @@ export type TransactionFormKind = (typeof transactionFormKinds)[number];
 
 export type TransactionFormCommonDraft = {
   readonly amount: string;
-  readonly currency: string;
+  readonly currency: CurrencyCode;
   readonly date: Date;
   readonly note: string;
   readonly time: string;

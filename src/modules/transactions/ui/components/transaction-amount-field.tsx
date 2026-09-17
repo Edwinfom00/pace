@@ -2,12 +2,13 @@
 
 import { useId, type RefObject } from "react";
 
+import type { CurrencyCode } from "@/money/currency";
 import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 
 import { TransactionCurrencySelector } from "./transaction-currency-selector";
 
 export type TransactionAmountFieldProps = {
-  readonly currency: string;
+  readonly currency: CurrencyCode;
   readonly currencyEmptyLabel: string;
   readonly currencyLabel: string;
   readonly currencySearchPlaceholder: string;
@@ -19,7 +20,7 @@ export type TransactionAmountFieldProps = {
   readonly label: string;
   readonly language: OnboardingLanguage;
   readonly inputRef?: RefObject<HTMLInputElement | null>;
-  readonly onCurrencyChange: (currency: string) => void;
+  readonly onCurrencyChange: (currency: CurrencyCode) => void;
   readonly onValueChange: (value: string) => void;
   readonly value: string;
 };

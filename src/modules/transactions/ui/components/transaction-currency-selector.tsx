@@ -7,10 +7,11 @@ import { FiCheck, FiChevronDown } from "react-icons/fi";
 
 import { cn } from "@/lib/utils";
 import {
-  CURRENCY_METADATA,
+  CURRENCY_CATALOG,
   getLocalizedCurrencyName,
-  type OnboardingLanguage,
-} from "@/modules/onboarding/metadata";
+  type CurrencyCode,
+} from "@/money/currency";
+import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 
 type TransactionCurrencySelectorProps = {
   readonly ariaLabel: string;
@@ -19,11 +20,18 @@ type TransactionCurrencySelectorProps = {
   readonly emptyLabel: string;
   readonly invalid?: boolean;
   readonly language: OnboardingLanguage;
-  readonly onValueChange: (currency: string) => void;
+  readonly onValueChange: (currency: CurrencyCode) => void;
   readonly searchPlaceholder: string;
   readonly triggerRef?: RefObject<HTMLButtonElement | null>;
-  readonly value: string;
+  readonly value: CurrencyCode;
 };
+
+export function getTransactionCurrencyOptions(language: OnboardingLanguage) {
+  return CURRENCY_CATALOG.map((currency) => ({
+    ...currency,
+    localizedName: getLocalizedCurrencyName(currency.code, language),
+  }));
+}
 
 export function TransactionCurrencySelector({
   ariaLabel,
@@ -40,14 +48,7 @@ export function TransactionCurrencySelector({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const listboxId = useId();
-  const options = useMemo(
-    () =>
-      CURRENCY_METADATA.map((currency) => ({
-        ...currency,
-        localizedName: getLocalizedCurrencyName(currency.code, language),
-      })),
-    [language],
-  );
+  const options = useMemo(() => getTransactionCurrencyOptions(language), [language]);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredOptions = normalizedQuery
     ? options.filter((currency) =>
@@ -58,7 +59,7 @@ export function TransactionCurrencySelector({
       )
     : options;
 
-  function choose(currency: string) {
+  function choose(currency: CurrencyCode) {
     onValueChange(currency);
     setOpen(false);
     setQuery("");

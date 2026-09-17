@@ -1,16 +1,20 @@
 import { z } from "zod";
 
 import { WORKSPACE_ROLES } from "@/authorization/workspace-permissions";
+import { isCurrencyCode, toCurrencyCode } from "@/money/currency";
 
 import { WORKSPACE_TYPES } from "./domain";
 import { isInvitationCode, normalizeInvitationCode } from "./invite-code";
 
-const currencyCode = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/);
+const currencyCode = z.string().trim().toUpperCase().refine(
+  isCurrencyCode,
+  "Currency must be a supported ISO 4217 currency.",
+);
 const locale = z.string().trim().min(2).max(35);
 const timezone = z.string().trim().min(1).max(64);
 
 export const workspacePreferencesSchema = z.object({
-  currency: currencyCode.default("USD"),
+  currency: currencyCode.default(toCurrencyCode("USD")),
   locale: locale.default("en-US"),
   timezone: timezone.default("UTC"),
   weekStartsOn: z.number().int().min(0).max(6).default(1),

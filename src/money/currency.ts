@@ -1,4 +1,6 @@
 
+import { currencies } from "countries-list/currencies";
+
 const TWO_DECIMAL_CODES = [
   "AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "AUD", "AWG", "AZN", "BAM", "BBD",
   "BDT", "BGN", "BIF", "BMD", "BND", "BOB", "BOV", "BRL", "BSD", "BTN", "BWP", "BYN",
@@ -32,6 +34,15 @@ const CURRENCY_MINOR_UNITS: Readonly<Record<string, number>> = Object.freeze({
 declare const currencyCodeBrand: unique symbol;
 export type CurrencyCode = string & { readonly [currencyCodeBrand]: true };
 
+
+export type CurrencyMetadata = {
+  readonly code: CurrencyCode;
+  readonly englishName: string;
+  readonly nativeName: string;
+  readonly symbol: string;
+  readonly minorUnits: number;
+};
+
 export class UnsupportedCurrencyError extends Error {
   constructor(currency: string) {
     super(`Unsupported ISO 4217 currency: ${currency}.`);
@@ -61,6 +72,35 @@ export function getCurrencyExponent(currency: CurrencyCode | string): number {
   return CURRENCY_MINOR_UNITS[normalized];
 }
 
+
+export const CURRENCY_CATALOG: readonly CurrencyMetadata[] = Object.freeze(
+  Object.keys(CURRENCY_MINOR_UNITS)
+    .map((value) => {
+      const code = toCurrencyCode(value);
+      const currency = currencies[code as keyof typeof currencies];
+
+      return {
+        code,
+        englishName: currency?.name ?? code,
+        nativeName: currency?.native ?? code,
+        symbol: currency?.symbol ?? code,
+        minorUnits: CURRENCY_MINOR_UNITS[code],
+      };
+    })
+    .sort((left, right) => left.code.localeCompare(right.code)),
+);
+
+export function getLocalizedCurrencyName(currencyCode: CurrencyCode | string, language: string): string {
+  const normalized = currencyCode.trim().toUpperCase();
+  const fallback = CURRENCY_CATALOG.find((currency) => currency.code === normalized)?.englishName ?? normalized;
+
+  try {
+    return new Intl.DisplayNames([language], { type: "currency" }).of(normalized) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function listSupportedCurrencies(): readonly string[] {
-  return Object.keys(CURRENCY_MINOR_UNITS).sort();
+  return CURRENCY_CATALOG.map((currency) => currency.code);
 }

@@ -6,6 +6,7 @@ import { CurrencySelect } from "@/components/pace/forms/currency-select";
 import { PaceSearchSelect, type SelectOption } from "@/components/pace/forms/pace-search-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { CurrencyCode } from "@/money/currency";
 import type { LedgerAccountType } from "@/modules/ledger/domain";
 import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 
@@ -15,9 +16,13 @@ import { ACCOUNT_TYPE_METADATA } from "./transaction-account-metadata";
 export type CreateAccountFormDraft = {
   readonly name: string;
   readonly type: LedgerAccountType | "";
-  readonly currency: string;
+  readonly currency: CurrencyCode;
   readonly openingBalance: string;
 };
+
+export function createEmptyCreateAccountFormDraft(currency: CurrencyCode): CreateAccountFormDraft {
+  return { name: "", type: "", currency, openingBalance: "" };
+}
 
 type CreateAccountFormProps = {
   readonly draft: CreateAccountFormDraft;
@@ -132,7 +137,7 @@ export function CreateAccountForm({
             placeholder="0"
             value={draft.openingBalance}
           />
-          <span className="flex items-center border-l border-[#e5eaf1] px-3 text-[12px] font-semibold text-[#526987]">{draft.currency || "—"}</span>
+          <span className="flex items-center border-l border-[#e5eaf1] px-3 text-[12px] font-semibold text-[#526987]">{draft.currency}</span>
         </div>
         <p className="text-[12px] leading-5 text-[#71809a]" id={openingBalanceHelperId}>{labels.accountOpeningBalanceHelper}</p>
       </div>

@@ -5,6 +5,7 @@ import { FiPlus } from "react-icons/fi";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import type { CurrencyCode } from "@/money/currency";
 import type { TransactionAccountOptionsState } from "@/modules/transactions/domain/transaction-account-options";
 import type {
   TransactionCategoryOption,
@@ -25,7 +26,11 @@ import {
 } from "@/modules/transactions/schemas/transaction-form.schema";
 import type { TransactionUiLabels } from "../transaction-ui-labels";
 
-import { CreateAccountForm, type CreateAccountFormDraft } from "./create-account-form";
+import {
+  CreateAccountForm,
+  createEmptyCreateAccountFormDraft,
+  type CreateAccountFormDraft,
+} from "./create-account-form";
 import { TransactionFormDialog, type TransactionDialogView } from "./transaction-form-dialog";
 import { TransactionAmountField } from "./transaction-amount-field";
 import { TransactionCategoryField } from "./transaction-category-field";
@@ -52,6 +57,27 @@ export function emptyTransactionFormErrors(): TransactionFormErrorsByKind {
 
 export function emptySubmittedTransactionFormKinds(): SubmittedTransactionFormKinds {
   return { EXPENSE: false, INCOME: false, TRANSFER: false };
+}
+
+export function createTransactionFormDraft(
+  defaultCurrency: CurrencyCode,
+  timeZone: string,
+): TransactionFormDraft {
+  const commonDraft = {
+    amount: "",
+    currency: defaultCurrency,
+    date: getTransactionFormToday(timeZone),
+    note: "",
+    time: "",
+  } satisfies TransactionFormCommonDraft;
+  const accountDraft = { ...commonDraft, account: "" } satisfies AccountTransactionFormDraft;
+
+  return {
+    kind: "EXPENSE",
+    expense: { ...accountDraft, category: "", merchant: "" },
+    income: { ...accountDraft, category: "", source: "" },
+    transfer: { ...commonDraft, fromAccount: "", toAccount: "" },
+  };
 }
 
 function localizeTransactionFormErrors(
@@ -169,7 +195,7 @@ export function TransactionCreateControl({
 }: {
   readonly accountOptions: TransactionAccountOptionsState;
   readonly categoryOptions: TransactionCategoryOptionsState;
-  readonly defaultCurrency: string;
+  readonly defaultCurrency: CurrencyCode;
   readonly labels: TransactionUiLabels;
   readonly language: "en" | "fr" | "de";
   readonly locale: string;
@@ -180,31 +206,9 @@ export function TransactionCreateControl({
   const [isRetryingCategories, startCategoryRetry] = useTransition();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<TransactionDialogView>("transaction");
-  const [formDraft, setFormDraft] = useState<TransactionFormDraft>(() => {
-    const date = getTransactionFormToday(timeZone);
-    const commonDraft = {
-      amount: "",
-      currency: defaultCurrency,
-      date,
-      note: "",
-      time: "",
-    } satisfies TransactionFormCommonDraft;
-    const accountDraft = { ...commonDraft, account: "" } satisfies AccountTransactionFormDraft;
-
-    return {
-      kind: "EXPENSE",
-      expense: { ...accountDraft, category: "", merchant: "" },
-      income: { ...accountDraft, category: "", source: "" },
-      transfer: { ...commonDraft, fromAccount: "", toAccount: "" },
-    };
-  });
+  const [formDraft, setFormDraft] = useState<TransactionFormDraft>(() => createTransactionFormDraft(defaultCurrency, timeZone));
   const [createAccountTarget, setCreateAccountTarget] = useState<AccountCreationTarget>("EXPENSE_ACCOUNT");
-  const [createAccountDraft, setCreateAccountDraft] = useState<CreateAccountFormDraft>({
-    name: "",
-    type: "",
-    currency: "",
-    openingBalance: "",
-  });
+  const [createAccountDraft, setCreateAccountDraft] = useState<CreateAccountFormDraft>(() => createEmptyCreateAccountFormDraft(defaultCurrency));
   const [validationErrors, setValidationErrors] = useState<TransactionFormErrorsByKind>(emptyTransactionFormErrors);
   const [submittedKinds, setSubmittedKinds] = useState<SubmittedTransactionFormKinds>(emptySubmittedTransactionFormKinds);
   const amountInputRef = useRef<HTMLInputElement>(null);
@@ -316,7 +320,9 @@ export function TransactionCreateControl({
         : formDraft.transfer.currency;
 
     setCreateAccountTarget(target);
-    setCreateAccountDraft((draft) => (draft.currency ? draft : { ...draft, currency }));
+    setCreateAccountDraft((draft) => (
+      draft.name || draft.type || draft.openingBalance ? draft : createEmptyCreateAccountFormDraft(currency)
+    ));
     setView("create-account");
   }
 
@@ -337,7 +343,7 @@ export function TransactionCreateControl({
     setCreateAccountTarget("EXPENSE_ACCOUNT");
     setValidationErrors(emptyTransactionFormErrors());
     setSubmittedKinds(emptySubmittedTransactionFormKinds());
-    setCreateAccountDraft({ name: "", type: "", currency: "", openingBalance: "" });
+    setCreateAccountDraft(createEmptyCreateAccountFormDraft(defaultCurrency));
   }
 
   function retryAccounts() {

@@ -12,6 +12,7 @@ import { TimezoneSelect } from "@/components/pace/forms/timezone-select";
 import { getOnboardingTranslations } from "@/i18n/onboarding-messages";
 import {
   getCountryDefaultCurrency,
+  isSupportedCurrency,
   isSupportedCountry,
   isSupportedOnboardingLanguage,
   isSupportedTimezone,
@@ -195,7 +196,7 @@ export function OnboardingStepOne({ initialSnapshot }: StepOneProps) {
             onValueChange={(currency) => update({ currency })}
             placeholder={t("onboarding.select")}
             searchPlaceholder={t("onboarding.search.currency")}
-            value={displayed.yourPace.currency}
+            value={isSupportedCurrency(displayed.yourPace.currency) ? displayed.yourPace.currency : ""}
           />
         </OnboardingSelectCard>
         <OnboardingSelectCard error={errors.timezone} htmlFor="onboarding-timezone" label={t("onboarding.field.timezone")}>

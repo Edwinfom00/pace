@@ -1,5 +1,13 @@
-import { countries, getEmojiFlag, type TCountryCode, type TCurrencyCode } from "countries-list";
-import { currencies } from "countries-list/currencies";
+import { countries, getEmojiFlag, type TCountryCode } from "countries-list";
+
+import {
+  CURRENCY_CATALOG,
+  getLocalizedCurrencyName,
+  isCurrencyCode,
+  toCurrencyCode,
+  type CurrencyCode,
+  type CurrencyMetadata,
+} from "@/money/currency";
 
 export const ONBOARDING_LANGUAGES = ["en", "fr", "de"] as const;
 export type OnboardingLanguage = (typeof ONBOARDING_LANGUAGES)[number];
@@ -11,18 +19,9 @@ export type CountryMetadata = {
   currencyCodes: string[];
 };
 
-export type CurrencyMetadata = {
-  code: string;
-  englishName: string;
-  nativeName: string;
-  symbol: string;
-};
+export type { CurrencyMetadata } from "@/money/currency";
 
-/**
- * `countries-list` provides all 252 ISO region records, ISO 4217 currencies,
- * and ISO language metadata. Display names are localized through Intl while
- * these stable codes remain the values we persist.
- */
+
 export const COUNTRY_METADATA: CountryMetadata[] = Object.entries(countries)
   .map(([code, country]) => ({
     code,
@@ -32,22 +31,15 @@ export const COUNTRY_METADATA: CountryMetadata[] = Object.entries(countries)
   }))
   .sort((left, right) => left.englishName.localeCompare(right.englishName));
 
-export const CURRENCY_METADATA: CurrencyMetadata[] = Object.entries(currencies)
-  .filter(([code, currency]) => code !== "XXX" && !currency.withdrawn)
-  .map(([code, currency]) => ({
-    code,
-    englishName: currency.name,
-    nativeName: currency.native,
-    symbol: currency.symbol,
-  }))
-  .sort((left, right) => left.code.localeCompare(right.code));
+/** @deprecated Import CURRENCY_CATALOG from @/money/currency in new code. */
+export const CURRENCY_METADATA: readonly CurrencyMetadata[] = CURRENCY_CATALOG;
 
 export function isSupportedCountry(value: string): boolean {
   return Object.hasOwn(countries, value);
 }
 
-export function isSupportedCurrency(value: string): boolean {
-  return Object.hasOwn(currencies, value) && value !== "XXX" && !currencies[value as TCurrencyCode].withdrawn;
+export function isSupportedCurrency(value: string): value is CurrencyCode {
+  return isCurrencyCode(value);
 }
 
 export function isSupportedOnboardingLanguage(value: string): value is OnboardingLanguage {
@@ -63,10 +55,10 @@ export function isSupportedTimezone(value: string): boolean {
   }
 }
 
-export function getCountryDefaultCurrency(countryCode: string): string | null {
+export function getCountryDefaultCurrency(countryCode: string): CurrencyCode | null {
   const country = countries[countryCode as TCountryCode];
   const candidate = country?.currency.find((code) => isSupportedCurrency(code));
-  return candidate ?? null;
+  return candidate ? toCurrencyCode(candidate) : null;
 }
 
 export function getLocalizedCountryName(countryCode: string, language: OnboardingLanguage): string {
@@ -79,15 +71,7 @@ export function getLocalizedCountryName(countryCode: string, language: Onboardin
   }
 }
 
-export function getLocalizedCurrencyName(currencyCode: string, language: OnboardingLanguage): string {
-  const fallback = currencies[currencyCode as TCurrencyCode]?.name ?? currencyCode;
-
-  try {
-    return new Intl.DisplayNames([language], { type: "currency" }).of(currencyCode) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
+export { getLocalizedCurrencyName };
 
 export function getSupportedTimezones(): string[] {
   if (typeof Intl.supportedValuesOf === "function") {

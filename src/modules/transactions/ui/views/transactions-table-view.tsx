@@ -20,6 +20,7 @@ import { TransactionCreateControl } from "../components/transaction-create-contr
 import type { TransactionUiLabels } from "../transaction-ui-labels";
 import type { TransactionAccountOptionsState } from "../../domain/transaction-account-options";
 import type { TransactionCategoryOptionsState } from "../../domain/transaction-category-options";
+import type { CurrencyCode } from "@/money/currency";
 
 export function TransactionsTableView({
   transactions,
@@ -50,7 +51,7 @@ export function TransactionsTableView({
   readonly amountSortingAvailable: boolean;
   readonly accountOptions: TransactionAccountOptionsState;
   readonly categoryOptions: TransactionCategoryOptionsState;
-  readonly defaultCurrency: string;
+  readonly defaultCurrency: CurrencyCode;
   readonly workspaceId: string;
   readonly workspaceSlug: string;
   readonly language: "en" | "fr" | "de";

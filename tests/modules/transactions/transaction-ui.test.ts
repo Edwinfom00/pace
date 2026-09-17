@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
+import { toCurrencyCode } from "@/money/currency";
 import { transactionUiFixtures } from "@/modules/transactions/test/fixtures/transaction-ui-fixtures";
 import { TransactionAmountCell } from "@/modules/transactions/ui/components/transaction-amount-cell";
 import { formatTransactionFormDate, getTransactionFormToday } from "@/modules/transactions/ui/components/transaction-date-field";
@@ -194,7 +195,7 @@ test("transfer composition has no category field", () => {
     accounts: [],
     draft: {
       amount: "",
-      currency: "XAF",
+      currency: toCurrencyCode("XAF"),
       date: new Date("2026-09-17T12:00:00.000Z"),
       fromAccount: "",
       note: "",

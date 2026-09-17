@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
+import { toCurrencyCode } from "@/money/currency";
 import {
   getFirstInvalidTransactionFormField,
   getTransferDisabledAccountIds,
@@ -26,7 +27,7 @@ function expense(overrides: Record<string, unknown> = {}) {
   return {
     kind: "EXPENSE",
     amount: "20,000",
-    currency: "XAF",
+    currency: toCurrencyCode("XAF"),
     account: "cash",
     date,
     time: "",
@@ -134,7 +135,7 @@ test("validation state begins quiet, revalidates per kind, and identifies the fi
 
 test("field errors are inline and connected to their invalid control", () => {
   const markup = renderToStaticMarkup(createElement(TransactionAmountField, {
-    currency: "XAF",
+    currency: toCurrencyCode("XAF"),
     currencyEmptyLabel: "No currencies found.",
     currencyLabel: "Currency",
     currencySearchPlaceholder: "Search currencies…",
@@ -152,8 +153,8 @@ test("field errors are inline and connected to their invalid control", () => {
 });
 
 const workspaceAccounts = [
-  { id: "account-xaf", name: "Everyday", currency: "XAF" },
-  { id: "account-eur", name: "Travel", currency: "EUR" },
+  { id: "account-xaf", name: "Everyday", currency: toCurrencyCode("XAF") },
+  { id: "account-eur", name: "Travel", currency: toCurrencyCode("EUR") },
 ] as const;
 
 const workspaceCategories = [
@@ -164,9 +165,9 @@ const workspaceCategories = [
 test("Expense, Income, and Transfer validate only account ids from the real account option set", () => {
   const draft: TransactionFormDraft = {
     kind: "TRANSFER",
-    expense: { amount: "20", currency: "XAF", account: "account-xaf", category: "", merchant: "Market", date, time: "", note: "Lunch" },
-    income: { amount: "750", currency: "XAF", account: "account-xaf", category: "", source: "Salary", date, time: "", note: "September" },
-    transfer: { amount: "250", currency: "XAF", fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
+    expense: { amount: "20", currency: workspaceAccounts[0].currency, account: "account-xaf", category: "", merchant: "Market", date, time: "", note: "Lunch" },
+    income: { amount: "750", currency: workspaceAccounts[0].currency, account: "account-xaf", category: "", source: "Salary", date, time: "", note: "September" },
+    transfer: { amount: "250", currency: workspaceAccounts[0].currency, fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
   };
 
   assert.equal(validateTransactionDraft({ ...draft, kind: "EXPENSE" }, workspaceAccounts, workspaceCategories).isValid, true);
@@ -185,9 +186,9 @@ test("Expense, Income, and Transfer validate only account ids from the real acco
 test("real category IDs stay optional, validate against their compatible kind, and never leak across drafts", () => {
   const draft: TransactionFormDraft = {
     kind: "EXPENSE",
-    expense: { amount: "20", currency: "XAF", account: "account-xaf", category: workspaceCategories[0].id, merchant: "Market", date, time: "", note: "Lunch" },
-    income: { amount: "750", currency: "XAF", account: "account-xaf", category: workspaceCategories[1].id, source: "Salary", date, time: "", note: "September" },
-    transfer: { amount: "250", currency: "XAF", fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
+    expense: { amount: "20", currency: workspaceAccounts[0].currency, account: "account-xaf", category: workspaceCategories[0].id, merchant: "Market", date, time: "", note: "Lunch" },
+    income: { amount: "750", currency: workspaceAccounts[0].currency, account: "account-xaf", category: workspaceCategories[1].id, source: "Salary", date, time: "", note: "September" },
+    transfer: { amount: "250", currency: workspaceAccounts[0].currency, fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
   };
 
   assert.equal(validateTransactionDraft(draft, workspaceAccounts, workspaceCategories).isValid, true);
@@ -207,9 +208,9 @@ test("real category IDs stay optional, validate against their compatible kind, a
 test("workspace category changes clear invalid custom selections while retaining still-authorized system selections", () => {
   const draft: TransactionFormDraft = {
     kind: "EXPENSE",
-    expense: { amount: "20", currency: "XAF", account: "account-xaf", category: "custom-expense", merchant: "Market", date, time: "", note: "Lunch" },
-    income: { amount: "750", currency: "XAF", account: "account-xaf", category: workspaceCategories[1].id, source: "Salary", date, time: "", note: "September" },
-    transfer: { amount: "250", currency: "XAF", fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
+    expense: { amount: "20", currency: workspaceAccounts[0].currency, account: "account-xaf", category: "custom-expense", merchant: "Market", date, time: "", note: "Lunch" },
+    income: { amount: "750", currency: workspaceAccounts[0].currency, account: "account-xaf", category: workspaceCategories[1].id, source: "Salary", date, time: "", note: "September" },
+    transfer: { amount: "250", currency: workspaceAccounts[0].currency, fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
   };
   const updated = clearUnavailableTransactionCategorySelections(draft, workspaceCategories);
 
@@ -222,12 +223,12 @@ test("workspace category changes clear invalid custom selections while retaining
 test("workspace changes clear stale manual transaction selections", () => {
   const draft: TransactionFormDraft = {
     kind: "TRANSFER",
-    expense: { amount: "20", currency: "XAF", account: "account-xaf", category: "", merchant: "Market", date, time: "", note: "Lunch" },
-    income: { amount: "750", currency: "XAF", account: "account-xaf", category: "", source: "Salary", date, time: "", note: "September" },
-    transfer: { amount: "250", currency: "XAF", fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
+    expense: { amount: "20", currency: workspaceAccounts[0].currency, account: "account-xaf", category: "", merchant: "Market", date, time: "", note: "Lunch" },
+    income: { amount: "750", currency: workspaceAccounts[0].currency, account: "account-xaf", category: "", source: "Salary", date, time: "", note: "September" },
+    transfer: { amount: "250", currency: workspaceAccounts[0].currency, fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
   };
   const updated = clearUnavailableTransactionAccountSelections(draft, [
-    { id: "account-other-workspace", name: "Other", currency: "USD" },
+    { id: "account-other-workspace", name: "Other", currency: toCurrencyCode("USD") },
   ]);
 
   assert.equal(updated.transfer.toAccount, "");

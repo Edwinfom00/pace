@@ -1,7 +1,9 @@
+import type { CurrencyCode } from "@/money/currency";
+
 export type TransactionAccountOption = {
   readonly id: string;
   readonly name: string;
-  readonly currency: string;
+  readonly currency: CurrencyCode;
 };
 
 export type TransactionAccountOptionsState =

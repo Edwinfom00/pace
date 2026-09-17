@@ -1,6 +1,7 @@
 import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
+import { toCurrencyCode } from "@/money/currency";
 import type { LedgerAccountRecord } from "@/modules/ledger/domain";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
@@ -40,5 +41,5 @@ export function mapTransactionAccountOption(
 ): TransactionAccountOption | null {
   if (account.archivedAt !== null) return null;
 
-  return { id: account.id, name: account.name, currency: account.currency };
+  return { id: account.id, name: account.name, currency: toCurrencyCode(account.currency) };
 }

@@ -3,8 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { getAuthenticatedActor } from "@/authorization/session";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import { getPersistedDashboardLanguage } from "@/i18n/dashboard-server";
+import { isCurrencyCode, toCurrencyCode } from "@/money/currency";
 import { loginPathForReturnTo } from "@/modules/auth/post-auth-resolver";
-import { isSupportedCurrency } from "@/modules/onboarding/metadata";
 import { transactionListHref } from "@/modules/transactions/domain/transaction-list-url";
 import { parseTransactionSearchParams } from "@/modules/transactions/queries/transaction-search-params";
 import { getServerTransactionsPage } from "@/modules/transactions/server/get-transactions-page";
@@ -75,7 +75,7 @@ export default async function TransactionsPage({ params, searchParams }: Transac
       accountOptions={transactionAccounts}
       categoryOptions={transactionCategories}
       amountSortingAvailable={transactionsPage.amountSortingAvailable}
-      defaultCurrency={isSupportedCurrency(workspace.preferences.currency) ? workspace.preferences.currency : "USD"}
+      defaultCurrency={isCurrencyCode(workspace.preferences.currency) ? workspace.preferences.currency : toCurrencyCode("USD")}
       filterOptions={transactionsPage.options}
       filterState={{ ...transactionsPage.filters, page: transactionsPage.page }}
       labels={labels}
