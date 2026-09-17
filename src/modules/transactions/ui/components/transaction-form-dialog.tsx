@@ -22,6 +22,7 @@ export function TransactionFormDialog({
   createAccountHeader,
   footer,
   isCreateAccountPending = false,
+  isTransactionPending = false,
   kind,
   onBackToTransaction,
   onKindChange,
@@ -33,6 +34,7 @@ export function TransactionFormDialog({
   readonly createAccountHeader: { readonly backLabel: string; readonly description: string; readonly title: string };
   readonly footer?: ReactNode;
   readonly isCreateAccountPending?: boolean;
+  readonly isTransactionPending?: boolean;
   readonly kind: TransactionFormKind;
   readonly onBackToTransaction: () => void;
   readonly onKindChange: (kind: TransactionFormKind) => void;
@@ -50,6 +52,7 @@ export function TransactionFormDialog({
           <Button
             aria-label="Close add transaction dialog"
             className="absolute top-3 right-3 z-10 size-8 rounded-[7px] text-[#61708a] hover:bg-[#f3f6fa] hover:text-[#263550] focus-visible:ring-[#5e8fe8]/30 sm:top-4 sm:right-4"
+            disabled={isCreateAccountPending || isTransactionPending}
             size="icon"
             type="button"
             variant="ghost"
@@ -91,7 +94,7 @@ export function TransactionFormDialog({
         </ResponsiveDialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 sm:px-7 sm:pb-7">
-          {view === "transaction" ? <TransactionTypeSelector onValueChange={onKindChange} value={kind} /> : null}
+          {view === "transaction" ? <TransactionTypeSelector disabled={isTransactionPending} onValueChange={onKindChange} value={kind} /> : null}
           <div className={view === "transaction" ? "mt-5 text-[13px] leading-5 text-[#71809a]" : "text-[13px] leading-5 text-[#71809a]"}>
             {children}
           </div>

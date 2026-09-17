@@ -43,6 +43,14 @@ import {
   type AccountCreationTarget,
   type CreateAccountFormErrors,
 } from "./create-account-flow";
+import {
+  canStartExpenseSubmission,
+  createExpenseCommand,
+  expenseReconciliationPlan,
+  resetExpenseTransactionDraft,
+  serverExpenseFieldErrors,
+  submitCanonicalExpense,
+} from "./expense-create-flow";
 import { TransactionFormDialog, type TransactionDialogView } from "./transaction-form-dialog";
 import { TransactionAmountField } from "./transaction-amount-field";
 import { TransactionCategoryField } from "./transaction-category-field";
@@ -234,6 +242,9 @@ export function TransactionCreateControl({
   const [createAccountAnnouncement, setCreateAccountAnnouncement] = useState("");
   const [createdAccountAwaitingReconciliation, setCreatedAccountAwaitingReconciliation] = useState<CreatedAccountDTO | null>(null);
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
+  const [isCreatingExpense, setIsCreatingExpense] = useState(false);
+  const [expenseFormError, setExpenseFormError] = useState<string | null>(null);
+  const [expenseAnnouncement, setExpenseAnnouncement] = useState("");
   const [validationErrors, setValidationErrors] = useState<TransactionFormErrorsByKind>(emptyTransactionFormErrors);
   const [submittedKinds, setSubmittedKinds] = useState<SubmittedTransactionFormKinds>(emptySubmittedTransactionFormKinds);
   const amountInputRef = useRef<HTMLInputElement>(null);
@@ -247,6 +258,7 @@ export function TransactionCreateControl({
   const merchantInputRef = useRef<HTMLInputElement>(null);
   const noteTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const workspaceIdRef = useRef(workspaceId);
+  const isCreatingExpenseRef = useRef(false);
   const kind = formDraft.kind;
   const activeAccountDraft = kind === "INCOME" ? formDraft.income : formDraft.expense;
   const authoritativeAccounts = accountOptions.accounts;
@@ -318,17 +330,25 @@ export function TransactionCreateControl({
     categoriesForValidation: readonly TransactionCategoryOption[] = categories,
   ) {
     setFormDraft(nextDraft);
+    if (nextDraft.kind === "EXPENSE") setExpenseFormError(null);
     if (!submittedKinds[nextDraft.kind]) return;
 
     const result = validateTransactionDraft(nextDraft, accountsForValidation, categoriesForValidation);
     setValidationErrors((current) => ({ ...current, [nextDraft.kind]: result.errors }));
   }
 
-  function handlePrimaryAction() {
+  function validateActiveTransactionDraft(): TransactionFormValidationResult {
     const result = validateTransactionDraft(formDraft, accounts, categories);
     setSubmittedKinds((current) => ({ ...current, [kind]: true }));
     setValidationErrors((current) => ({ ...current, [kind]: result.errors }));
     if (!result.isValid) focusFirstInvalidField(result.errors);
+    return result;
+  }
+
+  function handlePrimaryAction() {
+    const result = validateActiveTransactionDraft();
+    if (!result.isValid || kind !== "EXPENSE") return;
+    void submitExpense();
   }
 
   function updateCurrentDraft(update: Partial<TransactionFormCommonDraft>) {
@@ -350,6 +370,7 @@ export function TransactionCreateControl({
   }
 
   function handleKindChange(nextKind: TransactionFormKind) {
+    if (isCreatingExpenseRef.current) return;
     setFormDraft({ ...formDraft, kind: nextKind });
   }
 
@@ -381,6 +402,7 @@ export function TransactionCreateControl({
   }
 
   function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && (isCreatingAccount || isCreatingExpenseRef.current)) return;
     setOpen(nextOpen);
     if (nextOpen) return;
 
@@ -392,6 +414,8 @@ export function TransactionCreateControl({
     setValidationErrors(emptyTransactionFormErrors());
     setSubmittedKinds(emptySubmittedTransactionFormKinds());
     setCreateAccountDraft(createEmptyCreateAccountFormDraft(defaultCurrency));
+    setExpenseFormError(null);
+    setExpenseAnnouncement("");
   }
 
   function updateCreateAccountDraft(nextDraft: CreateAccountFormDraft) {
@@ -483,6 +507,70 @@ export function TransactionCreateControl({
     }
   }
 
+  async function submitExpense() {
+    if (!canStartExpenseSubmission(isCreatingExpenseRef.current)) return;
+
+    const expenseValidation = validateTransactionForm({ kind: "EXPENSE", ...formDraft.expense });
+    if (!expenseValidation.isValid) return;
+    if (expenseValidation.value.kind !== "EXPENSE") return;
+
+    const requestWorkspaceId = workspaceIdRef.current;
+    const command = createExpenseCommand(requestWorkspaceId, expenseValidation.value);
+    isCreatingExpenseRef.current = true;
+    setIsCreatingExpense(true);
+    setExpenseFormError(null);
+    setExpenseAnnouncement("");
+
+    try {
+      const result = await submitCanonicalExpense(command, async (input) => {
+        const response = await fetch(`/api/workspaces/${encodeURIComponent(requestWorkspaceId)}/ledger/transactions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        return { ok: response.ok, payload: await response.json().catch(() => null) };
+      });
+
+      if (!result.ok) {
+        const failure = result.failure;
+        const errors = serverExpenseFieldErrors(failure);
+        if (Object.keys(errors).length > 0) {
+          setValidationErrors((current) => ({ ...current, EXPENSE: { ...current.EXPENSE, ...errors } }));
+          setExpenseFormError(null);
+          focusFirstInvalidField(errors);
+        } else {
+          setExpenseFormError(labels.expenseCreateErrorGeneric);
+        }
+        return;
+      }
+
+      // The authoritative response is never inserted into a local ledger list.
+      // If a workspace switch won the race, refresh only and leave the response
+      // unattached to the now-current workspace UI.
+      const reconciliation = expenseReconciliationPlan(requestWorkspaceId, workspaceIdRef.current);
+      if (!reconciliation.shouldResetExpenseDraft) {
+        if (reconciliation.shouldRefreshData) router.refresh();
+        return;
+      }
+
+      setFormDraft((current) => resetExpenseTransactionDraft(
+        current,
+        createTransactionFormDraft(defaultCurrency, timeZone).expense,
+      ));
+      setValidationErrors((current) => ({ ...current, EXPENSE: {} }));
+      setSubmittedKinds((current) => ({ ...current, EXPENSE: false }));
+      setExpenseFormError(null);
+      setExpenseAnnouncement(labels.expenseCreated);
+      if (reconciliation.shouldCloseDialog) setOpen(false);
+      if (reconciliation.shouldRefreshData) router.refresh();
+    } catch {
+      setExpenseFormError(labels.expenseCreateErrorGeneric);
+    } finally {
+      isCreatingExpenseRef.current = false;
+      setIsCreatingExpense(false);
+    }
+  }
+
   function retryAccounts() {
     startAccountRetry(() => router.refresh());
   }
@@ -502,6 +590,7 @@ export function TransactionCreateControl({
 
   return (
     <>
+      <p aria-live="polite" className="sr-only" role="status">{expenseAnnouncement}</p>
       <Button
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -522,13 +611,16 @@ export function TransactionCreateControl({
         footer={(
           <TransactionFormFooter
             cancelLabel={labels.actionCancel}
+            formError={kind === "EXPENSE" ? expenseFormError : null}
+            isPending={kind === "EXPENSE" && isCreatingExpense}
             onCancel={() => handleOpenChange(false)}
             onPrimaryAction={handlePrimaryAction}
-            primaryActionLabel={kind === "TRANSFER" ? labels.actionTransferMoney : kind === "INCOME" ? labels.actionAddIncome : labels.actionAddExpense}
+            primaryActionLabel={kind === "EXPENSE" && isCreatingExpense ? labels.actionSavingExpense : kind === "TRANSFER" ? labels.actionTransferMoney : kind === "INCOME" ? labels.actionAddIncome : labels.actionAddExpense}
           />
         )}
         kind={kind}
         isCreateAccountPending={isCreatingAccount}
+        isTransactionPending={isCreatingExpense}
         onBackToTransaction={returnToTransaction}
         onKindChange={handleKindChange}
         onOpenChange={handleOpenChange}

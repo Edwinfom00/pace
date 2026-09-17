@@ -41,9 +41,11 @@ const transactionTypeOptions = [
 }>;
 
 export function TransactionTypeSelector({
+  disabled = false,
   value,
   onValueChange,
 }: {
+  readonly disabled?: boolean;
   readonly value: TransactionFormKind;
   readonly onValueChange: (value: TransactionFormKind) => void;
 }) {
@@ -63,7 +65,7 @@ export function TransactionTypeSelector({
       nextIndex = transactionFormKinds.length - 1;
     }
 
-    if (nextIndex === null) return;
+    if (disabled || nextIndex === null) return;
 
     event.preventDefault();
     const nextValue = transactionFormKinds[nextIndex];
@@ -92,6 +94,7 @@ export function TransactionTypeSelector({
               selected && cn("font-semibold", option.selectedClassName),
             )}
             key={option.value}
+            disabled={disabled}
             onClick={() => onValueChange(option.value)}
             ref={(element) => {
               optionRefs.current[option.value] = element;

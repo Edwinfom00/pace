@@ -130,6 +130,9 @@ test("transactions labels are complete across English, French, and German", () =
   assert.equal(getTransactionUiLabels(getDashboardLabels("en")).formSource, "Source");
   assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).formAmountIncomeHelper, "Saisissez le montant total reçu.");
   assert.equal(getTransactionUiLabels(getDashboardLabels("de")).actionAddIncome, "Einnahme hinzufügen");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("en")).actionSavingExpense, "Saving…");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).expenseCreated, "Dépense ajoutée");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("de")).expenseCreateErrorGeneric, "Diese Ausgabe konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.");
 });
 
 test("real category fields expose their selected ledger ID, loading, error, and zero-category states", () => {

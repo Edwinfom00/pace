@@ -103,8 +103,11 @@ export type TransactionUiLabels = {
   readonly actionRemove: string;
   readonly actionCancel: string;
   readonly actionAddExpense: string;
+  readonly actionSavingExpense: string;
   readonly actionAddIncome: string;
   readonly actionTransferMoney: string;
+  readonly expenseCreated: string;
+  readonly expenseCreateErrorGeneric: string;
   readonly accountsEmptyTitle: string;
   readonly accountsEmptyDescription: string;
   readonly accountsCreate: string;
@@ -271,8 +274,11 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     actionRemove: labels["transactions.actions.remove"],
     actionCancel: labels["transactions.actions.cancel"],
     actionAddExpense: labels["transactions.actions.addExpense"],
+    actionSavingExpense: labels["transactions.actions.savingExpense"],
     actionAddIncome: labels["transactions.actions.addIncome"],
     actionTransferMoney: labels["transactions.actions.transferMoney"],
+    expenseCreated: labels["transactions.feedback.expenseCreated"],
+    expenseCreateErrorGeneric: labels["transactions.errors.expenseCreateFailed"],
     accountsEmptyTitle: labels["accounts.empty.title"],
     accountsEmptyDescription: labels["accounts.empty.description"],
     accountsCreate: labels["accounts.actions.create"],
