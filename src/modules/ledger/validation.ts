@@ -99,10 +99,15 @@ export const createLedgerTransactionSchema = z.discriminatedUnion("kind", [
       kind: z.literal("INCOME"),
       ...transactionFields,
       accountId: id,
-      categoryId: id,
+      categoryId: id.optional(),
       merchantId: id.optional(),
+      merchantName: z.string().trim().min(1).max(160).optional(),
     })
-    .strict(),
+    .strict()
+    .refine((value) => !(value.merchantId && value.merchantName), {
+      message: "Provide either merchantId or merchantName, not both.",
+      path: ["merchantName"],
+    }),
   z
     .object({
       kind: z.literal("TRANSFER"),

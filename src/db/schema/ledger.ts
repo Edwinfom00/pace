@@ -199,7 +199,6 @@ export const ledgerTransactions = pgTable(
         ${table.kind} = 'INCOME'
         AND ${table.accountId} IS NOT NULL
         AND ${table.transferAccountId} IS NULL
-        AND ${table.categoryId} IS NOT NULL
         AND ${table.refundedTransactionId} IS NULL
         AND ${table.transferGroupId} IS NULL
       ) OR (

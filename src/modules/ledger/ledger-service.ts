@@ -271,7 +271,7 @@ export class LedgerService {
     if (input.merchantId) {
       return { id: (await this.requireMerchant(workspaceId, input.merchantId)).id, record: null };
     }
-    if (input.kind !== "EXPENSE" || !input.merchantName) return { id: null, record: null };
+    if (!input.merchantName) return { id: null, record: null };
 
     const merchant = await this.findOrPrepareMerchant(actor, workspaceId, input.merchantName);
     if (merchant.existing) return { id: merchant.existing.id, record: null };
