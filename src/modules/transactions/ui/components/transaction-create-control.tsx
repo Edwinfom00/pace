@@ -17,6 +17,9 @@ import { TransactionAccountField } from "./transaction-account-field";
 import type { AccountDraftOption } from "./transaction-account.types";
 import { TransactionMerchantField } from "./transaction-merchant-field";
 import { TransactionDateField, getTransactionFormToday } from "./transaction-date-field";
+import { TransactionFormFooter } from "./transaction-form-footer";
+import { TransactionFormTip } from "./transaction-form-tip";
+import { TransactionNoteField } from "./transaction-note-field";
 import { TransactionTimeField } from "./transaction-time-field";
 import {
   transactionFormKindLabels,
@@ -46,6 +49,7 @@ export function TransactionCreateControl({
   const [account, setAccount] = useState("");
   const [date, setDate] = useState(() => getTransactionFormToday(timeZone));
   const [time, setTime] = useState("");
+  const [note, setNote] = useState("");
   const [createdAccounts, setCreatedAccounts] = useState<readonly AccountDraftOption[]>([]);
   const [createAccountDraft, setCreateAccountDraft] = useState<CreateAccountFormDraft>({
     name: "",
@@ -114,6 +118,13 @@ export function TransactionCreateControl({
           description: labels.accountCreateSubtitle,
           title: labels.accountCreateTitle,
         }}
+        footer={(
+          <TransactionFormFooter
+            addExpenseLabel={labels.actionAddExpense}
+            cancelLabel={labels.actionCancel}
+            onCancel={() => handleOpenChange(false)}
+          />
+        )}
         kind={kind}
         onBackToTransaction={() => setView("transaction")}
         onKindChange={setKind}
@@ -200,6 +211,16 @@ export function TransactionCreateControl({
                 value={time}
               />
             </div>
+
+            <TransactionNoteField
+              label={labels.formNote}
+              onValueChange={setNote}
+              optionalLabel={labels.formOptional}
+              placeholder={labels.formNotePlaceholder}
+              value={note}
+            />
+
+            <TransactionFormTip description={labels.formTipExpense} title={labels.formTipTitle} />
           </div>
         ) : (
           `${transactionFormKindLabels[kind]} form content`

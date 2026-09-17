@@ -10,9 +10,12 @@ import { TransactionAmountCell } from "@/modules/transactions/ui/components/tran
 import { formatTransactionFormDate, getTransactionFormToday } from "@/modules/transactions/ui/components/transaction-date-field";
 import { TransactionCategoryBadge } from "@/modules/transactions/ui/components/transaction-category-badge";
 import { TransactionEmptyState } from "@/modules/transactions/ui/components/transaction-empty-state";
+import { TransactionFormFooter } from "@/modules/transactions/ui/components/transaction-form-footer";
+import { TransactionFormTip } from "@/modules/transactions/ui/components/transaction-form-tip";
 import { formatTransactionAmount, formatTransactionDate } from "@/modules/transactions/ui/components/transaction-formatters";
 import { TransactionMerchantCell } from "@/modules/transactions/ui/components/transaction-merchant-cell";
 import { TransactionMobileCard } from "@/modules/transactions/ui/components/transaction-mobile-card";
+import { TransactionNoteField } from "@/modules/transactions/ui/components/transaction-note-field";
 import { visiblePages } from "@/modules/transactions/ui/components/transaction-pagination";
 import { TransactionRowActions } from "@/modules/transactions/ui/components/transaction-row-actions";
 import { TransactionStatusBadge } from "@/modules/transactions/ui/components/transaction-status-badge";
@@ -118,4 +121,35 @@ test("transactions labels are complete across English, French, and German", () =
   assert.equal(getTransactionUiLabels(getDashboardLabels("en")).formTimePlaceholder, "Add time");
   assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).formOptional, "Facultatif");
   assert.equal(getTransactionUiLabels(getDashboardLabels("de")).formDate, "Datum");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("en")).formNotePlaceholder, "Add a note...");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).formTipTitle, "Conseil");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("de")).actionAddExpense, "Ausgabe hinzufügen");
+});
+
+test("expense form finishing components stay compact, labelled, and visual-only", () => {
+  const note = renderToStaticMarkup(createElement(TransactionNoteField, {
+    label: "Note",
+    onValueChange: () => undefined,
+    optionalLabel: "Optional",
+    placeholder: "Add a note...",
+    value: "",
+  }));
+  const tip = renderToStaticMarkup(createElement(TransactionFormTip, {
+    description: "Adding an account and category helps Pace keep your spending organized.",
+    title: "Tip",
+  }));
+  const footer = renderToStaticMarkup(createElement(TransactionFormFooter, {
+    addExpenseLabel: "Add expense",
+    cancelLabel: "Cancel",
+    onCancel: () => undefined,
+  }));
+
+  assert.match(note, /<textarea/);
+  assert.match(note, /rows="3"/);
+  assert.match(note, /Optional/);
+  assert.match(tip, /<aside/);
+  assert.match(tip, /aria-hidden="true"/);
+  assert.match(footer, /Cancel/);
+  assert.match(footer, /Add expense/);
+  assert.equal((footer.match(/type="button"/g) ?? []).length, 2);
 });

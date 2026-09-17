@@ -20,6 +20,7 @@ export type TransactionDialogView = "transaction" | "create-account";
 export function TransactionFormDialog({
   children,
   createAccountHeader,
+  footer,
   kind,
   onBackToTransaction,
   onKindChange,
@@ -29,6 +30,7 @@ export function TransactionFormDialog({
 }: {
   readonly children: ReactNode;
   readonly createAccountHeader: { readonly backLabel: string; readonly description: string; readonly title: string };
+  readonly footer?: ReactNode;
   readonly kind: TransactionFormKind;
   readonly onBackToTransaction: () => void;
   readonly onKindChange: (kind: TransactionFormKind) => void;
@@ -39,7 +41,7 @@ export function TransactionFormDialog({
   return (
     <ResponsiveDialog onOpenChange={onOpenChange} open={open}>
       <ResponsiveDialogContent
-        className="max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-[650px] gap-0 overflow-y-auto rounded-[12px] border border-[#e1e7f0] bg-white p-0 text-[#101a35] shadow-[0_18px_45px_rgb(15_23_42/14%)] sm:max-h-[calc(100dvh-3rem)] sm:w-[calc(100%-3rem)] sm:max-w-[650px]"
+        className="!flex max-h-[calc(100dvh-1rem)] min-h-0 w-[calc(100%-1rem)] max-w-[650px] flex-col gap-0 overflow-hidden rounded-[12px] border border-[#e1e7f0] bg-white p-0 text-[#101a35] shadow-[0_18px_45px_rgb(15_23_42/14%)] sm:max-h-[calc(100dvh-3rem)] sm:w-[calc(100%-3rem)] sm:max-w-[650px]"
         drawerClassName="w-full max-w-none rounded-none rounded-t-[14px] border-x-0 border-b-0 border-[#e1e7f0] shadow-[0_-12px_32px_rgb(15_23_42/12%)] data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-1rem)] data-[vaul-drawer-direction=bottom]:rounded-t-[14px]"
       >
         <ResponsiveDialogClose>
@@ -85,12 +87,13 @@ export function TransactionFormDialog({
           )}
         </ResponsiveDialogHeader>
 
-        <div className="px-4 pb-5 sm:px-7 sm:pb-7">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 sm:px-7 sm:pb-7">
           {view === "transaction" ? <TransactionTypeSelector onValueChange={onKindChange} value={kind} /> : null}
           <div className={view === "transaction" ? "mt-5 text-[13px] leading-5 text-[#71809a]" : "text-[13px] leading-5 text-[#71809a]"}>
             {children}
           </div>
         </div>
+        {view === "transaction" ? footer : null}
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );
