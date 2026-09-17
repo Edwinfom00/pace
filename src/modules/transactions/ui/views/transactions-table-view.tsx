@@ -19,6 +19,7 @@ import { TransactionToolbar } from "../components/transaction-toolbar";
 import { TransactionCreateControl } from "../components/transaction-create-control";
 import type { TransactionUiLabels } from "../transaction-ui-labels";
 import type { TransactionAccountOptionsState } from "../../domain/transaction-account-options";
+import type { TransactionCategoryOptionsState } from "../../domain/transaction-category-options";
 
 export function TransactionsTableView({
   transactions,
@@ -31,6 +32,7 @@ export function TransactionsTableView({
   filterOptions,
   amountSortingAvailable,
   accountOptions,
+  categoryOptions,
   defaultCurrency,
   workspaceId,
   workspaceSlug,
@@ -47,6 +49,7 @@ export function TransactionsTableView({
   readonly filterOptions: TransactionFilterOptions;
   readonly amountSortingAvailable: boolean;
   readonly accountOptions: TransactionAccountOptionsState;
+  readonly categoryOptions: TransactionCategoryOptionsState;
   readonly defaultCurrency: string;
   readonly workspaceId: string;
   readonly workspaceSlug: string;
@@ -84,6 +87,7 @@ export function TransactionsTableView({
           <TransactionsAskPace language={language} locale={locale} pageContext={pageContext} timeZone={timeZone} workspaceId={workspaceId} />
           <TransactionCreateControl
             accountOptions={accountOptions}
+            categoryOptions={categoryOptions}
             defaultCurrency={defaultCurrency}
             key={workspaceId}
             labels={labels}

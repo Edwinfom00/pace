@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import type { TransactionAccountOptionsState } from "@/modules/transactions/domain/transaction-account-options";
+import type {
+  TransactionCategoryOption,
+  TransactionCategoryOptionsState,
+} from "@/modules/transactions/domain/transaction-category-options";
+import { getCompatibleTransactionCategoryOptions } from "@/modules/transactions/domain/transaction-category-options";
 import {
   getFirstInvalidTransactionFormField,
   validateTransactionForm,
@@ -24,10 +29,6 @@ import { CreateAccountForm, type CreateAccountFormDraft } from "./create-account
 import { TransactionFormDialog, type TransactionDialogView } from "./transaction-form-dialog";
 import { TransactionAmountField } from "./transaction-amount-field";
 import { TransactionCategoryField } from "./transaction-category-field";
-import type {
-  ExpenseTransactionCategoryFixtureId,
-  IncomeTransactionCategoryFixtureId,
-} from "./transaction-category-fixtures";
 import type { TransactionAccountOption } from "./transaction-account.types";
 import { TransactionAccountField } from "./transaction-account-field";
 import { TransactionMerchantField } from "./transaction-merchant-field";
@@ -70,6 +71,7 @@ function localizeTransactionFormErrors(
 export function validateTransactionDraft(
   draft: TransactionFormDraft,
   accounts: readonly TransactionAccountOption[],
+  categories: readonly TransactionCategoryOption[],
 ): TransactionFormValidationResult {
   const availableAccountIds = new Set(accounts.map((account) => account.id));
   let result: TransactionFormValidationResult;
@@ -100,6 +102,10 @@ export function validateTransactionDraft(
     unavailable(draft.transfer.toAccount, "toAccount");
   } else {
     unavailable(draft.kind === "EXPENSE" ? draft.expense.account : draft.income.account, "account");
+    const category = draft.kind === "EXPENSE" ? draft.expense.category : draft.income.category;
+    if (category && !getCompatibleTransactionCategoryOptions(categories, draft.kind).some((candidate) => candidate.id === category)) {
+      errors.category ??= "transactions.validation.categoryUnavailable";
+    }
   }
 
   return Object.keys(errors).length === 0 ? result : { isValid: false, errors };
@@ -133,8 +139,28 @@ export function clearUnavailableTransactionAccountSelections(
   };
 }
 
+/** Removes category IDs that are no longer compatible with the current workspace projection. */
+export function clearUnavailableTransactionCategorySelections(
+  draft: TransactionFormDraft,
+  categories: readonly TransactionCategoryOption[],
+): TransactionFormDraft {
+  const hasCategory = (categoryId: string, kind: "EXPENSE" | "INCOME") =>
+    !categoryId || categories.some((category) => category.id === categoryId && category.kind === kind);
+  const expenseCategory = hasCategory(draft.expense.category, "EXPENSE") ? draft.expense.category : "";
+  const incomeCategory = hasCategory(draft.income.category, "INCOME") ? draft.income.category : "";
+
+  if (expenseCategory === draft.expense.category && incomeCategory === draft.income.category) return draft;
+
+  return {
+    ...draft,
+    expense: { ...draft.expense, category: expenseCategory },
+    income: { ...draft.income, category: incomeCategory },
+  };
+}
+
 export function TransactionCreateControl({
   accountOptions,
+  categoryOptions,
   defaultCurrency,
   labels,
   language,
@@ -142,6 +168,7 @@ export function TransactionCreateControl({
   timeZone,
 }: {
   readonly accountOptions: TransactionAccountOptionsState;
+  readonly categoryOptions: TransactionCategoryOptionsState;
   readonly defaultCurrency: string;
   readonly labels: TransactionUiLabels;
   readonly language: "en" | "fr" | "de";
@@ -150,6 +177,7 @@ export function TransactionCreateControl({
 }) {
   const router = useRouter();
   const [isRetryingAccounts, startAccountRetry] = useTransition();
+  const [isRetryingCategories, startCategoryRetry] = useTransition();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<TransactionDialogView>("transaction");
   const [formDraft, setFormDraft] = useState<TransactionFormDraft>(() => {
@@ -165,8 +193,8 @@ export function TransactionCreateControl({
 
     return {
       kind: "EXPENSE",
-      expense: { ...accountDraft, category: "other-expense", merchant: "" },
-      income: { ...accountDraft, category: "salary", source: "" },
+      expense: { ...accountDraft, category: "", merchant: "" },
+      income: { ...accountDraft, category: "", source: "" },
       transfer: { ...commonDraft, fromAccount: "", toAccount: "" },
     };
   });
@@ -182,6 +210,7 @@ export function TransactionCreateControl({
   const amountInputRef = useRef<HTMLInputElement>(null);
   const currencyTriggerRef = useRef<HTMLButtonElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
+  const categoryTriggerRef = useRef<HTMLButtonElement>(null);
   const fromAccountTriggerRef = useRef<HTMLButtonElement>(null);
   const toAccountTriggerRef = useRef<HTMLButtonElement>(null);
   const dateTriggerRef = useRef<HTMLButtonElement>(null);
@@ -192,6 +221,8 @@ export function TransactionCreateControl({
   const activeAccountDraft = kind === "INCOME" ? formDraft.income : formDraft.expense;
   const accounts = accountOptions.accounts;
   const accountAvailability = isRetryingAccounts ? "loading" : accountOptions.status;
+  const categories = categoryOptions.categories;
+  const categoryAvailability = isRetryingCategories ? "loading" : categoryOptions.status;
   const activeErrors = validationErrors[kind];
   const activeDisplayErrors = localizeTransactionFormErrors(labels, activeErrors);
 
@@ -209,6 +240,9 @@ export function TransactionCreateControl({
           break;
         case "account":
           accountTriggerRef.current?.focus();
+          break;
+        case "category":
+          categoryTriggerRef.current?.focus();
           break;
         case "fromAccount":
           fromAccountTriggerRef.current?.focus();
@@ -236,16 +270,17 @@ export function TransactionCreateControl({
   function commitTransactionDraft(
     nextDraft: TransactionFormDraft,
     accountsForValidation: readonly TransactionAccountOption[] = accounts,
+    categoriesForValidation: readonly TransactionCategoryOption[] = categories,
   ) {
     setFormDraft(nextDraft);
     if (!submittedKinds[nextDraft.kind]) return;
 
-    const result = validateTransactionDraft(nextDraft, accountsForValidation);
+    const result = validateTransactionDraft(nextDraft, accountsForValidation, categoriesForValidation);
     setValidationErrors((current) => ({ ...current, [nextDraft.kind]: result.errors }));
   }
 
   function handlePrimaryAction() {
-    const result = validateTransactionDraft(formDraft, accounts);
+    const result = validateTransactionDraft(formDraft, accounts, categories);
     setSubmittedKinds((current) => ({ ...current, [kind]: true }));
     setValidationErrors((current) => ({ ...current, [kind]: result.errors }));
     if (!result.isValid) focusFirstInvalidField(result.errors);
@@ -307,6 +342,10 @@ export function TransactionCreateControl({
 
   function retryAccounts() {
     startAccountRetry(() => router.refresh());
+  }
+
+  function retryCategories() {
+    startCategoryRetry(() => router.refresh());
   }
 
   function selectAccount(accountId: string) {
@@ -422,25 +461,41 @@ export function TransactionCreateControl({
               />
               {kind === "INCOME" ? (
                 <TransactionCategoryField
+                  availability={categoryAvailability}
+                  categories={categories}
+                  categoryEmptyLabel={labels.categoryEmpty}
+                  categoryLoadError={labels.categoryLoadError}
+                  categoryLoadingLabel={labels.categoryLoading}
+                  categoryRetryLabel={labels.errorRetry}
+                  error={activeDisplayErrors.category}
                   helperText={labels.formCategoryHelper}
                   kind="INCOME"
                   label={labels.formCategory}
-                  language={language}
+                  onRetryCategories={retryCategories}
                   onValueChange={(category) => updateIncomeDraft({ category })}
                   placeholder={labels.formCategoryPlaceholder}
                   searchPlaceholder={labels.formCategorySearch}
-                  value={formDraft.income.category as IncomeTransactionCategoryFixtureId}
+                  triggerRef={categoryTriggerRef}
+                  value={formDraft.income.category}
                 />
               ) : (
                 <TransactionCategoryField
+                  availability={categoryAvailability}
+                  categories={categories}
+                  categoryEmptyLabel={labels.categoryEmpty}
+                  categoryLoadError={labels.categoryLoadError}
+                  categoryLoadingLabel={labels.categoryLoading}
+                  categoryRetryLabel={labels.errorRetry}
+                  error={activeDisplayErrors.category}
                   helperText={labels.formCategoryHelper}
                   kind="EXPENSE"
                   label={labels.formCategory}
-                  language={language}
+                  onRetryCategories={retryCategories}
                   onValueChange={(category) => updateExpenseDraft({ category })}
                   placeholder={labels.formCategoryPlaceholder}
                   searchPlaceholder={labels.formCategorySearch}
-                  value={formDraft.expense.category as ExpenseTransactionCategoryFixtureId}
+                  triggerRef={categoryTriggerRef}
+                  value={formDraft.expense.category}
                 />
               )}
             </div>

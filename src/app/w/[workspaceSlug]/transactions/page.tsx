@@ -9,11 +9,15 @@ import { transactionListHref } from "@/modules/transactions/domain/transaction-l
 import { parseTransactionSearchParams } from "@/modules/transactions/queries/transaction-search-params";
 import { getServerTransactionsPage } from "@/modules/transactions/server/get-transactions-page";
 import { getServerTransactionAccountOptions } from "@/modules/transactions/server/get-transaction-account-options";
+import { getServerTransactionCategoryOptions } from "@/modules/transactions/server/get-transaction-category-options";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 import { TransactionsTableView } from "@/modules/transactions/ui/views/transactions-table-view";
 import {
   loadTransactionAccountOptions,
 } from "@/modules/transactions/domain/transaction-account-options";
+import {
+  loadTransactionCategoryOptions,
+} from "@/modules/transactions/domain/transaction-category-options";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 type TransactionsPageProps = {
@@ -44,6 +48,10 @@ export default async function TransactionsPage({ params, searchParams }: Transac
     actor,
     workspaceId: workspace.workspace.id,
   }));
+  const categoryOptions = loadTransactionCategoryOptions(() => getServerTransactionCategoryOptions({
+    actor,
+    workspaceId: workspace.workspace.id,
+  }));
   const page = getServerTransactionsPage({
     actor,
     workspaceId: workspace.workspace.id,
@@ -51,7 +59,11 @@ export default async function TransactionsPage({ params, searchParams }: Transac
     timeZone: workspace.preferences.timezone,
     unknownMerchantName: labels.unknownMerchant,
   });
-  const [transactionsPage, transactionAccounts] = await Promise.all([page, accountOptions]);
+  const [transactionsPage, transactionAccounts, transactionCategories] = await Promise.all([
+    page,
+    accountOptions,
+    categoryOptions,
+  ]);
   const canonicalHref = transactionListHref(destination, { ...transactionsPage.filters, page: transactionsPage.page });
   const requestedHref = requestHref(destination, query);
 
@@ -61,6 +73,7 @@ export default async function TransactionsPage({ params, searchParams }: Transac
   return (
     <TransactionsTableView
       accountOptions={transactionAccounts}
+      categoryOptions={transactionCategories}
       amountSortingAvailable={transactionsPage.amountSortingAvailable}
       defaultCurrency={isSupportedCurrency(workspace.preferences.currency) ? workspace.preferences.currency : "USD"}
       filterOptions={transactionsPage.options}

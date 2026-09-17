@@ -13,6 +13,7 @@ import {
 } from "@/modules/transactions/schemas/transaction-form.schema";
 import {
   clearUnavailableTransactionAccountSelections,
+  clearUnavailableTransactionCategorySelections,
   emptyTransactionFormErrors,
   validateTransactionDraft,
 } from "@/modules/transactions/ui/components/transaction-create-control";
@@ -155,6 +156,11 @@ const workspaceAccounts = [
   { id: "account-eur", name: "Travel", currency: "EUR" },
 ] as const;
 
+const workspaceCategories = [
+  { id: "00000000-0000-4000-8000-000000000001", name: "Groceries", kind: "EXPENSE" as const, systemKey: "expense:groceries" },
+  { id: "00000000-0000-4000-8000-000000000101", name: "Salary", kind: "INCOME" as const, systemKey: "income:salary" },
+] as const;
+
 test("Expense, Income, and Transfer validate only account ids from the real account option set", () => {
   const draft: TransactionFormDraft = {
     kind: "TRANSFER",
@@ -163,17 +169,54 @@ test("Expense, Income, and Transfer validate only account ids from the real acco
     transfer: { amount: "250", currency: "XAF", fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
   };
 
-  assert.equal(validateTransactionDraft({ ...draft, kind: "EXPENSE" }, workspaceAccounts).isValid, true);
-  assert.equal(validateTransactionDraft({ ...draft, kind: "INCOME" }, workspaceAccounts).isValid, true);
+  assert.equal(validateTransactionDraft({ ...draft, kind: "EXPENSE" }, workspaceAccounts, workspaceCategories).isValid, true);
+  assert.equal(validateTransactionDraft({ ...draft, kind: "INCOME" }, workspaceAccounts, workspaceCategories).isValid, true);
   assert.equal(
-    validateTransactionDraft({ ...draft, transfer: { ...draft.transfer, toAccount: "account-xaf" } }, workspaceAccounts).errors.toAccount,
+    validateTransactionDraft({ ...draft, transfer: { ...draft.transfer, toAccount: "account-xaf" } }, workspaceAccounts, workspaceCategories).errors.toAccount,
     "transactions.validation.sameTransferAccount",
   );
-  assert.equal(validateTransactionDraft(draft, workspaceAccounts).errors.toAccount, "transactions.validation.crossCurrencyTransferUnsupported");
+  assert.equal(validateTransactionDraft(draft, workspaceAccounts, workspaceCategories).errors.toAccount, "transactions.validation.crossCurrencyTransferUnsupported");
   assert.equal(
-    validateTransactionDraft({ ...draft, kind: "EXPENSE", expense: { ...draft.expense, account: "outside-workspace" } }, workspaceAccounts).errors.account,
+    validateTransactionDraft({ ...draft, kind: "EXPENSE", expense: { ...draft.expense, account: "outside-workspace" } }, workspaceAccounts, workspaceCategories).errors.account,
     "transactions.validation.accountUnavailable",
   );
+});
+
+test("real category IDs stay optional, validate against their compatible kind, and never leak across drafts", () => {
+  const draft: TransactionFormDraft = {
+    kind: "EXPENSE",
+    expense: { amount: "20", currency: "XAF", account: "account-xaf", category: workspaceCategories[0].id, merchant: "Market", date, time: "", note: "Lunch" },
+    income: { amount: "750", currency: "XAF", account: "account-xaf", category: workspaceCategories[1].id, source: "Salary", date, time: "", note: "September" },
+    transfer: { amount: "250", currency: "XAF", fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
+  };
+
+  assert.equal(validateTransactionDraft(draft, workspaceAccounts, workspaceCategories).isValid, true);
+  assert.equal(validateTransactionDraft({ ...draft, kind: "INCOME" }, workspaceAccounts, workspaceCategories).isValid, true);
+  assert.equal(
+    validateTransactionDraft({ ...draft, kind: "INCOME", income: { ...draft.income, category: workspaceCategories[0].id } }, workspaceAccounts, workspaceCategories).errors.category,
+    "transactions.validation.categoryUnavailable",
+  );
+  assert.equal(
+    validateTransactionDraft({ ...draft, expense: { ...draft.expense, category: "" } }, workspaceAccounts, workspaceCategories).isValid,
+    true,
+  );
+  assert.equal(draft.expense.category, workspaceCategories[0].id);
+  assert.equal(draft.income.category, workspaceCategories[1].id);
+});
+
+test("workspace category changes clear invalid custom selections while retaining still-authorized system selections", () => {
+  const draft: TransactionFormDraft = {
+    kind: "EXPENSE",
+    expense: { amount: "20", currency: "XAF", account: "account-xaf", category: "custom-expense", merchant: "Market", date, time: "", note: "Lunch" },
+    income: { amount: "750", currency: "XAF", account: "account-xaf", category: workspaceCategories[1].id, source: "Salary", date, time: "", note: "September" },
+    transfer: { amount: "250", currency: "XAF", fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
+  };
+  const updated = clearUnavailableTransactionCategorySelections(draft, workspaceCategories);
+
+  assert.equal(updated.expense.category, "");
+  assert.equal(updated.income.category, workspaceCategories[1].id);
+  assert.equal(updated.expense.merchant, "Market");
+  assert.equal(updated.income.source, "Salary");
 });
 
 test("workspace changes clear stale manual transaction selections", () => {

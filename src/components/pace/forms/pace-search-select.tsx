@@ -29,6 +29,7 @@ type PaceSearchSelectProps<T extends string> = {
   renderOption?: (option: SelectOption<T>, selected: boolean) => React.ReactNode;
   renderValue?: (option: SelectOption<T>) => React.ReactNode;
   triggerClassName?: string;
+  triggerRef?: React.RefObject<HTMLButtonElement | null>;
   invalid?: boolean;
 };
 
@@ -50,6 +51,7 @@ export function PaceSearchSelect<T extends string>({
   renderOption,
   renderValue,
   triggerClassName,
+  triggerRef,
   invalid = false,
 }: PaceSearchSelectProps<T>) {
   const [open, setOpen] = React.useState(false);
@@ -91,6 +93,7 @@ export function PaceSearchSelect<T extends string>({
             "data-[invalid=true]:border-red-400 data-[invalid=true]:ring-4 data-[invalid=true]:ring-red-100",
             triggerClassName,
           )}
+          ref={triggerRef}
           type="button"
         >
           <span className="min-w-0 flex-1 truncate">

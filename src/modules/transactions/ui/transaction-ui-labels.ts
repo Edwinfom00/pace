@@ -54,6 +54,9 @@ export type TransactionUiLabels = {
   readonly loading: string;
   readonly accountLoading: string;
   readonly accountLoadError: string;
+  readonly categoryLoading: string;
+  readonly categoryLoadError: string;
+  readonly categoryEmpty: string;
   readonly paginationPrevious: string;
   readonly paginationNext: string;
   readonly paginationPage: string;
@@ -192,6 +195,9 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     loading: labels["transactions.loading"],
     accountLoading: labels["transactions.accounts.loading"],
     accountLoadError: labels["transactions.accounts.error"],
+    categoryLoading: labels["transactions.categories.loading"],
+    categoryLoadError: labels["transactions.categories.error"],
+    categoryEmpty: labels["transactions.categories.empty"],
     paginationPrevious: labels["transactions.pagination.previous"],
     paginationNext: labels["transactions.pagination.next"],
     paginationPage: labels["transactions.pagination.page"],
@@ -212,6 +218,7 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
       "transactions.validation.currencyUnsupported": labels["transactions.validation.currencyUnsupported"],
       "transactions.validation.accountRequired": labels["transactions.validation.accountRequired"],
       "transactions.validation.accountUnavailable": labels["transactions.validation.accountUnavailable"],
+      "transactions.validation.categoryUnavailable": labels["transactions.validation.categoryUnavailable"],
       "transactions.validation.dateRequired": labels["transactions.validation.dateRequired"],
       "transactions.validation.invalidDate": labels["transactions.validation.invalidDate"],
       "transactions.validation.invalidTime": labels["transactions.validation.invalidTime"],

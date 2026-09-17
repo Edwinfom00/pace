@@ -9,7 +9,7 @@ import { transactionUiFixtures } from "@/modules/transactions/test/fixtures/tran
 import { TransactionAmountCell } from "@/modules/transactions/ui/components/transaction-amount-cell";
 import { formatTransactionFormDate, getTransactionFormToday } from "@/modules/transactions/ui/components/transaction-date-field";
 import { TransactionCategoryBadge } from "@/modules/transactions/ui/components/transaction-category-badge";
-import { getTransactionCategoryFixtures } from "@/modules/transactions/ui/components/transaction-category-fixtures";
+import { TransactionCategoryField } from "@/modules/transactions/ui/components/transaction-category-field";
 import { TransactionEmptyState } from "@/modules/transactions/ui/components/transaction-empty-state";
 import { TransactionFormFooter } from "@/modules/transactions/ui/components/transaction-form-footer";
 import { TransactionFormTip } from "@/modules/transactions/ui/components/transaction-form-tip";
@@ -23,6 +23,7 @@ import { TransactionStatusBadge } from "@/modules/transactions/ui/components/tra
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
 import { TransactionTableSkeleton } from "@/modules/transactions/ui/components/transaction-table-skeleton";
 import { formatTransactionFormTime } from "@/modules/transactions/ui/components/transaction-time-field";
+import { TransactionTransferForm } from "@/modules/transactions/ui/components/transaction-transfer-form";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 
 const labels = getTransactionUiLabels(getDashboardLabels("en"));
@@ -130,31 +131,89 @@ test("transactions labels are complete across English, French, and German", () =
   assert.equal(getTransactionUiLabels(getDashboardLabels("de")).actionAddIncome, "Einnahme hinzufügen");
 });
 
-test("income categories are isolated UI fixtures with localized income-only options", () => {
-  const incomeCategories = getTransactionCategoryFixtures("INCOME", "en");
-  const expenseCategories = getTransactionCategoryFixtures("EXPENSE", "en");
+test("real category fields expose their selected ledger ID, loading, error, and zero-category states", () => {
+  const categories = [
+    { id: "00000000-0000-4000-8000-000000000001", name: "Groceries", kind: "EXPENSE" as const, systemKey: "expense:groceries" },
+    { id: "00000000-0000-4000-8000-000000000101", name: "Salary", kind: "INCOME" as const, systemKey: "income:salary" },
+  ];
+  const common = {
+    categoryEmptyLabel: "No categories available.",
+    categoryLoadError: "Unable to load categories.",
+    categoryLoadingLabel: "Loading categories…",
+    categoryRetryLabel: "Try again",
+    helperText: "Choose a category for this transaction.",
+    kind: "EXPENSE" as const,
+    label: "Category",
+    onValueChange: () => undefined,
+    placeholder: "Select a category",
+    searchPlaceholder: "Search categories…",
+    value: "00000000-0000-4000-8000-000000000001",
+  };
 
-  assert.deepEqual(incomeCategories.map((category) => category.id), [
-    "salary",
-    "freelance-income",
-    "business-income",
-    "gift-income",
-    "investment-income",
-    "cashback",
-    "other-income",
-  ]);
-  assert.equal(getTransactionCategoryFixtures("INCOME", "fr")[0]?.label, "Salaire");
-  assert.equal(getTransactionCategoryFixtures("INCOME", "de")[4]?.label, "Anlageerträge");
-  assert.deepEqual(expenseCategories.map((category) => category.id), [
-    "other-expense",
-    "groceries",
-    "dining",
-    "transport",
-    "shopping",
-    "subscriptions",
-    "utilities",
-    "health",
-  ]);
+  const ready = renderToStaticMarkup(createElement(TransactionCategoryField, {
+    ...common,
+    availability: "ready",
+    categories,
+  }));
+  const loading = renderToStaticMarkup(createElement(TransactionCategoryField, {
+    ...common,
+    availability: "loading",
+    categories: [],
+    value: "",
+  }));
+  const error = renderToStaticMarkup(createElement(TransactionCategoryField, {
+    ...common,
+    availability: "error",
+    categories: [],
+    onRetryCategories: () => undefined,
+    value: "",
+  }));
+  const empty = renderToStaticMarkup(createElement(TransactionCategoryField, {
+    ...common,
+    availability: "ready",
+    categories: [],
+    value: "",
+  }));
+
+  assert.match(ready, /Groceries/);
+  assert.doesNotMatch(ready, /Salary/);
+  assert.match(loading, /aria-busy="true"/);
+  assert.match(loading, /Loading categories/);
+  assert.match(error, /Unable to load categories/);
+  assert.match(error, /Try again/);
+  assert.doesNotMatch(error, /Groceries|Salary/);
+  assert.match(empty, /No categories available/);
+});
+
+test("transfer composition has no category field", () => {
+  const markup = renderToStaticMarkup(createElement(TransactionTransferForm, {
+    accountAvailability: "ready",
+    accountLoadError: labels.accountLoadError,
+    accountLoadingLabel: labels.accountLoading,
+    accountRetryLabel: labels.errorRetry,
+    accounts: [],
+    draft: {
+      amount: "",
+      currency: "XAF",
+      date: new Date("2026-09-17T12:00:00.000Z"),
+      fromAccount: "",
+      note: "",
+      time: "",
+      toAccount: "",
+    },
+    fromAccountTriggerRef: { current: null },
+    labels,
+    language: "en",
+    locale: "en-US",
+    onCreateAccount: () => undefined,
+    onDraftChange: () => undefined,
+    onRetryAccounts: () => undefined,
+    toAccountTriggerRef: { current: null },
+    timeZone: "UTC",
+  }));
+
+  assert.doesNotMatch(markup, /Category/);
+  assert.doesNotMatch(markup, /Search categories/);
 });
 
 test("expense form finishing components stay compact, labelled, and visual-only", () => {

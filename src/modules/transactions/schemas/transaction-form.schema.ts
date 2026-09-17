@@ -10,6 +10,7 @@ export const TRANSACTION_FORM_VALIDATION_ERROR_CODES = {
   currencyUnsupported: "transactions.validation.currencyUnsupported",
   accountRequired: "transactions.validation.accountRequired",
   accountUnavailable: "transactions.validation.accountUnavailable",
+  categoryUnavailable: "transactions.validation.categoryUnavailable",
   dateRequired: "transactions.validation.dateRequired",
   invalidDate: "transactions.validation.invalidDate",
   invalidTime: "transactions.validation.invalidTime",
@@ -200,7 +201,7 @@ export type IncomeFormInput = z.input<typeof incomeFormSchema>;
 export type TransferFormInput = z.input<typeof transferFormSchema>;
 export type TransactionFormInput = z.input<typeof transactionFormSchema>;
 
-export type TransactionFormField = "amount" | "currency" | "account" | "date" | "time" | "note" | "merchant" | "source" | "fromAccount" | "toAccount";
+export type TransactionFormField = "amount" | "currency" | "account" | "category" | "date" | "time" | "note" | "merchant" | "source" | "fromAccount" | "toAccount";
 export type TransactionFormErrors = Partial<Record<TransactionFormField, TransactionFormValidationErrorCode>>;
 
 export type TransactionFormValidationResult =
@@ -211,6 +212,7 @@ const transactionFormFields = new Set<TransactionFormField>([
   "amount",
   "currency",
   "account",
+  "category",
   "date",
   "time",
   "note",
@@ -242,8 +244,8 @@ export function getTransferDisabledAccountIds(selectedAccountId: string): readon
 
 export function getFirstInvalidTransactionFormField(kind: TransactionFormKind, errors: TransactionFormErrors): TransactionFormField | null {
   const fieldsByKind: Readonly<Record<TransactionFormKind, readonly TransactionFormField[]>> = {
-    EXPENSE: ["amount", "currency", "merchant", "account", "date", "time", "note"],
-    INCOME: ["amount", "currency", "source", "account", "date", "time", "note"],
+    EXPENSE: ["amount", "currency", "merchant", "category", "account", "date", "time", "note"],
+    INCOME: ["amount", "currency", "source", "category", "account", "date", "time", "note"],
     TRANSFER: ["amount", "currency", "fromAccount", "toAccount", "date", "time", "note"],
   };
 
