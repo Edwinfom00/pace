@@ -1,6 +1,7 @@
 import { requireAuthenticatedActor } from "@/authorization/session";
 import { createExpense } from "@/modules/ledger/create-expense";
 import { createIncome } from "@/modules/ledger/create-income";
+import { createTransfer } from "@/modules/ledger/create-transfer";
 import { presentLedgerTransaction } from "@/modules/ledger/presenters";
 import { getLedgerService } from "@/modules/ledger/server";
 import { getFinancialInboxService } from "@/modules/financial-inbox/server";
@@ -46,6 +47,18 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
     const [{ workspaceId }, input] = await Promise.all([context.params, request.json()]);
 
     
+    if (isCanonicalTransferRequest(input)) {
+      const command = { ...input, workspaceId };
+      const result = await createTransfer(command);
+      if (!result.ok) {
+        return Response.json(
+          { error: "Transfer creation failed.", code: result.code },
+          { status: canonicalManualCreationStatus(result.code) },
+        );
+      }
+      return Response.json({ transfer: result.transfer }, { status: 201 });
+    }
+
     if (isCanonicalIncomeRequest(input)) {
       const command = { ...input, workspaceId };
       const result = await createIncome(command);
@@ -108,10 +121,35 @@ function isCanonicalIncomeRequest(input: unknown): input is Record<string, unkno
   );
 }
 
+function isCanonicalTransferRequest(input: unknown): input is Record<string, unknown> {
+  return Boolean(
+    input
+    && typeof input === "object"
+    && !Array.isArray(input)
+    && !("kind" in input)
+    && ("fromAccountId" in input || "toAccountId" in input),
+  );
+}
+
 function canonicalManualCreationStatus(code: string): number {
   if (code === "UNAUTHENTICATED") return 401;
   if (code === "WORKSPACE_FORBIDDEN") return 403;
-  if (code === "ACCOUNT_UNAVAILABLE" || code === "CURRENCY_MISMATCH") return 409;
-  if (code.startsWith("INVALID_") || code === "ACCOUNT_NOT_FOUND" || code === "CATEGORY_NOT_ALLOWED") return 400;
+  if (
+    code === "ACCOUNT_UNAVAILABLE"
+    || code === "CURRENCY_MISMATCH"
+    || code === "SAME_TRANSFER_ACCOUNT"
+    || code === "CROSS_CURRENCY_TRANSFER_UNSUPPORTED"
+  ) {
+    return 409;
+  }
+  if (
+    code.startsWith("INVALID_")
+    || code === "ACCOUNT_NOT_FOUND"
+    || code === "FROM_ACCOUNT_NOT_FOUND"
+    || code === "TO_ACCOUNT_NOT_FOUND"
+    || code === "CATEGORY_NOT_ALLOWED"
+  ) {
+    return 400;
+  }
   return 500;
 }

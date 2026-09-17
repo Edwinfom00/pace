@@ -5,7 +5,7 @@ import { isCurrencyCode, type CurrencyCode } from "@/money/currency";
 import type { LedgerTransactionStatus } from "./domain";
 
 const workspaceId = z.string().trim().min(1).max(255);
-const entityId = z.string().trim().uuid();
+export const manualTransactionEntityId = z.string().trim().uuid();
 const currency = z
   .string()
   .trim()
@@ -14,16 +14,21 @@ const currency = z
 const localDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/);
 const localTime = z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 
-/** The common, untrusted form-command boundary for manual account transactions. */
-export const manualTransactionCommandFields = {
+/** Shared, untrusted form-command fields for all manual financial commands. */
+export const manualTransactionCommonCommandFields = {
   workspaceId,
-  accountId: entityId,
   amount: z.string().trim().min(1).max(80),
   currency,
-  categoryId: entityId.nullish(),
   date: localDate,
   time: localTime.nullish(),
   note: z.string().trim().min(1).max(1_000).nullish(),
+};
+
+/** The common, untrusted form-command boundary for manual account transactions. */
+export const manualTransactionCommandFields = {
+  ...manualTransactionCommonCommandFields,
+  accountId: manualTransactionEntityId,
+  categoryId: manualTransactionEntityId.nullish(),
 };
 
 export function validateManualTransactionDate(

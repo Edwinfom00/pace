@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { AuthorizationError, ConflictError, NotFoundError } from "@/authorization/errors";
+import {
+  AuthorizationError,
+  ConflictError,
+  DomainConflictError,
+  NotFoundError,
+} from "@/authorization/errors";
 import {
   assertWorkspacePermission,
   type WorkspaceAction,
@@ -154,17 +159,22 @@ export class LedgerService {
     };
 
     if (parsed.kind === "TRANSFER") {
-      const [fromAccount, toAccount] = await Promise.all([
-        this.requireAccount(workspaceId, parsed.accountId),
-        this.requireAccount(workspaceId, parsed.transferAccountId),
-      ]);
+      const fromAccount = await this.requireAccount(workspaceId, parsed.accountId, "From account");
+      const toAccount = await this.requireAccount(workspaceId, parsed.transferAccountId, "To account");
 
       if (fromAccount.id === toAccount.id) {
-        throw new ConflictError("A transfer must use two different accounts.");
+        throw new DomainConflictError("SAME_TRANSFER_ACCOUNT", "A transfer must use two different accounts.");
+      }
+      if (fromAccount.currency !== toAccount.currency) {
+        throw new DomainConflictError(
+          "CROSS_CURRENCY_TRANSFER_UNSUPPORTED",
+          "Transfers between accounts with different currencies are not supported.",
+        );
       }
       this.assertCurrencyMatchesAccount(common.currency, fromAccount);
-      this.assertCurrencyMatchesAccount(common.currency, toAccount);
 
+      // M2 represents both directions of a transfer in one append-only ledger
+      // row. This one insert is therefore the complete atomic financial write.
       return this.repository.createTransaction({
         ...common,
         kind: "TRANSFER",
@@ -256,9 +266,13 @@ export class LedgerService {
     }
   }
 
-  private async requireAccount(workspaceId: string, accountId: string): Promise<LedgerAccountRecord> {
+  private async requireAccount(
+    workspaceId: string,
+    accountId: string,
+    label = "Account",
+  ): Promise<LedgerAccountRecord> {
     const account = await this.repository.findAccount(workspaceId, accountId);
-    if (!account) throw new NotFoundError("Account not found in this workspace.");
+    if (!account) throw new NotFoundError(`${label} not found in this workspace.`);
     if (account.archivedAt) throw new ConflictError("Archived accounts cannot accept new transactions.");
     return account;
   }
