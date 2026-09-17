@@ -3,6 +3,7 @@ import { z } from "zod";
 import { isCurrencyCode } from "@/money/currency";
 
 import {
+  LEDGER_ACCOUNT_TYPES,
   LEDGER_CATEGORY_KINDS,
   LEDGER_TRANSACTION_STATUSES,
 } from "./domain";
@@ -47,6 +48,7 @@ const transactionFields = {
 export const createLedgerAccountSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
+    type: z.enum(LEDGER_ACCOUNT_TYPES),
     currency: currencyCode,
     openingBalanceMinor: z
       .union([

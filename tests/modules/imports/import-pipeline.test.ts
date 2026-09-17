@@ -248,7 +248,7 @@ async function createFixture() {
   }
   workspaces.addMembership({ workspaceId: workspaceOne, userId: viewer.userId, role: "VIEWER", invitedByUserId: null, joinedAt: new Date() });
   const ledger = new LedgerService(ledgerRecords, workspaces);
-  const account = await ledger.createAccount(owner, workspaceOne, { name: "Checking", currency: "USD" });
+  const account = await ledger.createAccount(owner, workspaceOne, { name: "Checking", type: "CHECKING", currency: "USD" });
   const inbox = new FinancialInboxService(inboxRecords, ledgerRecords, workspaces);
   let insightRefreshes = 0;
   const imports = new ImportService(

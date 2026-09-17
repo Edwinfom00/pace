@@ -1,9 +1,9 @@
 import { requireAuthenticatedActor } from "@/authorization/session";
+import { createAccount } from "@/modules/ledger/create-account";
 import { presentLedgerAccount } from "@/modules/ledger/presenters";
 import { getLedgerService } from "@/modules/ledger/server";
-import { createLedgerAccountSchema } from "@/modules/ledger/validation";
 
-import { jsonError, parseJson } from "../../../../_lib/http";
+import { jsonError } from "../../../../_lib/http";
 
 interface RouteContext {
   params: Promise<{ workspaceId: string }>;
@@ -21,14 +21,26 @@ export async function GET(_request: Request, context: RouteContext): Promise<Res
 
 export async function POST(request: Request, context: RouteContext): Promise<Response> {
   try {
-    const [{ workspaceId }, actor, input] = await Promise.all([
-      context.params,
-      requireAuthenticatedActor(),
-      parseJson(request, createLedgerAccountSchema),
-    ]);
-    const account = await getLedgerService().createAccount(actor, workspaceId, input);
-    return Response.json({ account: presentLedgerAccount(account) }, { status: 201 });
+    const [{ workspaceId }, input] = await Promise.all([context.params, request.json()]);
+    const command = input && typeof input === "object" && !Array.isArray(input)
+      ? { ...input, workspaceId }
+      : input;
+    const result = await createAccount(command);
+    if (!result.ok) {
+      return Response.json(
+        { error: "Account creation failed.", code: result.code },
+        { status: accountCreationStatus(result.code) },
+      );
+    }
+    return Response.json({ account: result.account }, { status: 201 });
   } catch (error) {
     return jsonError(error);
   }
+}
+
+function accountCreationStatus(code: string): number {
+  if (code === "UNAUTHENTICATED") return 401;
+  if (code === "WORKSPACE_FORBIDDEN") return 403;
+  if (code.startsWith("INVALID_")) return 400;
+  return 500;
 }

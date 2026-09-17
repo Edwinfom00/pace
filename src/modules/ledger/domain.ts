@@ -17,6 +17,7 @@ export interface LedgerAccountRecord {
   id: string;
   workspaceId: string;
   name: string;
+  type: LedgerAccountType;
   currency: string;
   openingBalanceMinor: bigint;
   createdByUserId: string;

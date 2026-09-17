@@ -47,8 +47,8 @@ async function createFixture() {
     invitedByUserId: null,
     joinedAt: now,
   });
-  const cash = await ledger.createAccount(owner, workspaceOne, { name: "Cash", currency: "XAF" });
-  const savings = await ledger.createAccount(owner, workspaceOne, { name: "Savings", currency: "XAF" });
+  const cash = await ledger.createAccount(owner, workspaceOne, { name: "Cash", type: "CASH", currency: "XAF" });
+  const savings = await ledger.createAccount(owner, workspaceOne, { name: "Savings", type: "SAVINGS", currency: "XAF" });
   return { cash, ledger, ledgerRecords, plans, plansRecords, savings, workspaces };
 }
 
@@ -106,7 +106,7 @@ test("budget summaries use only posted ledger transactions, exclude transfers, a
 
 test("budget amount aggregation fails safely without an explicit FX strategy", async () => {
   const { ledger, plans } = await createFixture();
-  const usd = await ledger.createAccount(owner, workspaceOne, { name: "USD cash", currency: "USD" });
+  const usd = await ledger.createAccount(owner, workspaceOne, { name: "USD cash", type: "CASH", currency: "USD" });
   await plans.createBudget(owner, workspaceOne, {
     scope: "OVERALL",
     categoryId: null,

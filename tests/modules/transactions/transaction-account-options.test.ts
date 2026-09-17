@@ -37,11 +37,11 @@ async function fixture() {
     });
   }
 
-  const active = await service.createAccount(owner, workspaceOne, { name: "Everyday", currency: "XAF" });
-  const archived = await service.createAccount(owner, workspaceOne, { name: "Previous bank", currency: "EUR" });
+  const active = await service.createAccount(owner, workspaceOne, { name: "Everyday", type: "CHECKING", currency: "XAF" });
+  const archived = await service.createAccount(owner, workspaceOne, { name: "Previous bank", type: "CHECKING", currency: "EUR" });
   const archivedRecord = { ...archived, archivedAt: new Date("2026-09-01T00:00:00.000Z") };
   ledger.accounts.set(archived.id, archivedRecord);
-  const outside = await service.createAccount(owner, workspaceTwo, { name: "Other workspace", currency: "USD" });
+  const outside = await service.createAccount(owner, workspaceTwo, { name: "Other workspace", type: "CHECKING", currency: "USD" });
 
   return { active, archived: archivedRecord, ledger, outside, workspaces };
 }

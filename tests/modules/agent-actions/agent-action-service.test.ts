@@ -61,7 +61,7 @@ async function createFixture() {
     joinedAt: new Date(),
   });
 
-  const bank = await ledger.createAccount(owner, workspaceOne, { name: "Bank", currency: "XAF" });
+  const bank = await ledger.createAccount(owner, workspaceOne, { name: "Bank", type: "CHECKING", currency: "XAF" });
   return { actions, bank, ledger, ledgerRecords, service, workspaces };
 }
 
@@ -108,7 +108,7 @@ test("natural-language intents become typed server-side drafts without model mon
   assert.equal(income.draft.amountMinor, "150000");
   assert.equal(income.draft.categoryId, SYSTEM_OTHER_INCOME_ID);
 
-  const momo = await ledger.createAccount(owner, workspaceOne, { name: "MoMo", currency: "XAF" });
+  const momo = await ledger.createAccount(owner, workspaceOne, { name: "MoMo", type: "MOBILE_MONEY", currency: "XAF" });
   const transfer = await createDraft(service, {
     kind: "TRANSFER",
     amountText: "25k",
@@ -189,7 +189,7 @@ test("approved execution is idempotent and verifies the persisted transaction", 
 
 test("transfers stay out of income and spending totals after approved execution", async () => {
   const { ledger, service } = await createFixture();
-  const momo = await ledger.createAccount(owner, workspaceOne, { name: "MoMo", currency: "XAF" });
+  const momo = await ledger.createAccount(owner, workspaceOne, { name: "MoMo", type: "MOBILE_MONEY", currency: "XAF" });
   const transfer = await createDraft(service, {
     kind: "TRANSFER",
     amountText: "25k",

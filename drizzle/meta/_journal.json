@@ -120,6 +120,13 @@
       "when": 1789402500000,
       "tag": "0016_ready_onboarding_state",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789647147890,
+      "tag": "0017_colossal_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

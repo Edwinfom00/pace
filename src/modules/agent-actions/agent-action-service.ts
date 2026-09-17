@@ -133,6 +133,7 @@ export class AgentActionService {
       accounts: transactionContext.accounts.map((account) => ({
         ...account,
         openingBalanceMinor: 0n,
+        type: "OTHER",
         workspaceId,
         createdByUserId: actor.userId,
         archivedAt: null,

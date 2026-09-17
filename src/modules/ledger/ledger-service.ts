@@ -48,6 +48,7 @@ export class LedgerService {
       id: randomUUID(),
       workspaceId,
       name: parsed.name,
+      type: parsed.type,
       currency: toCurrencyCode(parsed.currency),
       openingBalanceMinor: parsed.openingBalanceMinor,
       createdByUserId: actor.userId,

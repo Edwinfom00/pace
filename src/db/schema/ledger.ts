@@ -14,6 +14,8 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
+import { LEDGER_ACCOUNT_TYPES } from "@/modules/ledger/domain";
+
 import { users } from "./auth";
 import { workspaces } from "./workspaces";
 
@@ -25,6 +27,7 @@ export const ledgerTransactionKind = pgEnum("ledger_transaction_kind", [
   "REFUND",
 ]);
 export const ledgerTransactionStatus = pgEnum("ledger_transaction_status", ["PENDING", "POSTED"]);
+export const ledgerAccountType = pgEnum("ledger_account_type", LEDGER_ACCOUNT_TYPES);
 
 export const ledgerAccounts = pgTable(
   "ledger_account",
@@ -34,6 +37,7 @@ export const ledgerAccounts = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 120 }).notNull(),
+    type: ledgerAccountType("type").notNull(),
     currency: varchar("currency", { length: 3 }).notNull(),
     openingBalanceMinor: bigint("opening_balance_minor", { mode: "bigint" })
       .notNull()

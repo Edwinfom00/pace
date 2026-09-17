@@ -49,6 +49,7 @@ test("ledger creation is workspace-scoped, validates members, and persists sourc
   const { service } = await createFixture();
   const account = await service.createAccount(owner, workspaceOne, {
     name: "Main checking",
+    type: "CHECKING",
     currency: "usd",
     openingBalanceMinor: "2500",
   });
@@ -90,6 +91,7 @@ test("ledger creation is workspace-scoped, validates members, and persists sourc
 
   const secondWorkspaceAccount = await service.createAccount(owner, workspaceTwo, {
     name: "Separate checking",
+    type: "CHECKING",
     currency: "USD",
   });
   const sameFingerprintElsewhere = await service.createTransaction(owner, workspaceTwo, {
@@ -119,8 +121,8 @@ test("ledger creation is workspace-scoped, validates members, and persists sourc
 
 test("transfers are grouped and refunds inherit the original expense attribution", async () => {
   const { service } = await createFixture();
-  const checking = await service.createAccount(owner, workspaceOne, { name: "Checking", currency: "USD" });
-  const savings = await service.createAccount(owner, workspaceOne, { name: "Savings", currency: "USD" });
+  const checking = await service.createAccount(owner, workspaceOne, { name: "Checking", type: "CHECKING", currency: "USD" });
+  const savings = await service.createAccount(owner, workspaceOne, { name: "Savings", type: "SAVINGS", currency: "USD" });
   const merchant = await service.createMerchant(owner, workspaceOne, { name: "Corner shop" });
 
   const expense = await service.createTransaction(owner, workspaceOne, {
@@ -169,8 +171,8 @@ test("transfers are grouped and refunds inherit the original expense attribution
 
 test("ledger lookups reject cross-workspace entities and viewers cannot write", async () => {
   const { service } = await createFixture();
-  const accountOne = await service.createAccount(owner, workspaceOne, { name: "One", currency: "USD" });
-  const accountTwo = await service.createAccount(owner, workspaceTwo, { name: "Two", currency: "USD" });
+  const accountOne = await service.createAccount(owner, workspaceOne, { name: "One", type: "CHECKING", currency: "USD" });
+  const accountTwo = await service.createAccount(owner, workspaceTwo, { name: "Two", type: "CHECKING", currency: "USD" });
   const categoryTwo = await service.createCategory(owner, workspaceTwo, {
     name: "Workspace two category",
     kind: "EXPENSE",
@@ -199,7 +201,7 @@ test("ledger lookups reject cross-workspace entities and viewers cannot write", 
     NotFoundError,
   );
   await assert.rejects(
-    service.createAccount(viewer, workspaceOne, { name: "Forbidden", currency: "USD" }),
+    service.createAccount(viewer, workspaceOne, { name: "Forbidden", type: "CHECKING", currency: "USD" }),
     AuthorizationError,
   );
 

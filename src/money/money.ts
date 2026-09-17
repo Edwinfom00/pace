@@ -5,6 +5,29 @@ export interface Money {
   readonly minor: bigint;
 }
 
+const MAX_POSTGRES_BIGINT = 9_223_372_036_854_775_807n;
+
+
+export function parseDecimalMoney(value: string, currency: CurrencyCode | string): Money | null {
+  const normalized = value.normalize("NFKC").trim();
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(normalized);
+  if (!match) return null;
+
+  const resolvedCurrency = toCurrencyCode(currency);
+  const exponent = getCurrencyExponent(resolvedCurrency);
+  const whole = BigInt(match[2] ?? "0");
+  const fraction = match[3] ?? "";
+
+  // Extra decimal digits are valid only when they do not imply rounding.
+  if (fraction.length > exponent && /[1-9]/.test(fraction.slice(exponent))) return null;
+
+  const fractionMinor = BigInt((fraction + "0".repeat(exponent)).slice(0, exponent) || "0");
+  const minor = whole * 10n ** BigInt(exponent) + fractionMinor;
+  if (minor > MAX_POSTGRES_BIGINT) return null;
+
+  return money(resolvedCurrency, match[1] === "-" ? -minor : minor);
+}
+
 export class CurrencyMismatchError extends Error {
   constructor(expected: string, received: string) {
     super(`Cannot aggregate ${received} with ${expected} without an explicit conversion strategy.`);

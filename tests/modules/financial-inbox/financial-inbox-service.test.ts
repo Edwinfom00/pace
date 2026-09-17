@@ -51,8 +51,8 @@ async function createFixture() {
     invitedByUserId: null,
     joinedAt: now,
   });
-  const account = await ledger.createAccount(owner, workspaceOne, { name: "Bank", currency: "XAF" });
-  const otherAccount = await ledger.createAccount(owner, workspaceTwo, { name: "Other bank", currency: "XAF" });
+  const account = await ledger.createAccount(owner, workspaceOne, { name: "Bank", type: "CHECKING", currency: "XAF" });
+  const otherAccount = await ledger.createAccount(owner, workspaceTwo, { name: "Other bank", type: "CHECKING", currency: "XAF" });
   return { account, financial, ledger, ledgerRecords, otherAccount, service };
 }
 

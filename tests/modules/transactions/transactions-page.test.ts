@@ -31,10 +31,10 @@ async function fixture() {
     workspaces.addMembership({ workspaceId: id, userId, role: "OWNER", invitedByUserId: null, joinedAt: new Date() });
   }
 
-  const checking = await service.createAccount(owner, workspaceId, { name: "Main account", currency: "USD" });
-  const card = await service.createAccount(owner, workspaceId, { name: "Visa •••• 4242", currency: "EUR" });
-  const savings = await service.createAccount(owner, workspaceId, { name: "Savings", currency: "USD" });
-  const outside = await service.createAccount(owner, otherWorkspaceId, { name: "Outside", currency: "USD" });
+  const checking = await service.createAccount(owner, workspaceId, { name: "Main account", type: "CHECKING", currency: "USD" });
+  const card = await service.createAccount(owner, workspaceId, { name: "Visa •••• 4242", type: "CREDIT_CARD", currency: "EUR" });
+  const savings = await service.createAccount(owner, workspaceId, { name: "Savings", type: "SAVINGS", currency: "USD" });
+  const outside = await service.createAccount(owner, otherWorkspaceId, { name: "Outside", type: "CHECKING", currency: "USD" });
   const carrefour = await service.createMerchant(owner, workspaceId, { name: "Carrefour Market" });
   const yango = await service.createMerchant(owner, workspaceId, { name: "Yango" });
 
