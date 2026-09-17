@@ -18,6 +18,7 @@ import { TransactionTableSkeleton } from "../components/transaction-table-skelet
 import { TransactionToolbar } from "../components/transaction-toolbar";
 import { TransactionCreateControl } from "../components/transaction-create-control";
 import type { TransactionUiLabels } from "../transaction-ui-labels";
+import type { TransactionAccountOptionsState } from "../../domain/transaction-account-options";
 
 export function TransactionsTableView({
   transactions,
@@ -29,6 +30,7 @@ export function TransactionsTableView({
   filterState,
   filterOptions,
   amountSortingAvailable,
+  accountOptions,
   defaultCurrency,
   workspaceId,
   workspaceSlug,
@@ -44,6 +46,7 @@ export function TransactionsTableView({
   readonly filterState: TransactionFilterState & { readonly page: number };
   readonly filterOptions: TransactionFilterOptions;
   readonly amountSortingAvailable: boolean;
+  readonly accountOptions: TransactionAccountOptionsState;
   readonly defaultCurrency: string;
   readonly workspaceId: string;
   readonly workspaceSlug: string;
@@ -79,7 +82,15 @@ export function TransactionsTableView({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <TransactionsAskPace language={language} locale={locale} pageContext={pageContext} timeZone={timeZone} workspaceId={workspaceId} />
-          <TransactionCreateControl defaultCurrency={defaultCurrency} labels={labels} language={language} locale={locale} timeZone={timeZone} />
+          <TransactionCreateControl
+            accountOptions={accountOptions}
+            defaultCurrency={defaultCurrency}
+            key={workspaceId}
+            labels={labels}
+            language={language}
+            locale={locale}
+            timeZone={timeZone}
+          />
         </div>
       </header>
       <TransactionToolbar amountSortingAvailable={amountSortingAvailable} labels={labels} locale={locale} options={filterOptions} pathname={pathname} state={filterState} />

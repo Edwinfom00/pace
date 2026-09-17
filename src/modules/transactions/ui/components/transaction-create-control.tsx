@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import { FiPlus } from "react-icons/fi";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import type { LedgerAccountType } from "@/modules/ledger/domain";
-import { transactionAccountFixtures } from "@/modules/transactions/dev/transaction-form.fixtures";
+import type { TransactionAccountOptionsState } from "@/modules/transactions/domain/transaction-account-options";
 import {
   getFirstInvalidTransactionFormField,
   validateTransactionForm,
@@ -30,7 +30,6 @@ import type {
 } from "./transaction-category-fixtures";
 import type { TransactionAccountOption } from "./transaction-account.types";
 import { TransactionAccountField } from "./transaction-account-field";
-import type { AccountDraftOption } from "./transaction-account.types";
 import { TransactionMerchantField } from "./transaction-merchant-field";
 import { TransactionDateField, getTransactionFormToday } from "./transaction-date-field";
 import { TransactionFormFooter } from "./transaction-form-footer";
@@ -68,58 +67,89 @@ function localizeTransactionFormErrors(
   return localized;
 }
 
-function validateTransactionDraft(
+export function validateTransactionDraft(
   draft: TransactionFormDraft,
   accounts: readonly TransactionAccountOption[],
 ): TransactionFormValidationResult {
+  const availableAccountIds = new Set(accounts.map((account) => account.id));
+  let result: TransactionFormValidationResult;
+
   if (draft.kind === "EXPENSE") {
-    return validateTransactionForm({ kind: "EXPENSE", ...draft.expense });
+    result = validateTransactionForm({ kind: "EXPENSE", ...draft.expense });
+  } else if (draft.kind === "INCOME") {
+    result = validateTransactionForm({ kind: "INCOME", ...draft.income });
+  } else {
+    const fromAccount = accounts.find((account) => account.id === draft.transfer.fromAccount);
+    const toAccount = accounts.find((account) => account.id === draft.transfer.toAccount);
+    result = validateTransactionForm({
+      kind: "TRANSFER",
+      ...draft.transfer,
+      fromAccountCurrency: fromAccount?.currency,
+      toAccountCurrency: toAccount?.currency,
+    });
   }
 
-  if (draft.kind === "INCOME") {
-    return validateTransactionForm({ kind: "INCOME", ...draft.income });
+  const errors = { ...result.errors };
+  const unavailable = (accountId: string, field: "account" | "fromAccount" | "toAccount") => {
+    if (accountId && !availableAccountIds.has(accountId)) {
+      errors[field] ??= "transactions.validation.accountUnavailable";
+    }
+  };
+  if (draft.kind === "TRANSFER") {
+    unavailable(draft.transfer.fromAccount, "fromAccount");
+    unavailable(draft.transfer.toAccount, "toAccount");
+  } else {
+    unavailable(draft.kind === "EXPENSE" ? draft.expense.account : draft.income.account, "account");
   }
 
-  const fromAccount = accounts.find((account) => account.id === draft.transfer.fromAccount);
-  const toAccount = accounts.find((account) => account.id === draft.transfer.toAccount);
-  return validateTransactionForm({
-    kind: "TRANSFER",
-    ...draft.transfer,
-    fromAccountCurrency: fromAccount?.currency,
-    toAccountCurrency: toAccount?.currency,
-  });
+  return Object.keys(errors).length === 0 ? result : { isValid: false, errors };
 }
 
-export function assignCreatedAccountToTransactionDraft(
+/** Removes selections that no longer exist in the active workspace's account projection. */
+export function clearUnavailableTransactionAccountSelections(
   draft: TransactionFormDraft,
-  target: AccountCreationTarget,
-  accountId: string,
+  accounts: readonly TransactionAccountOption[],
 ): TransactionFormDraft {
-  if (target === "INCOME_ACCOUNT") {
-    return { ...draft, income: { ...draft.income, account: accountId } };
+  const accountIds = new Set(accounts.map((account) => account.id));
+  const expenseAccount = accountIds.has(draft.expense.account) ? draft.expense.account : "";
+  const incomeAccount = accountIds.has(draft.income.account) ? draft.income.account : "";
+  const fromAccount = accountIds.has(draft.transfer.fromAccount) ? draft.transfer.fromAccount : "";
+  const toAccount = accountIds.has(draft.transfer.toAccount) ? draft.transfer.toAccount : "";
+
+  if (
+    expenseAccount === draft.expense.account
+    && incomeAccount === draft.income.account
+    && fromAccount === draft.transfer.fromAccount
+    && toAccount === draft.transfer.toAccount
+  ) {
+    return draft;
   }
-  if (target === "FROM") {
-    return { ...draft, transfer: { ...draft.transfer, fromAccount: accountId } };
-  }
-  if (target === "TO") {
-    return { ...draft, transfer: { ...draft.transfer, toAccount: accountId } };
-  }
-  return { ...draft, expense: { ...draft.expense, account: accountId } };
+
+  return {
+    ...draft,
+    expense: { ...draft.expense, account: expenseAccount },
+    income: { ...draft.income, account: incomeAccount },
+    transfer: { ...draft.transfer, fromAccount, toAccount },
+  };
 }
 
 export function TransactionCreateControl({
+  accountOptions,
   defaultCurrency,
   labels,
   language,
   locale,
   timeZone,
 }: {
+  readonly accountOptions: TransactionAccountOptionsState;
   readonly defaultCurrency: string;
   readonly labels: TransactionUiLabels;
   readonly language: "en" | "fr" | "de";
   readonly locale: string;
   readonly timeZone: string;
 }) {
+  const router = useRouter();
+  const [isRetryingAccounts, startAccountRetry] = useTransition();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<TransactionDialogView>("transaction");
   const [formDraft, setFormDraft] = useState<TransactionFormDraft>(() => {
@@ -140,7 +170,6 @@ export function TransactionCreateControl({
       transfer: { ...commonDraft, fromAccount: "", toAccount: "" },
     };
   });
-  const [createdAccounts, setCreatedAccounts] = useState<readonly AccountDraftOption[]>([]);
   const [createAccountTarget, setCreateAccountTarget] = useState<AccountCreationTarget>("EXPENSE_ACCOUNT");
   const [createAccountDraft, setCreateAccountDraft] = useState<CreateAccountFormDraft>({
     name: "",
@@ -150,7 +179,6 @@ export function TransactionCreateControl({
   });
   const [validationErrors, setValidationErrors] = useState<TransactionFormErrorsByKind>(emptyTransactionFormErrors);
   const [submittedKinds, setSubmittedKinds] = useState<SubmittedTransactionFormKinds>(emptySubmittedTransactionFormKinds);
-  const localAccountId = useRef(0);
   const amountInputRef = useRef<HTMLInputElement>(null);
   const currencyTriggerRef = useRef<HTMLButtonElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
@@ -162,15 +190,8 @@ export function TransactionCreateControl({
   const noteTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const kind = formDraft.kind;
   const activeAccountDraft = kind === "INCOME" ? formDraft.income : formDraft.expense;
-  const accountTypeLabels = {
-    CASH: labels.accountTypeCash,
-    CHECKING: labels.accountTypeChecking,
-    SAVINGS: labels.accountTypeSavings,
-    CREDIT_CARD: labels.accountTypeCreditCard,
-    MOBILE_MONEY: labels.accountTypeMobileMoney,
-    OTHER: labels.accountTypeOther,
-  } satisfies Readonly<Record<LedgerAccountType, string>>;
-  const accounts = useMemo(() => [...transactionAccountFixtures, ...createdAccounts], [createdAccounts]);
+  const accounts = accountOptions.accounts;
+  const accountAvailability = isRetryingAccounts ? "loading" : accountOptions.status;
   const activeErrors = validationErrors[kind];
   const activeDisplayErrors = localizeTransactionFormErrors(labels, activeErrors);
 
@@ -279,45 +300,22 @@ export function TransactionCreateControl({
 
     setView("transaction");
     setCreateAccountTarget("EXPENSE_ACCOUNT");
-    setCreatedAccounts([]);
     setValidationErrors(emptyTransactionFormErrors());
     setSubmittedKinds(emptySubmittedTransactionFormKinds());
-    setFormDraft((current) => ({
-      ...current,
-      expense: {
-        ...current.expense,
-        account: current.expense.account.startsWith("draft-account-") ? "" : current.expense.account,
-      },
-      income: {
-        ...current.income,
-        account: current.income.account.startsWith("draft-account-") ? "" : current.income.account,
-      },
-      transfer: {
-        ...current.transfer,
-        fromAccount: current.transfer.fromAccount.startsWith("draft-account-") ? "" : current.transfer.fromAccount,
-        toAccount: current.transfer.toAccount.startsWith("draft-account-") ? "" : current.transfer.toAccount,
-      },
-    }));
     setCreateAccountDraft({ name: "", type: "", currency: "", openingBalance: "" });
   }
 
-  function handleCreateAccountDraft(draft: CreateAccountFormDraft & { readonly type: LedgerAccountType }) {
-    const createdAccount: AccountDraftOption = {
-      id: `draft-account-${localAccountId.current += 1}`,
-      name: draft.name,
-      type: draft.type,
-      currency: draft.currency,
-      openingBalance: draft.openingBalance,
-      source: "local-draft",
-    };
+  function retryAccounts() {
+    startAccountRetry(() => router.refresh());
+  }
 
-    const nextAccounts = [...accounts, createdAccount];
-    const nextDraft = assignCreatedAccountToTransactionDraft(formDraft, createAccountTarget, createdAccount.id);
-
-    setCreatedAccounts((current) => [...current, createdAccount]);
-    commitTransactionDraft(nextDraft, nextAccounts);
-    setCreateAccountDraft({ name: "", type: "", currency: "", openingBalance: "" });
-    returnToTransaction();
+  function selectAccount(accountId: string) {
+    const account = accounts.find((candidate) => candidate.id === accountId);
+    if (formDraft.kind === "EXPENSE") {
+      updateExpenseDraft({ account: accountId, currency: account?.currency ?? formDraft.expense.currency });
+    } else if (formDraft.kind === "INCOME") {
+      updateIncomeDraft({ account: accountId, currency: account?.currency ?? formDraft.income.currency });
+    }
   }
 
   return (
@@ -360,12 +358,14 @@ export function TransactionCreateControl({
             labels={labels}
             language={language}
             onCancel={returnToTransaction}
-            onCreateDraft={handleCreateAccountDraft}
             onDraftChange={setCreateAccountDraft}
           />
         ) : kind === "TRANSFER" ? (
           <TransactionTransferForm
-            accountTypeLabels={accountTypeLabels}
+            accountAvailability={accountAvailability}
+            accountLoadError={labels.accountLoadError}
+            accountLoadingLabel={labels.accountLoading}
+            accountRetryLabel={labels.errorRetry}
             accounts={accounts}
             amountInputRef={amountInputRef}
             currencyTriggerRef={currencyTriggerRef}
@@ -381,6 +381,7 @@ export function TransactionCreateControl({
               ...formDraft,
               transfer: { ...formDraft.transfer, ...update },
             })}
+            onRetryAccounts={retryAccounts}
             noteTextAreaRef={noteTextAreaRef}
             timeZone={timeZone}
             timeTriggerRef={timeTriggerRef}
@@ -390,6 +391,7 @@ export function TransactionCreateControl({
           <div className="grid gap-4">
             <TransactionAmountField
               currency={activeAccountDraft.currency}
+              currencyDisabled={Boolean(accounts.find((account) => account.id === activeAccountDraft.account))}
               currencyError={activeDisplayErrors.currency}
               currencyEmptyLabel={labels.formCurrencyEmpty}
               currencyLabel={labels.formCurrency}
@@ -444,7 +446,10 @@ export function TransactionCreateControl({
             </div>
 
             <TransactionAccountField
-              accountTypeLabels={accountTypeLabels}
+              availability={accountAvailability}
+              accountLoadError={labels.accountLoadError}
+              accountLoadingLabel={labels.accountLoading}
+              accountRetryLabel={labels.errorRetry}
               accounts={accounts}
               createAccountLabel={labels.accountsCreate}
               createFirstAccountLabel={labels.accountsCreateFirst}
@@ -455,10 +460,8 @@ export function TransactionCreateControl({
               label={labels.formAccount}
               noResultsLabel={labels.accountsSearchNoResults}
               onCreateAccount={() => handleCreateAccountRequest(kind === "INCOME" ? "INCOME_ACCOUNT" : "EXPENSE_ACCOUNT")}
-              onValueChange={(account) => {
-                if (kind === "INCOME") updateIncomeDraft({ account });
-                else updateExpenseDraft({ account });
-              }}
+              onRetryAccounts={retryAccounts}
+              onValueChange={selectAccount}
               placeholder={labels.formAccountPlaceholder}
               preferredCurrency={activeAccountDraft.currency}
               searchPlaceholder={labels.formAccountSearch}

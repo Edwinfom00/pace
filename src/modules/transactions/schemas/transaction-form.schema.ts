@@ -9,6 +9,7 @@ export const TRANSACTION_FORM_VALIDATION_ERROR_CODES = {
   currencyRequired: "transactions.validation.currencyRequired",
   currencyUnsupported: "transactions.validation.currencyUnsupported",
   accountRequired: "transactions.validation.accountRequired",
+  accountUnavailable: "transactions.validation.accountUnavailable",
   dateRequired: "transactions.validation.dateRequired",
   invalidDate: "transactions.validation.invalidDate",
   invalidTime: "transactions.validation.invalidTime",

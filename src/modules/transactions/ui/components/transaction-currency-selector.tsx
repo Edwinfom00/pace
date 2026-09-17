@@ -15,6 +15,7 @@ import {
 type TransactionCurrencySelectorProps = {
   readonly ariaLabel: string;
   readonly describedBy?: string;
+  readonly disabled?: boolean;
   readonly emptyLabel: string;
   readonly invalid?: boolean;
   readonly language: OnboardingLanguage;
@@ -27,6 +28,7 @@ type TransactionCurrencySelectorProps = {
 export function TransactionCurrencySelector({
   ariaLabel,
   describedBy,
+  disabled = false,
   emptyLabel,
   invalid = false,
   language,
@@ -72,8 +74,9 @@ export function TransactionCurrencySelector({
           aria-haspopup="listbox"
           aria-label={ariaLabel}
           aria-invalid={invalid || undefined}
+          disabled={disabled}
           className={cn(
-            "flex min-w-22 cursor-pointer items-center justify-center gap-1.5 px-3 text-[13px] font-semibold text-[#263550] outline-none transition-colors hover:bg-[#f7f9fc] focus-visible:bg-[#f7f9fc] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#5e8fe8] sm:min-w-[104px] sm:px-4",
+            "flex min-w-22 cursor-pointer items-center justify-center gap-1.5 px-3 text-[13px] font-semibold text-[#263550] outline-none transition-colors hover:bg-[#f7f9fc] focus-visible:bg-[#f7f9fc] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#5e8fe8] disabled:cursor-default disabled:text-[#526987] disabled:hover:bg-transparent sm:min-w-[104px] sm:px-4",
             invalid && "text-[#a83142] focus-visible:ring-[#c55b68]",
           )}
           ref={triggerRef}

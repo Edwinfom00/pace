@@ -3,7 +3,6 @@
 import type { RefObject } from "react";
 import { FiArrowDown } from "react-icons/fi";
 
-import type { LedgerAccountType } from "@/modules/ledger/domain";
 import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 import {
   getTransferDisabledAccountIds,
@@ -23,7 +22,10 @@ import { TransactionTimeField } from "./transaction-time-field";
 export type { TransferTransactionFormDraft } from "@/modules/transactions/schemas/transaction-form.schema";
 
 export function TransactionTransferForm({
-  accountTypeLabels,
+  accountAvailability,
+  accountLoadError,
+  accountLoadingLabel,
+  accountRetryLabel,
   accounts,
   amountInputRef,
   currencyTriggerRef,
@@ -36,12 +38,16 @@ export function TransactionTransferForm({
   locale,
   onCreateAccount,
   onDraftChange,
+  onRetryAccounts,
   noteTextAreaRef,
   timeZone,
   timeTriggerRef,
   toAccountTriggerRef,
 }: {
-  readonly accountTypeLabels: Readonly<Record<LedgerAccountType, string>>;
+  readonly accountAvailability: "loading" | "ready" | "error";
+  readonly accountLoadError: string;
+  readonly accountLoadingLabel: string;
+  readonly accountRetryLabel: string;
   readonly accounts: readonly TransactionAccountOption[];
   readonly amountInputRef?: RefObject<HTMLInputElement | null>;
   readonly currencyTriggerRef?: RefObject<HTMLButtonElement | null>;
@@ -54,15 +60,33 @@ export function TransactionTransferForm({
   readonly locale: string;
   readonly onCreateAccount: (target: "FROM" | "TO") => void;
   readonly onDraftChange: (update: Partial<TransferTransactionFormDraft>) => void;
+  readonly onRetryAccounts: () => void;
   readonly noteTextAreaRef?: RefObject<HTMLTextAreaElement | null>;
   readonly timeZone: string;
   readonly timeTriggerRef?: RefObject<HTMLButtonElement | null>;
   readonly toAccountTriggerRef: RefObject<HTMLButtonElement | null>;
 }) {
+  const fromAccount = accounts.find((account) => account.id === draft.fromAccount);
+  const toAccount = accounts.find((account) => account.id === draft.toAccount);
+
+  function updateAccount(
+    field: "fromAccount" | "toAccount",
+    accountId: string,
+  ) {
+    const selected = accounts.find((account) => account.id === accountId);
+    const nextFrom = field === "fromAccount" ? selected : fromAccount;
+    const nextTo = field === "toAccount" ? selected : toAccount;
+    onDraftChange({
+      [field]: accountId,
+      currency: nextFrom?.currency ?? nextTo?.currency ?? draft.currency,
+    });
+  }
+
   return (
     <div className="grid gap-4">
       <TransactionAmountField
         currency={draft.currency}
+        currencyDisabled={Boolean(fromAccount || toAccount)}
         currencyError={errors.currency}
         currencyEmptyLabel={labels.formCurrencyEmpty}
         currencyLabel={labels.formCurrency}
@@ -80,7 +104,10 @@ export function TransactionTransferForm({
 
       <div className="grid gap-2">
         <TransactionAccountField
-          accountTypeLabels={accountTypeLabels}
+          availability={accountAvailability}
+          accountLoadError={accountLoadError}
+          accountLoadingLabel={accountLoadingLabel}
+          accountRetryLabel={accountRetryLabel}
           accounts={accounts}
           createAccountLabel={labels.accountsCreate}
           createFirstAccountLabel={labels.accountsCreateFirst}
@@ -92,7 +119,8 @@ export function TransactionTransferForm({
           label={labels.formFromAccount}
           noResultsLabel={labels.accountsSearchNoResults}
           onCreateAccount={() => onCreateAccount("FROM")}
-          onValueChange={(fromAccount) => onDraftChange({ fromAccount })}
+          onRetryAccounts={onRetryAccounts}
+          onValueChange={(fromAccount) => updateAccount("fromAccount", fromAccount)}
           placeholder={labels.formFromAccountPlaceholder}
           searchPlaceholder={labels.formAccountSearch}
           triggerRef={fromAccountTriggerRef}
@@ -104,7 +132,10 @@ export function TransactionTransferForm({
         </div>
 
         <TransactionAccountField
-          accountTypeLabels={accountTypeLabels}
+          availability={accountAvailability}
+          accountLoadError={accountLoadError}
+          accountLoadingLabel={accountLoadingLabel}
+          accountRetryLabel={accountRetryLabel}
           accounts={accounts}
           createAccountLabel={labels.accountsCreate}
           createFirstAccountLabel={labels.accountsCreateFirst}
@@ -116,7 +147,8 @@ export function TransactionTransferForm({
           label={labels.formToAccount}
           noResultsLabel={labels.accountsSearchNoResults}
           onCreateAccount={() => onCreateAccount("TO")}
-          onValueChange={(toAccount) => onDraftChange({ toAccount })}
+          onRetryAccounts={onRetryAccounts}
+          onValueChange={(toAccount) => updateAccount("toAccount", toAccount)}
           placeholder={labels.formToAccountPlaceholder}
           searchPlaceholder={labels.formAccountSearch}
           triggerRef={toAccountTriggerRef}

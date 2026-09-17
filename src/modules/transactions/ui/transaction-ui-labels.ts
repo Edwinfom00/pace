@@ -52,6 +52,8 @@ export type TransactionUiLabels = {
   readonly errorTitle: string;
   readonly errorRetry: string;
   readonly loading: string;
+  readonly accountLoading: string;
+  readonly accountLoadError: string;
   readonly paginationPrevious: string;
   readonly paginationNext: string;
   readonly paginationPage: string;
@@ -121,6 +123,7 @@ export type TransactionUiLabels = {
   readonly accountOpeningBalanceOptional: string;
   readonly accountOpeningBalanceHelper: string;
   readonly accountCancel: string;
+  readonly accountCreationUnavailable: string;
   readonly accountTypeCash: string;
   readonly accountTypeCashDescription: string;
   readonly accountTypeChecking: string;
@@ -187,6 +190,8 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     errorTitle: labels["transactions.error.title"],
     errorRetry: labels["transactions.error.retry"],
     loading: labels["transactions.loading"],
+    accountLoading: labels["transactions.accounts.loading"],
+    accountLoadError: labels["transactions.accounts.error"],
     paginationPrevious: labels["transactions.pagination.previous"],
     paginationNext: labels["transactions.pagination.next"],
     paginationPage: labels["transactions.pagination.page"],
@@ -206,6 +211,7 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
       "transactions.validation.currencyRequired": labels["transactions.validation.currencyRequired"],
       "transactions.validation.currencyUnsupported": labels["transactions.validation.currencyUnsupported"],
       "transactions.validation.accountRequired": labels["transactions.validation.accountRequired"],
+      "transactions.validation.accountUnavailable": labels["transactions.validation.accountUnavailable"],
       "transactions.validation.dateRequired": labels["transactions.validation.dateRequired"],
       "transactions.validation.invalidDate": labels["transactions.validation.invalidDate"],
       "transactions.validation.invalidTime": labels["transactions.validation.invalidTime"],
@@ -273,6 +279,7 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     accountOpeningBalanceOptional: labels["accounts.fields.openingBalanceOptional"],
     accountOpeningBalanceHelper: labels["accounts.fields.openingBalanceHelper"],
     accountCancel: labels["accounts.actions.cancel"],
+    accountCreationUnavailable: labels["accounts.create.unavailable"],
     accountTypeCash: labels["accounts.type.cash.label"],
     accountTypeCashDescription: labels["accounts.type.cash.description"],
     accountTypeChecking: labels["accounts.type.checking.label"],

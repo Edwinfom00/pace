@@ -12,6 +12,7 @@ export type TransactionAmountFieldProps = {
   readonly currencyLabel: string;
   readonly currencySearchPlaceholder: string;
   readonly currencyError?: string;
+  readonly currencyDisabled?: boolean;
   readonly currencyTriggerRef?: RefObject<HTMLButtonElement | null>;
   readonly error?: string;
   readonly helperText?: string;
@@ -27,6 +28,7 @@ export function TransactionAmountField({
   currency,
   currencyEmptyLabel,
   currencyError,
+  currencyDisabled = false,
   currencyLabel,
   currencySearchPlaceholder,
   currencyTriggerRef,
@@ -72,6 +74,7 @@ export function TransactionAmountField({
         <TransactionCurrencySelector
           ariaLabel={currencyLabel}
           describedBy={currencyError ? currencyErrorId : undefined}
+          disabled={currencyDisabled}
           emptyLabel={currencyEmptyLabel}
           invalid={Boolean(currencyError)}
           language={language}

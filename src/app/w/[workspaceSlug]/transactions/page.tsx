@@ -8,8 +8,12 @@ import { isSupportedCurrency } from "@/modules/onboarding/metadata";
 import { transactionListHref } from "@/modules/transactions/domain/transaction-list-url";
 import { parseTransactionSearchParams } from "@/modules/transactions/queries/transaction-search-params";
 import { getServerTransactionsPage } from "@/modules/transactions/server/get-transactions-page";
+import { getServerTransactionAccountOptions } from "@/modules/transactions/server/get-transaction-account-options";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 import { TransactionsTableView } from "@/modules/transactions/ui/views/transactions-table-view";
+import {
+  loadTransactionAccountOptions,
+} from "@/modules/transactions/domain/transaction-account-options";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 type TransactionsPageProps = {
@@ -36,14 +40,19 @@ export default async function TransactionsPage({ params, searchParams }: Transac
   const language = await getPersistedDashboardLanguage(actor.userId);
   const labels = getTransactionUiLabels(getDashboardLabels(language));
   const filters = parseTransactionSearchParams(query);
-  const page = await getServerTransactionsPage({
+  const accountOptions = loadTransactionAccountOptions(() => getServerTransactionAccountOptions({
+    actor,
+    workspaceId: workspace.workspace.id,
+  }));
+  const page = getServerTransactionsPage({
     actor,
     workspaceId: workspace.workspace.id,
     filters,
     timeZone: workspace.preferences.timezone,
     unknownMerchantName: labels.unknownMerchant,
   });
-  const canonicalHref = transactionListHref(destination, { ...page.filters, page: page.page });
+  const [transactionsPage, transactionAccounts] = await Promise.all([page, accountOptions]);
+  const canonicalHref = transactionListHref(destination, { ...transactionsPage.filters, page: transactionsPage.page });
   const requestedHref = requestHref(destination, query);
 
 
@@ -51,16 +60,17 @@ export default async function TransactionsPage({ params, searchParams }: Transac
 
   return (
     <TransactionsTableView
-      amountSortingAvailable={page.amountSortingAvailable}
+      accountOptions={transactionAccounts}
+      amountSortingAvailable={transactionsPage.amountSortingAvailable}
       defaultCurrency={isSupportedCurrency(workspace.preferences.currency) ? workspace.preferences.currency : "USD"}
-      filterOptions={page.options}
-      filterState={{ ...page.filters, page: page.page }}
+      filterOptions={transactionsPage.options}
+      filterState={{ ...transactionsPage.filters, page: transactionsPage.page }}
       labels={labels}
       locale={workspace.preferences.locale}
       now={new Date().toISOString()}
-      pagination={page.pagination}
+      pagination={transactionsPage.pagination}
       timeZone={workspace.preferences.timezone}
-      transactions={page.items}
+      transactions={transactionsPage.items}
       workspaceId={workspace.workspace.id}
       workspaceSlug={workspace.workspace.slug}
       language={language}

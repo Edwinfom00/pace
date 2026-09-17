@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type FormEvent } from "react";
+import { useId } from "react";
 
 import { CurrencySelect } from "@/components/pace/forms/currency-select";
 import { PaceSearchSelect, type SelectOption } from "@/components/pace/forms/pace-search-select";
@@ -24,7 +24,6 @@ type CreateAccountFormProps = {
   readonly labels: TransactionUiLabels;
   readonly language: OnboardingLanguage;
   readonly onCancel: () => void;
-  readonly onCreateDraft: (draft: CreateAccountFormDraft & { readonly type: LedgerAccountType }) => void;
   readonly onDraftChange: (draft: CreateAccountFormDraft) => void;
 };
 
@@ -33,7 +32,6 @@ export function CreateAccountForm({
   labels,
   language,
   onCancel,
-  onCreateDraft,
   onDraftChange,
 }: CreateAccountFormProps) {
   const nameId = useId();
@@ -56,16 +54,8 @@ export function CreateAccountForm({
     description: accountTypeCopy[type].description,
     searchTerms: [accountTypeCopy[type].label, accountTypeCopy[type].description],
   }));
-  const canCreate = Boolean(draft.name.trim() && draft.type && draft.currency);
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!draft.type || !draft.name.trim() || !draft.currency) return;
-    onCreateDraft({ ...draft, name: draft.name.trim(), type: draft.type });
-  }
-
   return (
-    <form className="grid gap-4" onSubmit={submit}>
+    <form className="grid gap-4" onSubmit={(event) => event.preventDefault()}>
       <div className="grid gap-2">
         <label className="text-[13px] font-medium text-[#384862]" htmlFor={nameId}>
           {labels.accountName}
@@ -151,10 +141,13 @@ export function CreateAccountForm({
         <Button className="h-9 rounded-[8px] px-3.5 text-[13px] text-[#526987]" onClick={onCancel} type="button" variant="outline">
           {labels.accountCancel}
         </Button>
-        <Button className="h-9 rounded-[8px] bg-[#2563eb] px-3.5 text-[13px] text-white hover:bg-[#1e55d1] focus-visible:ring-[#2563eb]/30" disabled={!canCreate} type="submit">
+        <Button aria-describedby="account-create-unavailable" className="h-9 rounded-[8px] bg-[#2563eb] px-3.5 text-[13px] text-white hover:bg-[#1e55d1] focus-visible:ring-[#2563eb]/30" disabled type="submit">
           {labels.accountsCreate}
         </Button>
       </footer>
+      <p className="-mt-2 text-right text-[12px] leading-5 text-[#71809a]" id="account-create-unavailable">
+        {labels.accountCreationUnavailable}
+      </p>
     </form>
   );
 }

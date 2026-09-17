@@ -11,14 +11,14 @@ import {
 } from "react-icons/fi";
 
 import { cn } from "@/lib/utils";
-import type { LedgerAccountType } from "@/modules/ledger/domain";
-
-import { getAccountTypeMetadata } from "./transaction-account-metadata";
 import type { TransactionAccountOption } from "./transaction-account.types";
 
 export type TransactionAccountFieldProps<T extends string = string> = {
   readonly accounts: readonly (TransactionAccountOption & { readonly id: T })[];
-  readonly accountTypeLabels: Readonly<Record<LedgerAccountType, string>>;
+  readonly availability?: "loading" | "ready" | "error";
+  readonly accountLoadError?: string;
+  readonly accountLoadingLabel?: string;
+  readonly accountRetryLabel?: string;
   readonly disabledAccountIds?: readonly T[];
   readonly disabledAccountLabel?: string;
   readonly error?: string;
@@ -27,6 +27,7 @@ export type TransactionAccountFieldProps<T extends string = string> = {
   readonly helperText?: string;
   readonly label: string;
   readonly noResultsLabel: string;
+  readonly onRetryAccounts?: () => void;
   readonly onCreateAccount: () => void;
   readonly onValueChange: (value: T) => void;
   readonly placeholder: string;
@@ -39,22 +40,21 @@ export type TransactionAccountFieldProps<T extends string = string> = {
   readonly createFirstAccountLabel: string;
 };
 
-function AccountIcon({ type }: { readonly type: LedgerAccountType }) {
-  const { icon: Icon } = getAccountTypeMetadata(type);
-
-  return <Icon aria-hidden="true" className="size-4.25" />;
+function AccountIcon() {
+  return <FiDollarSign aria-hidden="true" className="size-4.25" />;
 }
 
-function getAccountMetadata(account: TransactionAccountOption, accountTypeLabels: Readonly<Record<LedgerAccountType, string>>) {
-  const typeLabel = accountTypeLabels[account.type];
-
-  return account.type === "CASH" ? account.currency : `${typeLabel} · ${account.currency}`;
+function getAccountMetadata(account: TransactionAccountOption) {
+  return account.currency;
 }
 
 
 export function TransactionAccountField<T extends string = string>({
   accounts,
-  accountTypeLabels,
+  accountLoadError,
+  accountLoadingLabel,
+  accountRetryLabel,
+  availability = "ready",
   createAccountLabel,
   createFirstAccountLabel,
   disabledAccountIds = [],
@@ -66,6 +66,7 @@ export function TransactionAccountField<T extends string = string>({
   label,
   noResultsLabel,
   onCreateAccount,
+  onRetryAccounts,
   onValueChange,
   placeholder,
   searchPlaceholder,
@@ -83,7 +84,7 @@ export function TransactionAccountField<T extends string = string>({
   const disabledAccountIdSet = new Set(disabledAccountIds);
   const filteredAccounts = normalizedQuery
     ? accounts.filter((account) =>
-        [account.name, account.type, getAccountMetadata(account, accountTypeLabels), account.currency]
+        [account.name, getAccountMetadata(account), account.currency]
           .join(" ")
           .toLocaleLowerCase()
           .includes(normalizedQuery),
@@ -132,10 +133,10 @@ export function TransactionAccountField<T extends string = string>({
             role="combobox"
             type="button"
           >
-            {selectedAccount ? (
-              <span className="flex min-w-0 flex-1 items-center gap-2.5">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-[6px] bg-[#edf3ff] text-[#356fe0]">
-                  <AccountIcon type={selectedAccount.type} />
+          {selectedAccount ? (
+            <span className="flex min-w-0 flex-1 items-center gap-2.5">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-[6px] bg-[#edf3ff] text-[#356fe0]">
+                  <AccountIcon />
                 </span>
                 <span className="truncate font-medium">{selectedAccount.name}</span>
               </span>
@@ -160,7 +161,29 @@ export function TransactionAccountField<T extends string = string>({
             className="z-50 mt-1 w-(--radix-popover-trigger-width) min-w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-[#d9e1ec] bg-white p-1.5 shadow-[0_18px_45px_rgb(31_62_119/14%)]"
             sideOffset={6}
           >
-            {hasAccounts ? (
+            {availability === "loading" ? (
+              <div aria-busy="true" aria-label={accountLoadingLabel} className="space-y-2 px-2 py-2.5">
+                <div className="h-10 animate-pulse rounded-[7px] bg-[#f2f5f9] motion-reduce:animate-none" />
+                <div className="h-13 animate-pulse rounded-[7px] bg-[#f5f7fa] motion-reduce:animate-none" />
+                <div className="h-13 animate-pulse rounded-[7px] bg-[#f5f7fa] motion-reduce:animate-none" />
+              </div>
+            ) : availability === "error" ? (
+              <div className="px-3 py-5 text-center" role="status">
+                <span className="mx-auto mb-3 flex size-9 items-center justify-center rounded-[9px] bg-[#fff1f2] text-[#c23445]">
+                  <FiDollarSign aria-hidden="true" className="size-4.5" />
+                </span>
+                <p className="text-[13px] font-medium text-[#263550]">{accountLoadError}</p>
+                {onRetryAccounts && accountRetryLabel ? (
+                  <button
+                    className="mt-3 inline-flex h-9 items-center rounded-[7px] bg-[#edf3ff] px-3 text-[12px] font-medium text-[#2f67e9] outline-none transition-colors hover:bg-[#e4eeff] focus-visible:ring-2 focus-visible:ring-[#5e8fe8]/30"
+                    onClick={onRetryAccounts}
+                    type="button"
+                  >
+                    {accountRetryLabel}
+                  </button>
+                ) : null}
+              </div>
+            ) : hasAccounts ? (
               <Command shouldFilter={false}>
                 <div className="mb-1.5 flex items-center rounded-[7px] border border-[#e2e9f3] bg-[#f8faff] px-3">
                   <CommandInput
@@ -189,15 +212,15 @@ export function TransactionAccountField<T extends string = string>({
                           disabled={isDisabled}
                           key={account.id}
                           onSelect={() => choose(account.id)}
-                          value={`${account.name} ${account.type} ${account.currency}`}
+                          value={`${account.name} ${account.currency}`}
                         >
                           <span className="flex size-8 shrink-0 items-center justify-center rounded-[7px] bg-[#f1f5fb] text-[#526987]">
-                            <AccountIcon type={account.type} />
+                            <AccountIcon />
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px] font-medium">{account.name}</span>
                             <span className="mt-0.5 block truncate text-[11px] leading-4 text-[#71809a]">
-                              {getAccountMetadata(account, accountTypeLabels)}
+                              {getAccountMetadata(account)}
                             </span>
                           </span>
                           {isDisabled ? (

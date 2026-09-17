@@ -12,8 +12,9 @@ import {
   type TransactionFormDraft,
 } from "@/modules/transactions/schemas/transaction-form.schema";
 import {
-  assignCreatedAccountToTransactionDraft,
+  clearUnavailableTransactionAccountSelections,
   emptyTransactionFormErrors,
+  validateTransactionDraft,
 } from "@/modules/transactions/ui/components/transaction-create-control";
 import { TransactionAmountField } from "@/modules/transactions/ui/components/transaction-amount-field";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
@@ -107,9 +108,9 @@ test("transfer validation requires distinct accounts and reports unavailable FX 
 });
 
 test("transfer account exclusions are supplied by the transfer parent, not embedded in AccountSelect", () => {
-  assert.deepEqual(getTransferDisabledAccountIds("cash"), ["cash"]);
+  assert.deepEqual(getTransferDisabledAccountIds("account-xaf"), ["account-xaf"]);
   assert.deepEqual(getTransferDisabledAccountIds(""), []);
-  assert.deepEqual(getTransferDisabledAccountIds("main-account"), ["main-account"]);
+  assert.deepEqual(getTransferDisabledAccountIds("account-eur"), ["account-eur"]);
 });
 
 test("validation state begins quiet, revalidates per kind, and identifies the first invalid field", () => {
@@ -149,21 +150,48 @@ test("field errors are inline and connected to their invalid control", () => {
   assert.match(markup, /Amount must be greater than zero\./);
 });
 
-test("creating an account only updates its target and preserves the active transaction draft", () => {
+const workspaceAccounts = [
+  { id: "account-xaf", name: "Everyday", currency: "XAF" },
+  { id: "account-eur", name: "Travel", currency: "EUR" },
+] as const;
+
+test("Expense, Income, and Transfer validate only account ids from the real account option set", () => {
   const draft: TransactionFormDraft = {
     kind: "TRANSFER",
-    expense: { amount: "20", currency: "XAF", account: "cash", category: "", merchant: "Market", date, time: "", note: "Lunch" },
-    income: { amount: "750", currency: "XAF", account: "main-account", category: "", source: "Salary", date, time: "", note: "September" },
-    transfer: { amount: "250", currency: "XAF", fromAccount: "cash", toAccount: "main-account", date, time: "", note: "Move funds" },
+    expense: { amount: "20", currency: "XAF", account: "account-xaf", category: "", merchant: "Market", date, time: "", note: "Lunch" },
+    income: { amount: "750", currency: "XAF", account: "account-xaf", category: "", source: "Salary", date, time: "", note: "September" },
+    transfer: { amount: "250", currency: "XAF", fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
   };
 
-  const updated = assignCreatedAccountToTransactionDraft(draft, "TO", "draft-account-1");
+  assert.equal(validateTransactionDraft({ ...draft, kind: "EXPENSE" }, workspaceAccounts).isValid, true);
+  assert.equal(validateTransactionDraft({ ...draft, kind: "INCOME" }, workspaceAccounts).isValid, true);
+  assert.equal(
+    validateTransactionDraft({ ...draft, transfer: { ...draft.transfer, toAccount: "account-xaf" } }, workspaceAccounts).errors.toAccount,
+    "transactions.validation.sameTransferAccount",
+  );
+  assert.equal(validateTransactionDraft(draft, workspaceAccounts).errors.toAccount, "transactions.validation.crossCurrencyTransferUnsupported");
+  assert.equal(
+    validateTransactionDraft({ ...draft, kind: "EXPENSE", expense: { ...draft.expense, account: "outside-workspace" } }, workspaceAccounts).errors.account,
+    "transactions.validation.accountUnavailable",
+  );
+});
 
-  assert.equal(updated.transfer.toAccount, "draft-account-1");
-  assert.equal(updated.transfer.fromAccount, "cash");
+test("workspace changes clear stale manual transaction selections", () => {
+  const draft: TransactionFormDraft = {
+    kind: "TRANSFER",
+    expense: { amount: "20", currency: "XAF", account: "account-xaf", category: "", merchant: "Market", date, time: "", note: "Lunch" },
+    income: { amount: "750", currency: "XAF", account: "account-xaf", category: "", source: "Salary", date, time: "", note: "September" },
+    transfer: { amount: "250", currency: "XAF", fromAccount: "account-xaf", toAccount: "account-eur", date, time: "", note: "Move funds" },
+  };
+  const updated = clearUnavailableTransactionAccountSelections(draft, [
+    { id: "account-other-workspace", name: "Other", currency: "USD" },
+  ]);
+
+  assert.equal(updated.transfer.toAccount, "");
+  assert.equal(updated.transfer.fromAccount, "");
+  assert.equal(updated.expense.account, "");
+  assert.equal(updated.income.account, "");
   assert.equal(updated.transfer.note, "Move funds");
-  assert.deepEqual(updated.expense, draft.expense);
-  assert.deepEqual(updated.income, draft.income);
 });
 
 test("transaction validation messages are translated for English, French, and German", () => {
