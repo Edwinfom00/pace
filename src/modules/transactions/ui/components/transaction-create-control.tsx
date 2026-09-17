@@ -1,11 +1,12 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { FiPlus } from "react-icons/fi";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import type { CurrencyCode } from "@/money/currency";
+import type { CreatedAccountDTO } from "@/modules/ledger/create-account-contract";
 import type { TransactionAccountOptionsState } from "@/modules/transactions/domain/transaction-account-options";
 import type {
   TransactionCategoryOption,
@@ -31,6 +32,17 @@ import {
   createEmptyCreateAccountFormDraft,
   type CreateAccountFormDraft,
 } from "./create-account-form";
+import {
+  canAttachCreatedAccountToWorkspace,
+  canStartCreateAccountSubmission,
+  mapCreateAccountFailure,
+  parseCreatedAccountDTO,
+  reconcileTransactionAccountOptions,
+  selectCreatedAccountForTarget,
+  validateCreateAccountForm,
+  type AccountCreationTarget,
+  type CreateAccountFormErrors,
+} from "./create-account-flow";
 import { TransactionFormDialog, type TransactionDialogView } from "./transaction-form-dialog";
 import { TransactionAmountField } from "./transaction-amount-field";
 import { TransactionCategoryField } from "./transaction-category-field";
@@ -45,11 +57,17 @@ import { TransactionTimeField } from "./transaction-time-field";
 import { TransactionTransferForm } from "./transaction-transfer-form";
 import type { TransactionFormKind } from "./transaction-type-selector";
 
-export type AccountCreationTarget = "EXPENSE_ACCOUNT" | "INCOME_ACCOUNT" | "FROM" | "TO";
+export type { AccountCreationTarget } from "./create-account-flow";
 
 type TransactionFormErrorsByKind = Record<TransactionFormKind, TransactionFormErrors>;
 type SubmittedTransactionFormKinds = Record<TransactionFormKind, boolean>;
 type LocalizedTransactionFormErrors = Partial<Record<TransactionFormField, string>>;
+
+function accountCreationErrorCode(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+  const code = (payload as { readonly code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
 
 export function emptyTransactionFormErrors(): TransactionFormErrorsByKind {
   return { EXPENSE: {}, INCOME: {}, TRANSFER: {} };
@@ -192,6 +210,7 @@ export function TransactionCreateControl({
   language,
   locale,
   timeZone,
+  workspaceId,
 }: {
   readonly accountOptions: TransactionAccountOptionsState;
   readonly categoryOptions: TransactionCategoryOptionsState;
@@ -200,6 +219,7 @@ export function TransactionCreateControl({
   readonly language: "en" | "fr" | "de";
   readonly locale: string;
   readonly timeZone: string;
+  readonly workspaceId: string;
 }) {
   const router = useRouter();
   const [isRetryingAccounts, startAccountRetry] = useTransition();
@@ -209,6 +229,11 @@ export function TransactionCreateControl({
   const [formDraft, setFormDraft] = useState<TransactionFormDraft>(() => createTransactionFormDraft(defaultCurrency, timeZone));
   const [createAccountTarget, setCreateAccountTarget] = useState<AccountCreationTarget>("EXPENSE_ACCOUNT");
   const [createAccountDraft, setCreateAccountDraft] = useState<CreateAccountFormDraft>(() => createEmptyCreateAccountFormDraft(defaultCurrency));
+  const [createAccountErrors, setCreateAccountErrors] = useState<CreateAccountFormErrors>({});
+  const [createAccountFormError, setCreateAccountFormError] = useState<string | null>(null);
+  const [createAccountAnnouncement, setCreateAccountAnnouncement] = useState("");
+  const [createdAccountAwaitingReconciliation, setCreatedAccountAwaitingReconciliation] = useState<CreatedAccountDTO | null>(null);
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false);
   const [validationErrors, setValidationErrors] = useState<TransactionFormErrorsByKind>(emptyTransactionFormErrors);
   const [submittedKinds, setSubmittedKinds] = useState<SubmittedTransactionFormKinds>(emptySubmittedTransactionFormKinds);
   const amountInputRef = useRef<HTMLInputElement>(null);
@@ -221,14 +246,30 @@ export function TransactionCreateControl({
   const timeTriggerRef = useRef<HTMLButtonElement>(null);
   const merchantInputRef = useRef<HTMLInputElement>(null);
   const noteTextAreaRef = useRef<HTMLTextAreaElement>(null);
+  const workspaceIdRef = useRef(workspaceId);
   const kind = formDraft.kind;
   const activeAccountDraft = kind === "INCOME" ? formDraft.income : formDraft.expense;
-  const accounts = accountOptions.accounts;
+  const authoritativeAccounts = accountOptions.accounts;
+  const accounts = reconcileTransactionAccountOptions(authoritativeAccounts, createdAccountAwaitingReconciliation);
   const accountAvailability = isRetryingAccounts ? "loading" : accountOptions.status;
   const categories = categoryOptions.categories;
   const categoryAvailability = isRetryingCategories ? "loading" : categoryOptions.status;
   const activeErrors = validationErrors[kind];
   const activeDisplayErrors = localizeTransactionFormErrors(labels, activeErrors);
+
+  useEffect(() => {
+    workspaceIdRef.current = workspaceId;
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (
+      createdAccountAwaitingReconciliation
+      && authoritativeAccounts.some((account) => account.id === createdAccountAwaitingReconciliation.id)
+    ) {
+      const frame = requestAnimationFrame(() => setCreatedAccountAwaitingReconciliation(null));
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [authoritativeAccounts, createdAccountAwaitingReconciliation]);
 
   function focusFirstInvalidField(errors: TransactionFormErrors) {
     const field = getFirstInvalidTransactionFormField(kind, errors);
@@ -320,6 +361,9 @@ export function TransactionCreateControl({
         : formDraft.transfer.currency;
 
     setCreateAccountTarget(target);
+    setCreateAccountErrors({});
+    setCreateAccountFormError(null);
+    setCreateAccountAnnouncement("");
     setCreateAccountDraft((draft) => (
       draft.name || draft.type || draft.openingBalance ? draft : createEmptyCreateAccountFormDraft(currency)
     ));
@@ -327,11 +371,12 @@ export function TransactionCreateControl({
   }
 
   function returnToTransaction() {
+    if (isCreatingAccount) return;
     setView("transaction");
-    if (createAccountTarget !== "FROM" && createAccountTarget !== "TO") return;
+    if (createAccountTarget !== "TRANSFER_FROM" && createAccountTarget !== "TRANSFER_TO") return;
 
     requestAnimationFrame(() => {
-      (createAccountTarget === "FROM" ? fromAccountTriggerRef : toAccountTriggerRef).current?.focus();
+      (createAccountTarget === "TRANSFER_FROM" ? fromAccountTriggerRef : toAccountTriggerRef).current?.focus();
     });
   }
 
@@ -341,9 +386,101 @@ export function TransactionCreateControl({
 
     setView("transaction");
     setCreateAccountTarget("EXPENSE_ACCOUNT");
+    setCreateAccountErrors({});
+    setCreateAccountFormError(null);
+    setCreateAccountAnnouncement("");
     setValidationErrors(emptyTransactionFormErrors());
     setSubmittedKinds(emptySubmittedTransactionFormKinds());
     setCreateAccountDraft(createEmptyCreateAccountFormDraft(defaultCurrency));
+  }
+
+  function updateCreateAccountDraft(nextDraft: CreateAccountFormDraft) {
+    setCreateAccountDraft(nextDraft);
+    setCreateAccountErrors({});
+    setCreateAccountFormError(null);
+    setCreateAccountAnnouncement("");
+  }
+
+  function formErrorForAccountCreation(code: ReturnType<typeof mapCreateAccountFailure>["code"]): string {
+    if (code === "WORKSPACE_FORBIDDEN") return labels.accountCreateErrorWorkspaceForbidden;
+    if (code === "WORKSPACE_CHANGED") return labels.accountCreateErrorWorkspaceChanged;
+    return labels.accountCreateErrorGeneric;
+  }
+
+  async function submitCreateAccount() {
+    if (!canStartCreateAccountSubmission(isCreatingAccount)) return;
+
+    const requestWorkspaceId = workspaceIdRef.current;
+    const requestTarget = createAccountTarget;
+    const clientErrors = validateCreateAccountForm(requestWorkspaceId, createAccountDraft);
+    if (Object.keys(clientErrors).length > 0) {
+      setCreateAccountErrors(clientErrors);
+      setCreateAccountFormError(null);
+      return;
+    }
+
+    setCreateAccountErrors({});
+    setCreateAccountFormError(null);
+    setCreateAccountAnnouncement("");
+    setIsCreatingAccount(true);
+
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(requestWorkspaceId)}/ledger/accounts`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: createAccountDraft.name,
+          type: createAccountDraft.type,
+          currency: createAccountDraft.currency,
+          openingBalance: createAccountDraft.openingBalance,
+        }),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const failure = mapCreateAccountFailure(accountCreationErrorCode(payload));
+        if (failure.field) setCreateAccountErrors({ [failure.field]: true });
+        else setCreateAccountFormError(formErrorForAccountCreation(failure.code));
+        return;
+      }
+
+      const account = parseCreatedAccountDTO(payload);
+      if (!account) {
+        setCreateAccountFormError(labels.accountCreateErrorGeneric);
+        return;
+      }
+
+      // A completed request belongs only to the workspace it was submitted for.
+      // Never attach it to a transaction form that has since changed workspace.
+      if (!canAttachCreatedAccountToWorkspace(requestWorkspaceId, workspaceIdRef.current)) {
+        setCreateAccountFormError(labels.accountCreateErrorWorkspaceChanged);
+        router.refresh();
+        return;
+      }
+
+      const accountsWithCreatedAccount = reconcileTransactionAccountOptions(accounts, account);
+      const nextDraft = selectCreatedAccountForTarget(formDraft, requestTarget, account, accountsWithCreatedAccount);
+      commitTransactionDraft(nextDraft, accountsWithCreatedAccount);
+      setCreatedAccountAwaitingReconciliation(account);
+      setCreateAccountDraft(createEmptyCreateAccountFormDraft(defaultCurrency));
+      setCreateAccountErrors({});
+      setCreateAccountFormError(null);
+      setCreateAccountAnnouncement(labels.accountCreateSuccess);
+      setView("transaction");
+      requestAnimationFrame(() => {
+        const trigger = requestTarget === "TRANSFER_FROM"
+          ? fromAccountTriggerRef
+          : requestTarget === "TRANSFER_TO"
+            ? toAccountTriggerRef
+            : accountTriggerRef;
+        trigger.current?.focus();
+      });
+      router.refresh();
+    } catch {
+      setCreateAccountFormError(labels.accountCreateErrorGeneric);
+    } finally {
+      setIsCreatingAccount(false);
+    }
   }
 
   function retryAccounts() {
@@ -378,7 +515,7 @@ export function TransactionCreateControl({
 
       <TransactionFormDialog
         createAccountHeader={{
-          backLabel: createAccountTarget === "FROM" || createAccountTarget === "TO" ? labels.accountCreateBackToTransfer : labels.accountCreateBackToExpense,
+          backLabel: createAccountTarget === "TRANSFER_FROM" || createAccountTarget === "TRANSFER_TO" ? labels.accountCreateBackToTransfer : labels.accountCreateBackToExpense,
           description: labels.accountCreateSubtitle,
           title: labels.accountCreateTitle,
         }}
@@ -391,6 +528,7 @@ export function TransactionCreateControl({
           />
         )}
         kind={kind}
+        isCreateAccountPending={isCreatingAccount}
         onBackToTransaction={returnToTransaction}
         onKindChange={handleKindChange}
         onOpenChange={handleOpenChange}
@@ -398,13 +536,20 @@ export function TransactionCreateControl({
         view={view}
       >
         {view === "create-account" ? (
-          <CreateAccountForm
-            draft={createAccountDraft}
-            labels={labels}
-            language={language}
-            onCancel={returnToTransaction}
-            onDraftChange={setCreateAccountDraft}
-          />
+          <>
+            <p aria-live="polite" className="sr-only" role="status">{createAccountAnnouncement}</p>
+            <CreateAccountForm
+              draft={createAccountDraft}
+              errors={createAccountErrors}
+              formError={createAccountFormError}
+              isSubmitting={isCreatingAccount}
+              labels={labels}
+              language={language}
+              onCancel={returnToTransaction}
+              onDraftChange={updateCreateAccountDraft}
+              onSubmit={submitCreateAccount}
+            />
+          </>
         ) : kind === "TRANSFER" ? (
           <TransactionTransferForm
             accountAvailability={accountAvailability}
@@ -421,7 +566,7 @@ export function TransactionCreateControl({
             labels={labels}
             language={language}
             locale={locale}
-            onCreateAccount={handleCreateAccountRequest}
+            onCreateAccount={(target) => handleCreateAccountRequest(target === "FROM" ? "TRANSFER_FROM" : "TRANSFER_TO")}
             onDraftChange={(update) => commitTransactionDraft({
               ...formDraft,
               transfer: { ...formDraft.transfer, ...update },

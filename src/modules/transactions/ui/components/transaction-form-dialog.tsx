@@ -21,6 +21,7 @@ export function TransactionFormDialog({
   children,
   createAccountHeader,
   footer,
+  isCreateAccountPending = false,
   kind,
   onBackToTransaction,
   onKindChange,
@@ -31,6 +32,7 @@ export function TransactionFormDialog({
   readonly children: ReactNode;
   readonly createAccountHeader: { readonly backLabel: string; readonly description: string; readonly title: string };
   readonly footer?: ReactNode;
+  readonly isCreateAccountPending?: boolean;
   readonly kind: TransactionFormKind;
   readonly onBackToTransaction: () => void;
   readonly onKindChange: (kind: TransactionFormKind) => void;
@@ -52,7 +54,7 @@ export function TransactionFormDialog({
             type="button"
             variant="ghost"
           >
-            <FiX aria-hidden="true" className="size-[18px]" />
+            <FiX aria-hidden="true" className="size-4.5" />
           </Button>
         </ResponsiveDialogClose>
 
@@ -61,6 +63,7 @@ export function TransactionFormDialog({
             <>
               <Button
                 className="-ml-2 h-7 w-fit gap-1 rounded-[6px] px-2 text-[12px] font-medium text-[#526987] hover:bg-[#f3f6fa] hover:text-[#263550] focus-visible:ring-[#5e8fe8]/30"
+                disabled={isCreateAccountPending}
                 onClick={onBackToTransaction}
                 type="button"
                 variant="ghost"

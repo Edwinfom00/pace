@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type RefObject } from "react";
 import { FiDatabase } from "react-icons/fi";
 
 import { PaceSearchSelect, type SelectOption } from "@/components/pace/forms/pace-search-select";
@@ -23,6 +23,7 @@ type CurrencySelectProps = {
   ariaLabel: string;
   invalid?: boolean;
   triggerClassName?: string;
+  triggerRef?: RefObject<HTMLButtonElement | null>;
 };
 
 export function getCurrencySelectOptions(language: OnboardingLanguage): readonly SelectOption<CurrencyCode>[] {

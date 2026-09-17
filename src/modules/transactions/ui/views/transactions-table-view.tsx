@@ -95,6 +95,7 @@ export function TransactionsTableView({
             language={language}
             locale={locale}
             timeZone={timeZone}
+            workspaceId={workspaceId}
           />
         </div>
       </header>

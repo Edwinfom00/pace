@@ -114,6 +114,15 @@ export type TransactionUiLabels = {
   readonly accountCreateSubtitle: string;
   readonly accountCreateBackToExpense: string;
   readonly accountCreateBackToTransfer: string;
+  readonly accountCreatePending: string;
+  readonly accountCreateSuccess: string;
+  readonly accountCreateErrorGeneric: string;
+  readonly accountCreateErrorWorkspaceForbidden: string;
+  readonly accountCreateErrorWorkspaceChanged: string;
+  readonly accountCreateErrorName: string;
+  readonly accountCreateErrorType: string;
+  readonly accountCreateErrorCurrency: string;
+  readonly accountCreateErrorOpeningBalance: string;
   readonly accountName: string;
   readonly accountNamePlaceholder: string;
   readonly accountType: string;
@@ -126,7 +135,6 @@ export type TransactionUiLabels = {
   readonly accountOpeningBalanceOptional: string;
   readonly accountOpeningBalanceHelper: string;
   readonly accountCancel: string;
-  readonly accountCreationUnavailable: string;
   readonly accountTypeCash: string;
   readonly accountTypeCashDescription: string;
   readonly accountTypeChecking: string;
@@ -274,6 +282,15 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     accountCreateSubtitle: labels["accounts.create.subtitle"],
     accountCreateBackToExpense: labels["accounts.create.backToExpense"],
     accountCreateBackToTransfer: labels["accounts.create.backToTransfer"],
+    accountCreatePending: labels["accounts.create.pending"],
+    accountCreateSuccess: labels["accounts.create.success"],
+    accountCreateErrorGeneric: labels["accounts.create.errorGeneric"],
+    accountCreateErrorWorkspaceForbidden: labels["accounts.create.errorWorkspaceForbidden"],
+    accountCreateErrorWorkspaceChanged: labels["accounts.create.errorWorkspaceChanged"],
+    accountCreateErrorName: labels["accounts.create.errorName"],
+    accountCreateErrorType: labels["accounts.create.errorType"],
+    accountCreateErrorCurrency: labels["accounts.create.errorCurrency"],
+    accountCreateErrorOpeningBalance: labels["accounts.create.errorOpeningBalance"],
     accountName: labels["accounts.fields.name"],
     accountNamePlaceholder: labels["accounts.fields.namePlaceholder"],
     accountType: labels["accounts.fields.type"],
@@ -286,7 +303,6 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     accountOpeningBalanceOptional: labels["accounts.fields.openingBalanceOptional"],
     accountOpeningBalanceHelper: labels["accounts.fields.openingBalanceHelper"],
     accountCancel: labels["accounts.actions.cancel"],
-    accountCreationUnavailable: labels["accounts.create.unavailable"],
     accountTypeCash: labels["accounts.type.cash.label"],
     accountTypeCashDescription: labels["accounts.type.cash.description"],
     accountTypeChecking: labels["accounts.type.checking.label"],
