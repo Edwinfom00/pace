@@ -9,6 +9,7 @@ import { transactionUiFixtures } from "@/modules/transactions/test/fixtures/tran
 import { TransactionAmountCell } from "@/modules/transactions/ui/components/transaction-amount-cell";
 import { formatTransactionFormDate, getTransactionFormToday } from "@/modules/transactions/ui/components/transaction-date-field";
 import { TransactionCategoryBadge } from "@/modules/transactions/ui/components/transaction-category-badge";
+import { getTransactionCategoryFixtures } from "@/modules/transactions/ui/components/transaction-category-fixtures";
 import { TransactionEmptyState } from "@/modules/transactions/ui/components/transaction-empty-state";
 import { TransactionFormFooter } from "@/modules/transactions/ui/components/transaction-form-footer";
 import { TransactionFormTip } from "@/modules/transactions/ui/components/transaction-form-tip";
@@ -124,6 +125,36 @@ test("transactions labels are complete across English, French, and German", () =
   assert.equal(getTransactionUiLabels(getDashboardLabels("en")).formNotePlaceholder, "Add a note...");
   assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).formTipTitle, "Conseil");
   assert.equal(getTransactionUiLabels(getDashboardLabels("de")).actionAddExpense, "Ausgabe hinzufügen");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("en")).formSource, "Source");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).formAmountIncomeHelper, "Saisissez le montant total reçu.");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("de")).actionAddIncome, "Einnahme hinzufügen");
+});
+
+test("income categories are isolated UI fixtures with localized income-only options", () => {
+  const incomeCategories = getTransactionCategoryFixtures("INCOME", "en");
+  const expenseCategories = getTransactionCategoryFixtures("EXPENSE", "en");
+
+  assert.deepEqual(incomeCategories.map((category) => category.id), [
+    "salary",
+    "freelance-income",
+    "business-income",
+    "gift-income",
+    "investment-income",
+    "cashback",
+    "other-income",
+  ]);
+  assert.equal(getTransactionCategoryFixtures("INCOME", "fr")[0]?.label, "Salaire");
+  assert.equal(getTransactionCategoryFixtures("INCOME", "de")[4]?.label, "Anlageerträge");
+  assert.deepEqual(expenseCategories.map((category) => category.id), [
+    "other-expense",
+    "groceries",
+    "dining",
+    "transport",
+    "shopping",
+    "subscriptions",
+    "utilities",
+    "health",
+  ]);
 });
 
 test("expense form finishing components stay compact, labelled, and visual-only", () => {
@@ -139,9 +170,9 @@ test("expense form finishing components stay compact, labelled, and visual-only"
     title: "Tip",
   }));
   const footer = renderToStaticMarkup(createElement(TransactionFormFooter, {
-    addExpenseLabel: "Add expense",
     cancelLabel: "Cancel",
     onCancel: () => undefined,
+    primaryActionLabel: "Add expense",
   }));
 
   assert.match(note, /<textarea/);

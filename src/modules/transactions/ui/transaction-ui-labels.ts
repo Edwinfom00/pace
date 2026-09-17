@@ -58,12 +58,16 @@ export type TransactionUiLabels = {
   readonly paginationPerPage: string;
   readonly formAmount: string;
   readonly formAmountExpenseHelper: string;
+  readonly formAmountIncomeHelper: string;
   readonly formCurrency: string;
   readonly formCurrencySearch: string;
   readonly formCurrencyEmpty: string;
   readonly formMerchant: string;
   readonly formMerchantPlaceholder: string;
   readonly formMerchantHelper: string;
+  readonly formSource: string;
+  readonly formSourcePlaceholder: string;
+  readonly formSourceHelper: string;
   readonly formCategory: string;
   readonly formCategoryPlaceholder: string;
   readonly formCategoryHelper: string;
@@ -71,6 +75,7 @@ export type TransactionUiLabels = {
   readonly formAccount: string;
   readonly formAccountPlaceholder: string;
   readonly formAccountHelper: string;
+  readonly formAccountIncomeHelper: string;
   readonly formAccountSearch: string;
   readonly formDate: string;
   readonly formTime: string;
@@ -80,9 +85,11 @@ export type TransactionUiLabels = {
   readonly formNotePlaceholder: string;
   readonly formTipTitle: string;
   readonly formTipExpense: string;
+  readonly formTipIncome: string;
   readonly actionRemove: string;
   readonly actionCancel: string;
   readonly actionAddExpense: string;
+  readonly actionAddIncome: string;
   readonly accountsEmptyTitle: string;
   readonly accountsEmptyDescription: string;
   readonly accountsCreate: string;
@@ -176,12 +183,16 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     paginationPerPage: labels["transactions.pagination.perPage"],
     formAmount: labels["transactions.form.amount"],
     formAmountExpenseHelper: labels["transactions.form.amountExpenseHelper"],
+    formAmountIncomeHelper: labels["transactions.form.amountIncomeHelper"],
     formCurrency: labels["transactions.form.currency"],
     formCurrencySearch: labels["transactions.form.currencySearch"],
     formCurrencyEmpty: labels["transactions.form.currencyEmpty"],
     formMerchant: labels["transactions.form.merchant"],
     formMerchantPlaceholder: labels["transactions.form.merchantPlaceholder"],
     formMerchantHelper: labels["transactions.form.merchantHelper"],
+    formSource: labels["transactions.form.source"],
+    formSourcePlaceholder: labels["transactions.form.sourcePlaceholder"],
+    formSourceHelper: labels["transactions.form.sourceHelper"],
     formCategory: labels["transactions.form.category"],
     formCategoryPlaceholder: labels["transactions.form.categoryPlaceholder"],
     formCategoryHelper: labels["transactions.form.categoryHelper"],
@@ -189,6 +200,7 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     formAccount: labels["transactions.form.account"],
     formAccountPlaceholder: labels["transactions.form.accountPlaceholder"],
     formAccountHelper: labels["transactions.form.accountHelper"],
+    formAccountIncomeHelper: labels["transactions.form.accountIncomeHelper"],
     formAccountSearch: labels["transactions.form.accountSearch"],
     formDate: labels["transactions.form.date"],
     formTime: labels["transactions.form.time"],
@@ -198,9 +210,11 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     formNotePlaceholder: labels["transactions.form.notePlaceholder"],
     formTipTitle: labels["transactions.form.tip.title"],
     formTipExpense: labels["transactions.form.tip.expense"],
+    formTipIncome: labels["transactions.form.tip.income"],
     actionRemove: labels["transactions.actions.remove"],
     actionCancel: labels["transactions.actions.cancel"],
     actionAddExpense: labels["transactions.actions.addExpense"],
+    actionAddIncome: labels["transactions.actions.addIncome"],
     accountsEmptyTitle: labels["accounts.empty.title"],
     accountsEmptyDescription: labels["accounts.empty.description"],
     accountsCreate: labels["accounts.actions.create"],

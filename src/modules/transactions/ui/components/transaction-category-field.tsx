@@ -8,33 +8,38 @@ import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 
 import {
   getTransactionCategoryFixtures,
-  type TransactionCategoryFixtureId,
+  type TransactionCategoryFixtureIdByKind,
+  type TransactionCategoryFixtureKind,
 } from "./transaction-category-fixtures";
 
-export type TransactionCategoryFieldProps = {
+export type TransactionCategoryFieldProps<K extends TransactionCategoryFixtureKind = TransactionCategoryFixtureKind> = {
   readonly helperText: string;
+  readonly kind: K;
   readonly label: string;
   readonly language: OnboardingLanguage;
-  readonly onValueChange: (value: TransactionCategoryFixtureId) => void;
+  readonly onValueChange: (value: TransactionCategoryFixtureIdForKind<K>) => void;
   readonly placeholder: string;
   readonly searchPlaceholder: string;
-  readonly value: TransactionCategoryFixtureId | "";
+  readonly value: TransactionCategoryFixtureIdForKind<K> | "";
 };
 
-export function TransactionCategoryField({
+type TransactionCategoryFixtureIdForKind<K extends TransactionCategoryFixtureKind> = TransactionCategoryFixtureIdByKind[K];
+
+export function TransactionCategoryField<K extends TransactionCategoryFixtureKind>({
   helperText,
+  kind,
   label,
   language,
   onValueChange,
   placeholder,
   searchPlaceholder,
   value,
-}: TransactionCategoryFieldProps) {
+}: TransactionCategoryFieldProps<K>) {
   const triggerId = useId();
   const helperId = useId();
-  const options = getTransactionCategoryFixtures(language).map(
-    (category): SelectOption<TransactionCategoryFixtureId> => ({
-      value: category.id,
+  const options = getTransactionCategoryFixtures(kind, language).map(
+    (category): SelectOption<TransactionCategoryFixtureIdForKind<K>> => ({
+      value: category.id as TransactionCategoryFixtureIdForKind<K>,
       label: category.label,
       searchTerms: [category.labels.en, category.labels.fr, category.labels.de],
       icon: (
@@ -42,7 +47,7 @@ export function TransactionCategoryField({
           categoryKey={category.iconKey}
           decorative
           size="sm"
-          transactionKind="EXPENSE"
+          transactionKind={kind}
         />
       ),
     }),

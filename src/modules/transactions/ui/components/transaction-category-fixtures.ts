@@ -2,10 +2,11 @@ import type { TransactionIconKey } from "@/lib/transaction-visuals/transaction-i
 import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 
 /**
- * Temporary presentation data for M8.5C.3. These entries are intentionally
- * not persisted workspace categories and will be replaced by ledger data.
+ * Isolated, UI-only presentation data for the manual-transaction preview.
+ * These entries are not persisted workspace categories and must not power
+ * production queries; ledger-backed categories will replace them.
  */
-export const transactionCategoryFixtures = [
+export const expenseTransactionCategoryFixtures = [
   {
     id: "other-expense",
     iconKey: "generic-expense",
@@ -52,11 +53,81 @@ export const transactionCategoryFixtures = [
   readonly labels: Readonly<Record<OnboardingLanguage, string>>;
 }[];
 
-export type TransactionCategoryFixtureId = (typeof transactionCategoryFixtures)[number]["id"];
+export const incomeTransactionCategoryFixtures = [
+  {
+    id: "salary",
+    iconKey: "salary",
+    labels: { en: "Salary", fr: "Salaire", de: "Gehalt" },
+  },
+  {
+    id: "freelance-income",
+    iconKey: "freelance-income",
+    labels: { en: "Freelance income", fr: "Revenu indépendant", de: "Freiberufliche Einnahmen" },
+  },
+  {
+    id: "business-income",
+    iconKey: "business-income",
+    labels: { en: "Business income", fr: "Revenu d’entreprise", de: "Geschäftseinnahmen" },
+  },
+  {
+    id: "gift-income",
+    iconKey: "gift-income",
+    labels: { en: "Gift income", fr: "Don", de: "Geschenk" },
+  },
+  {
+    id: "investment-income",
+    iconKey: "investment-income",
+    labels: { en: "Investment income", fr: "Revenu d’investissement", de: "Anlageerträge" },
+  },
+  {
+    id: "cashback",
+    iconKey: "cashback",
+    labels: { en: "Cashback", fr: "Remise en argent", de: "Cashback" },
+  },
+  {
+    id: "other-income",
+    iconKey: "generic-income",
+    labels: { en: "Other income", fr: "Autre revenu", de: "Sonstige Einnahmen" },
+  },
+] as const satisfies readonly {
+  readonly id: string;
+  readonly iconKey: TransactionIconKey;
+  readonly labels: Readonly<Record<OnboardingLanguage, string>>;
+}[];
 
-export function getTransactionCategoryFixtures(language: OnboardingLanguage) {
-  return transactionCategoryFixtures.map((category) => ({
+export type TransactionCategoryFixtureKind = "EXPENSE" | "INCOME";
+export type ExpenseTransactionCategoryFixtureId = (typeof expenseTransactionCategoryFixtures)[number]["id"];
+export type IncomeTransactionCategoryFixtureId = (typeof incomeTransactionCategoryFixtures)[number]["id"];
+export type TransactionCategoryFixtureId = ExpenseTransactionCategoryFixtureId | IncomeTransactionCategoryFixtureId;
+export type TransactionCategoryFixtureIdByKind = {
+  readonly EXPENSE: ExpenseTransactionCategoryFixtureId;
+  readonly INCOME: IncomeTransactionCategoryFixtureId;
+};
+
+type TransactionCategoryFixtureForKind<K extends TransactionCategoryFixtureKind> =
+  K extends "EXPENSE"
+    ? (typeof expenseTransactionCategoryFixtures)[number]
+    : (typeof incomeTransactionCategoryFixtures)[number];
+
+type TransactionCategoryFixture = (typeof expenseTransactionCategoryFixtures)[number] | (typeof incomeTransactionCategoryFixtures)[number];
+type LocalizedTransactionCategoryFixture<T extends TransactionCategoryFixture> = T & { readonly label: string };
+
+function localizeCategoryFixtures<T extends TransactionCategoryFixture>(fixtures: readonly T[], language: OnboardingLanguage) {
+  return fixtures.map((category) => ({
     ...category,
     label: category.labels[language],
   }));
+}
+
+export function getTransactionCategoryFixtures<K extends TransactionCategoryFixtureKind>(
+  kind: K,
+  language: OnboardingLanguage,
+): readonly LocalizedTransactionCategoryFixture<TransactionCategoryFixtureForKind<K>>[];
+export function getTransactionCategoryFixtures(
+  kind: TransactionCategoryFixtureKind,
+  language: OnboardingLanguage,
+): readonly LocalizedTransactionCategoryFixture<TransactionCategoryFixture>[] {
+  return kind === "EXPENSE"
+    ? localizeCategoryFixtures(expenseTransactionCategoryFixtures, language)
+    : localizeCategoryFixtures(incomeTransactionCategoryFixtures, language);
 }
