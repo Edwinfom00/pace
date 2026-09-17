@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useState, type RefObject } from "react";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "cmdk";
 import { Popover } from "radix-ui";
 import { FiCheck, FiChevronDown } from "react-icons/fi";
@@ -14,19 +14,25 @@ import {
 
 type TransactionCurrencySelectorProps = {
   readonly ariaLabel: string;
+  readonly describedBy?: string;
   readonly emptyLabel: string;
+  readonly invalid?: boolean;
   readonly language: OnboardingLanguage;
   readonly onValueChange: (currency: string) => void;
   readonly searchPlaceholder: string;
+  readonly triggerRef?: RefObject<HTMLButtonElement | null>;
   readonly value: string;
 };
 
 export function TransactionCurrencySelector({
   ariaLabel,
+  describedBy,
   emptyLabel,
+  invalid = false,
   language,
   onValueChange,
   searchPlaceholder,
+  triggerRef,
   value,
 }: TransactionCurrencySelectorProps) {
   const [open, setOpen] = useState(false);
@@ -61,10 +67,16 @@ export function TransactionCurrencySelector({
       <Popover.Trigger asChild>
         <button
           aria-controls={listboxId}
+          aria-describedby={describedBy}
           aria-expanded={open}
           aria-haspopup="listbox"
           aria-label={ariaLabel}
-          className="flex min-w-[88px] cursor-pointer items-center justify-center gap-1.5 px-3 text-[13px] font-semibold text-[#263550] outline-none transition-colors hover:bg-[#f7f9fc] focus-visible:bg-[#f7f9fc] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#5e8fe8] sm:min-w-[104px] sm:px-4"
+          aria-invalid={invalid || undefined}
+          className={cn(
+            "flex min-w-22 cursor-pointer items-center justify-center gap-1.5 px-3 text-[13px] font-semibold text-[#263550] outline-none transition-colors hover:bg-[#f7f9fc] focus-visible:bg-[#f7f9fc] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#5e8fe8] sm:min-w-[104px] sm:px-4",
+            invalid && "text-[#a83142] focus-visible:ring-[#c55b68]",
+          )}
+          ref={triggerRef}
           role="combobox"
           type="button"
         >

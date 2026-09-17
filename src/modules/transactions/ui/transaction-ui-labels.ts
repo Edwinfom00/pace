@@ -1,4 +1,5 @@
 import type { DashboardLabels } from "@/i18n/dashboard-messages";
+import type { TransactionFormValidationErrorCode } from "../schemas/transaction-form.schema";
 
 export type TransactionUiLabels = {
   readonly title: string;
@@ -63,6 +64,7 @@ export type TransactionUiLabels = {
   readonly formCurrency: string;
   readonly formCurrencySearch: string;
   readonly formCurrencyEmpty: string;
+  readonly validation: Readonly<Record<TransactionFormValidationErrorCode, string>>;
   readonly formMerchant: string;
   readonly formMerchantPlaceholder: string;
   readonly formMerchantHelper: string;
@@ -197,6 +199,24 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     formCurrency: labels["transactions.form.currency"],
     formCurrencySearch: labels["transactions.form.currencySearch"],
     formCurrencyEmpty: labels["transactions.form.currencyEmpty"],
+    validation: {
+      "transactions.validation.amountRequired": labels["transactions.validation.amountRequired"],
+      "transactions.validation.amountInvalid": labels["transactions.validation.amountInvalid"],
+      "transactions.validation.amountPositive": labels["transactions.validation.amountPositive"],
+      "transactions.validation.currencyRequired": labels["transactions.validation.currencyRequired"],
+      "transactions.validation.currencyUnsupported": labels["transactions.validation.currencyUnsupported"],
+      "transactions.validation.accountRequired": labels["transactions.validation.accountRequired"],
+      "transactions.validation.dateRequired": labels["transactions.validation.dateRequired"],
+      "transactions.validation.invalidDate": labels["transactions.validation.invalidDate"],
+      "transactions.validation.invalidTime": labels["transactions.validation.invalidTime"],
+      "transactions.validation.noteTooLong": labels["transactions.validation.noteTooLong"],
+      "transactions.validation.optionalTextBlank": labels["transactions.validation.optionalTextBlank"],
+      "transactions.validation.optionalTextTooLong": labels["transactions.validation.optionalTextTooLong"],
+      "transactions.validation.fromAccountRequired": labels["transactions.validation.fromAccountRequired"],
+      "transactions.validation.toAccountRequired": labels["transactions.validation.toAccountRequired"],
+      "transactions.validation.sameTransferAccount": labels["transactions.validation.sameTransferAccount"],
+      "transactions.validation.crossCurrencyTransferUnsupported": labels["transactions.validation.crossCurrencyTransferUnsupported"],
+    },
     formMerchant: labels["transactions.form.merchant"],
     formMerchantPlaceholder: labels["transactions.form.merchantPlaceholder"],
     formMerchantHelper: labels["transactions.form.merchantHelper"],

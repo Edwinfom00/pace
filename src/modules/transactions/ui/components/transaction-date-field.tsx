@@ -9,10 +9,12 @@ import { cn } from "@/lib/utils";
 const DAY_IN_MS = 86_400_000;
 
 export type TransactionDateFieldProps = {
+  readonly error?: string;
   readonly label: string;
   readonly locale: string;
   readonly onValueChange: (value: Date) => void;
   readonly timeZone: string;
+  readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
   readonly value: Date;
 };
 
@@ -107,11 +109,12 @@ export function getTransactionFormToday(timeZone: string, now = new Date()): Dat
   return createCalendarDate(Number(parts.year), Number(parts.month) - 1, Number(parts.day));
 }
 
-export function TransactionDateField({ label, locale, onValueChange, timeZone, value }: TransactionDateFieldProps) {
+export function TransactionDateField({ error, label, locale, onValueChange, timeZone, triggerRef, value }: TransactionDateFieldProps) {
   const [open, setOpen] = React.useState(false);
   const [displayedMonth, setDisplayedMonth] = React.useState(() => calendarMonth(value));
   const [focusedDate, setFocusedDate] = React.useState(value);
   const triggerId = React.useId();
+  const errorId = React.useId();
   const calendarId = React.useId();
   const dayRefs = React.useRef(new Map<string, HTMLButtonElement>());
   const today = getTransactionFormToday(timeZone);
@@ -189,14 +192,19 @@ export function TransactionDateField({ label, locale, onValueChange, timeZone, v
         <Popover.Trigger asChild>
           <button
             aria-controls={calendarId}
+            aria-describedby={error ? errorId : undefined}
             aria-expanded={open}
             aria-haspopup="dialog"
             aria-label={`${label}: ${formatLongDate(value, locale)}`}
-            className="flex h-11 w-full items-center gap-2.5 rounded-[8px] border border-[#d9e1ec] bg-white px-3 text-left text-[13px] text-[#13213f] outline-none transition-[border-color,box-shadow] duration-150 hover:border-[#bac9df] focus-visible:border-[#4e7fe3] focus-visible:ring-3 focus-visible:ring-[#5e8fe8]/15"
+            className={cn(
+              "flex h-11 w-full items-center gap-2.5 rounded-[8px] border bg-white px-3 text-left text-[13px] text-[#13213f] outline-none transition-[border-color,box-shadow] duration-150 hover:border-[#bac9df] focus-visible:ring-3",
+              error ? "border-[#d88690] focus-visible:border-[#c55b68] focus-visible:ring-[#d88690]/15" : "border-[#d9e1ec] focus-visible:border-[#4e7fe3] focus-visible:ring-[#5e8fe8]/15",
+            )}
             id={triggerId}
+            ref={triggerRef}
             type="button"
           >
-            <FiCalendar aria-hidden="true" className="size-[17px] shrink-0 text-[#526987]" />
+            <FiCalendar aria-hidden="true" className="size-4.25 shrink-0 text-[#526987]" />
             <span className="min-w-0 flex-1 truncate font-medium tabular-nums">{formatTransactionFormDate(value, locale)}</span>
             <FiChevronDown aria-hidden="true" className={cn("size-4 shrink-0 text-[#60769e] transition-transform", open && "rotate-180")} />
           </button>
@@ -275,6 +283,7 @@ export function TransactionDateField({ label, locale, onValueChange, timeZone, v
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
+      {error ? <p className="text-[12px] leading-5 text-[#c23445]" id={errorId}>{error}</p> : null}
     </div>
   );
 }

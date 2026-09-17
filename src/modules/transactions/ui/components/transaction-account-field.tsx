@@ -21,6 +21,7 @@ export type TransactionAccountFieldProps<T extends string = string> = {
   readonly accountTypeLabels: Readonly<Record<LedgerAccountType, string>>;
   readonly disabledAccountIds?: readonly T[];
   readonly disabledAccountLabel?: string;
+  readonly error?: string;
   readonly emptyDescription: string;
   readonly emptyTitle: string;
   readonly helperText?: string;
@@ -41,7 +42,7 @@ export type TransactionAccountFieldProps<T extends string = string> = {
 function AccountIcon({ type }: { readonly type: LedgerAccountType }) {
   const { icon: Icon } = getAccountTypeMetadata(type);
 
-  return <Icon aria-hidden="true" className="size-[17px]" />;
+  return <Icon aria-hidden="true" className="size-4.25" />;
 }
 
 function getAccountMetadata(account: TransactionAccountOption, accountTypeLabels: Readonly<Record<LedgerAccountType, string>>) {
@@ -58,6 +59,7 @@ export function TransactionAccountField<T extends string = string>({
   createFirstAccountLabel,
   disabledAccountIds = [],
   disabledAccountLabel,
+  error,
   emptyDescription,
   emptyTitle,
   helperText,
@@ -74,6 +76,7 @@ export function TransactionAccountField<T extends string = string>({
   const [query, setQuery] = React.useState("");
   const triggerId = React.useId();
   const helperId = React.useId();
+  const errorId = React.useId();
   const listboxId = React.useId();
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const selectedAccount = accounts.find((account) => account.id === value);
@@ -114,13 +117,15 @@ export function TransactionAccountField<T extends string = string>({
         <Popover.Trigger asChild>
           <button
             aria-controls={listboxId}
-            aria-describedby={helperText ? helperId : undefined}
+            aria-describedby={error ? errorId : helperText ? helperId : undefined}
             aria-expanded={open}
             aria-haspopup="listbox"
+            aria-invalid={error ? true : undefined}
             aria-label={`${label}: ${selectedAccount?.name ?? placeholder}`}
             className={cn(
               "flex h-11 w-full items-center gap-2.5 rounded-[8px] border border-[#d9e1ec] bg-white px-3 text-left text-[13px] text-[#13213f] outline-none transition-[border-color,box-shadow] duration-150",
               "hover:border-[#bac9df] focus-visible:border-[#4e7fe3] focus-visible:ring-3 focus-visible:ring-[#5e8fe8]/15",
+              error && "border-[#d88690] focus-visible:border-[#c55b68] focus-visible:ring-[#d88690]/15",
             )}
             id={triggerId}
             ref={triggerRef}
@@ -137,7 +142,7 @@ export function TransactionAccountField<T extends string = string>({
             ) : (
               <span className="flex min-w-0 flex-1 items-center gap-2.5 text-[#8a9ab3]">
                 <span className="flex size-6 shrink-0 items-center justify-center rounded-[6px] bg-[#f2f5f9] text-[#526987]">
-                  <FiDollarSign aria-hidden="true" className="size-[17px]" />
+                  <FiDollarSign aria-hidden="true" className="size-4.25" />
                 </span>
                 <span className="truncate">{placeholder}</span>
               </span>
@@ -152,7 +157,7 @@ export function TransactionAccountField<T extends string = string>({
         <Popover.Portal>
           <Popover.Content
             align="start"
-            className="z-50 mt-1 w-[var(--radix-popover-trigger-width)] min-w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-[#d9e1ec] bg-white p-1.5 shadow-[0_18px_45px_rgb(31_62_119/14%)]"
+            className="z-50 mt-1 w-(--radix-popover-trigger-width) min-w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-[#d9e1ec] bg-white p-1.5 shadow-[0_18px_45px_rgb(31_62_119/14%)]"
             sideOffset={6}
           >
             {hasAccounts ? (
@@ -180,7 +185,7 @@ export function TransactionAccountField<T extends string = string>({
                         <CommandItem
                           aria-disabled={isDisabled || undefined}
                           aria-selected={isSelected}
-                          className="flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-[#172442] outline-none data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-50 data-[selected=true]:bg-[#edf3ff]"
+                          className="flex min-h-13 cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-[#172442] outline-none data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-50 data-[selected=true]:bg-[#edf3ff]"
                           disabled={isDisabled}
                           key={account.id}
                           onSelect={() => choose(account.id)}
@@ -222,10 +227,10 @@ export function TransactionAccountField<T extends string = string>({
             ) : (
               <div className="px-3 py-5 text-center">
                 <span className="mx-auto mb-3 flex size-9 items-center justify-center rounded-[9px] bg-[#edf3ff] text-[#356fe0]">
-                  <FiDollarSign aria-hidden="true" className="size-[18px]" />
+                  <FiDollarSign aria-hidden="true" className="size-4.5" />
                 </span>
                 <p className="text-[13px] font-medium text-[#263550]">{emptyTitle}</p>
-                <p className="mx-auto mt-1 max-w-[15rem] text-[12px] leading-5 text-[#71809a]">{emptyDescription}</p>
+                <p className="mx-auto mt-1 max-w-60 text-[12px] leading-5 text-[#71809a]">{emptyDescription}</p>
                 <button
                   className="mt-4 inline-flex h-9 items-center gap-2 rounded-[7px] bg-[#edf3ff] px-3 text-[12px] font-medium text-[#2f67e9] outline-none transition-colors hover:bg-[#e4eeff] focus-visible:ring-2 focus-visible:ring-[#5e8fe8]/30"
                   onClick={requestCreateAccount}
@@ -240,7 +245,9 @@ export function TransactionAccountField<T extends string = string>({
         </Popover.Portal>
       </Popover.Root>
 
-      {helperText ? <p className="min-h-5 text-[12px] leading-5 text-[#71809a]" id={helperId}>{helperText}</p> : null}
+      {error ? (
+        <p className="min-h-5 text-[12px] leading-5 text-[#c23445]" id={errorId}>{error}</p>
+      ) : helperText ? <p className="min-h-5 text-[12px] leading-5 text-[#71809a]" id={helperId}>{helperText}</p> : null}
     </div>
   );
 }

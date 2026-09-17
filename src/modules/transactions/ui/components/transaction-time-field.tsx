@@ -8,11 +8,13 @@ import { cn } from "@/lib/utils";
 
 export type TransactionTimeFieldProps = {
   readonly clearLabel: string;
+  readonly error?: string;
   readonly label: string;
   readonly locale: string;
   readonly onValueChange: (value: string) => void;
   readonly optionalLabel: string;
   readonly placeholder: string;
+  readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
   /** A 24-hour HH:mm value, or an empty string when no time is chosen. */
   readonly value: string;
 };
@@ -43,15 +45,18 @@ export function formatTransactionFormTime(value: string, locale: string): string
 
 export function TransactionTimeField({
   clearLabel,
+  error,
   label,
   locale,
   onValueChange,
   optionalLabel,
   placeholder,
+  triggerRef,
   value,
 }: TransactionTimeFieldProps) {
   const [open, setOpen] = React.useState(false);
   const triggerId = React.useId();
+  const errorId = React.useId();
   const time = parseTime(value);
   const selectedHour = time?.hour ?? 0;
   const selectedMinute = time?.minute ?? 0;
@@ -73,17 +78,22 @@ export function TransactionTimeField({
       </label>
 
       <Popover.Root onOpenChange={setOpen} open={open}>
-        <div className="flex h-11 overflow-hidden rounded-[8px] border border-[#d9e1ec] bg-white transition-[border-color,box-shadow] duration-150 hover:border-[#bac9df] focus-within:border-[#4e7fe3] focus-within:ring-3 focus-within:ring-[#5e8fe8]/15">
+        <div className={cn(
+          "flex h-11 overflow-hidden rounded-[8px] border bg-white transition-[border-color,box-shadow] duration-150 hover:border-[#bac9df] focus-within:ring-3",
+          error ? "border-[#d88690] focus-within:border-[#c55b68] focus-within:ring-[#d88690]/15" : "border-[#d9e1ec] focus-within:border-[#4e7fe3] focus-within:ring-[#5e8fe8]/15",
+        )}>
           <Popover.Trigger asChild>
             <button
               aria-expanded={open}
               aria-haspopup="dialog"
+              aria-describedby={error ? errorId : undefined}
               aria-label={time ? `${label}: ${displayValue}` : `${label}: ${placeholder}`}
               className={cn(
                 "flex min-w-0 flex-1 items-center gap-2.5 px-3 text-left text-[13px] outline-none",
                 time ? "text-[#13213f]" : "text-[#8a9ab3]",
               )}
               id={triggerId}
+              ref={triggerRef}
               type="button"
             >
               <FiClock aria-hidden="true" className="size-[17px] shrink-0 text-[#526987]" />
@@ -170,6 +180,7 @@ export function TransactionTimeField({
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
+      {error ? <p className="text-[12px] leading-5 text-[#c23445]" id={errorId}>{error}</p> : null}
     </div>
   );
 }

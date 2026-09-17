@@ -172,6 +172,7 @@ test("expense form finishing components stay compact, labelled, and visual-only"
   const footer = renderToStaticMarkup(createElement(TransactionFormFooter, {
     cancelLabel: "Cancel",
     onCancel: () => undefined,
+    onPrimaryAction: () => undefined,
     primaryActionLabel: "Add expense",
   }));
 
