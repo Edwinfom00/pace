@@ -9,6 +9,7 @@ export function TransactionTable({
   timeZone,
   now,
   getRowActions,
+  getDetailHref,
 }: {
   readonly transactions: readonly TransactionListItem[];
   readonly labels: TransactionUiLabels;
@@ -16,6 +17,7 @@ export function TransactionTable({
   readonly timeZone: string;
   readonly now: string;
   readonly getRowActions?: (transaction: TransactionListItem) => readonly TransactionRowAction[];
+  readonly getDetailHref?: (transaction: TransactionListItem) => string;
 }) {
   return (
     <div className="hidden overflow-hidden rounded-[12px] border border-[#e7ebf1] bg-white md:block">
@@ -56,6 +58,7 @@ export function TransactionTable({
                 now={now}
                 timeZone={timeZone}
                 transaction={transaction}
+                detailHref={getDetailHref?.(transaction)}
               />
             ))}
           </tbody>

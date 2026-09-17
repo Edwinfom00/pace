@@ -1,4 +1,5 @@
 import type { TransactionUiLabels } from "../transaction-ui-labels";
+import Link from "next/link";
 import type { TransactionListItem, TransactionRowAction } from "../../types/transaction-ui.types";
 import { TransactionAccountCell } from "./transaction-account-cell";
 import { TransactionAmountCell } from "./transaction-amount-cell";
@@ -15,6 +16,7 @@ export function TransactionMobileCard({
   timeZone,
   now,
   actions,
+  detailHref,
 }: {
   readonly transaction: TransactionListItem;
   readonly labels: TransactionUiLabels;
@@ -22,12 +24,17 @@ export function TransactionMobileCard({
   readonly timeZone: string;
   readonly now: string;
   readonly actions?: readonly TransactionRowAction[];
+  readonly detailHref?: string;
 }) {
   return (
     <article className="rounded-[12px] border border-[#e7ebf1] bg-white px-4 py-3.5">
       <div className="flex min-w-0 items-start gap-3">
         <div className="min-w-0 flex-1">
-          <TransactionMerchantCell category={transaction.category} kind={transaction.kind} merchant={transaction.merchant} />
+          {detailHref ? (
+            <Link className="block rounded-[7px] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#2563eb]" href={detailHref}>
+              <TransactionMerchantCell category={transaction.category} kind={transaction.kind} merchant={transaction.merchant} />
+            </Link>
+          ) : <TransactionMerchantCell category={transaction.category} kind={transaction.kind} merchant={transaction.merchant} />}
         </div>
         <TransactionAmountCell amount={transaction.amount} kind={transaction.kind} locale={locale} />
       </div>
