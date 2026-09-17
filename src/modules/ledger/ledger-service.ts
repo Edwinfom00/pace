@@ -18,7 +18,7 @@ import type {
   LedgerTransactionRecord,
 } from "./domain";
 import { normalizeMerchantName } from "./domain";
-import type { LedgerRepository } from "./repositories/ledger-repository";
+import type { CreateLedgerMerchantRecord, LedgerRepository } from "./repositories/ledger-repository";
 import {
   createLedgerAccountSchema,
   createLedgerCategorySchema,
@@ -112,18 +112,8 @@ export class LedgerService {
     workspaceId: string,
     name: string,
   ): Promise<LedgerMerchantRecord> {
-    const parsed = createLedgerMerchantSchema.parse({ name });
-    await this.requireWorkspacePermission(actor.userId, workspaceId, "manage_ledger");
-    const normalizedName = normalizeMerchantName(parsed.name);
-    const existing = await this.repository.findMerchantByNormalizedName(workspaceId, normalizedName);
-    if (existing) return existing;
-    return this.repository.createMerchant({
-      id: randomUUID(),
-      workspaceId,
-      name: parsed.name,
-      normalizedName,
-      createdByUserId: actor.userId,
-    });
+    const merchant = await this.findOrPrepareMerchant(actor, workspaceId, name);
+    return merchant.existing ?? this.repository.createMerchant(merchant.record);
   }
 
   async listMerchants(actor: AuthenticatedActor, workspaceId: string): Promise<LedgerMerchantRecord[]> {
@@ -219,21 +209,24 @@ export class LedgerService {
       });
     }
 
-    const category = await this.requireCategory(workspaceId, parsed.categoryId, parsed.kind);
-    const merchantId = parsed.merchantId
-      ? (await this.requireMerchant(workspaceId, parsed.merchantId)).id
+    const category = parsed.categoryId
+      ? await this.requireCategory(workspaceId, parsed.categoryId, parsed.kind)
       : null;
-
-    return this.repository.createTransaction({
+    const merchant = await this.resolveTransactionMerchant(actor, workspaceId, parsed);
+    const transaction = {
       ...common,
       kind: parsed.kind,
       accountId: account.id,
       transferAccountId: null,
-      categoryId: category.id,
-      merchantId,
+      categoryId: category?.id ?? null,
+      merchantId: merchant.id,
       transferGroupId: null,
       refundedTransactionId: null,
-    });
+    };
+
+    return merchant.record
+      ? this.repository.createTransactionWithMerchant(transaction, merchant.record)
+      : this.repository.createTransaction(transaction);
   }
 
   async listTransactions(
@@ -266,7 +259,48 @@ export class LedgerService {
   private async requireAccount(workspaceId: string, accountId: string): Promise<LedgerAccountRecord> {
     const account = await this.repository.findAccount(workspaceId, accountId);
     if (!account) throw new NotFoundError("Account not found in this workspace.");
+    if (account.archivedAt) throw new ConflictError("Archived accounts cannot accept new transactions.");
     return account;
+  }
+
+  private async resolveTransactionMerchant(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: Extract<ReturnType<typeof createLedgerTransactionSchema.parse>, { kind: "EXPENSE" | "INCOME" }>,
+  ): Promise<{ id: string | null; record: CreateLedgerMerchantRecord | null }> {
+    if (input.merchantId) {
+      return { id: (await this.requireMerchant(workspaceId, input.merchantId)).id, record: null };
+    }
+    if (input.kind !== "EXPENSE" || !input.merchantName) return { id: null, record: null };
+
+    const merchant = await this.findOrPrepareMerchant(actor, workspaceId, input.merchantName);
+    if (merchant.existing) return { id: merchant.existing.id, record: null };
+    return {
+      id: merchant.record.id,
+      record: merchant.record,
+    };
+  }
+
+  /** Shared deterministic merchant lookup/normalization for every write path. */
+  private async findOrPrepareMerchant(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    name: string,
+  ): Promise<{ existing: LedgerMerchantRecord | null; record: CreateLedgerMerchantRecord }> {
+    const parsed = createLedgerMerchantSchema.parse({ name });
+    await this.requireWorkspacePermission(actor.userId, workspaceId, "manage_ledger");
+    const normalizedName = normalizeMerchantName(parsed.name);
+    const existing = await this.repository.findMerchantByNormalizedName(workspaceId, normalizedName);
+    return {
+      existing,
+      record: {
+        id: randomUUID(),
+        workspaceId,
+        name: parsed.name,
+        normalizedName,
+        createdByUserId: actor.userId,
+      },
+    };
   }
 
   private async requireCategory(

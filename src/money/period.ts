@@ -9,6 +9,11 @@ export interface LocalDate {
   readonly day: number;
 }
 
+export interface LocalTime {
+  readonly hour: number;
+  readonly minute: number;
+}
+
 /** Returns a half-open calendar-month period in the supplied IANA time zone. */
 export function calendarMonthPeriod(
   instant: Date,
@@ -73,6 +78,36 @@ export function localDateForInstant(instant: Date, timeZone: string): LocalDate 
   };
 }
 
+/**
+ * Resolves a wall-clock date and time in an IANA time zone to one UTC instant.
+ * Repeated times during a backward daylight-saving transition resolve to their
+ * earlier occurrence; skipped local times are rejected instead of adjusted.
+ */
+export function zonedLocalDateTimeToInstant(date: LocalDate, time: LocalTime, timeZone: string): Date {
+  if (time.hour < 0 || time.hour > 23 || time.minute < 0 || time.minute > 59) {
+    throw new Error("Invalid local time.");
+  }
+
+  assertValidTimeZone(timeZone);
+  const requestedUtc = Date.UTC(date.year, date.month - 1, date.day, time.hour, time.minute);
+  let instant = requestedUtc;
+
+  // Time-zone offsets can change between the initial estimate and the resolved
+  // instant. The initial UTC wall-clock estimate resolves repeated times to
+  // their earlier occurrence, which is our deterministic DST policy.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    instant = requestedUtc - offsetMilliseconds(new Date(instant), timeZone);
+  }
+
+  const resolved = new Date(instant);
+  const resolvedDate = localDateForInstant(resolved, timeZone);
+  const resolvedTime = localTimeForInstant(resolved, timeZone);
+  if (compareLocalDates(resolvedDate, date) !== 0 || resolvedTime.hour !== time.hour || resolvedTime.minute !== time.minute) {
+    throw new Error(`The local time does not exist in ${timeZone}.`);
+  }
+  return resolved;
+}
+
 export function localDateKey(date: LocalDate): string {
   return `${date.year.toString().padStart(4, "0")}-${date.month.toString().padStart(2, "0")}-${date.day
     .toString()
@@ -107,22 +142,17 @@ function parseLocalDate(value: string): LocalDate {
 }
 
 function zonedMidnightToInstant(date: LocalDate, timeZone: string): Date {
-  assertValidTimeZone(timeZone);
-  const requestedUtc = Date.UTC(date.year, date.month - 1, date.day);
-  let instant = requestedUtc;
+  return zonedLocalDateTimeToInstant(date, { hour: 0, minute: 0 }, timeZone);
+}
 
-  // Time-zone offsets can change between the initial estimate and the resolved
-  // instant. Two passes covers ordinary and daylight-saving transitions.
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    instant = requestedUtc - offsetMilliseconds(new Date(instant), timeZone);
-  }
-
-  const resolved = new Date(instant);
-  const resolvedDate = localDateForInstant(resolved, timeZone);
-  if (compareLocalDates(resolvedDate, date) !== 0) {
-    throw new Error(`The local date ${localDateKey(date)} does not exist in ${timeZone}.`);
-  }
-  return resolved;
+function localTimeForInstant(instant: Date, timeZone: string): LocalTime {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  return { hour: Number(part(parts, "hour")), minute: Number(part(parts, "minute")) };
 }
 
 function offsetMilliseconds(instant: Date, timeZone: string): number {

@@ -61,6 +61,14 @@ export interface LedgerRepository {
   ): Promise<LedgerMerchantRecord | null>;
 
   createTransaction(input: CreateLedgerTransactionRecord): Promise<LedgerTransactionRecord>;
+  /**
+   * Persists a newly discovered merchant and its transaction in one database
+   * batch. Existing merchants continue through createTransaction.
+   */
+  createTransactionWithMerchant(
+    input: CreateLedgerTransactionRecord,
+    merchant: CreateLedgerMerchantRecord,
+  ): Promise<LedgerTransactionRecord>;
   findTransaction(
     workspaceId: string,
     transactionId: string,
@@ -173,6 +181,19 @@ export class DatabaseLedgerRepository implements LedgerRepository {
 
   async createTransaction(input: CreateLedgerTransactionRecord): Promise<LedgerTransactionRecord> {
     const [record] = await db.insert(ledgerTransactions).values(input).returning();
+    if (!record) throw new Error("Failed to create ledger transaction.");
+    return record;
+  }
+
+  async createTransactionWithMerchant(
+    input: CreateLedgerTransactionRecord,
+    merchant: CreateLedgerMerchantRecord,
+  ): Promise<LedgerTransactionRecord> {
+    const [, transactions] = await db.batch([
+      db.insert(ledgerMerchants).values(merchant).returning({ id: ledgerMerchants.id }),
+      db.insert(ledgerTransactions).values(input).returning(),
+    ]);
+    const [record] = transactions;
     if (!record) throw new Error("Failed to create ledger transaction.");
     return record;
   }

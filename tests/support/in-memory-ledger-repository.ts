@@ -158,6 +158,22 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     return record;
   }
 
+  async createTransactionWithMerchant(
+    input: CreateLedgerTransactionRecord,
+    merchant: CreateLedgerMerchantRecord,
+  ): Promise<LedgerTransactionRecord> {
+    if (await this.findMerchantByNormalizedName(merchant.workspaceId, merchant.normalizedName)) {
+      throw new Error("A merchant with that name already exists in this workspace.");
+    }
+
+    const now = new Date();
+    const merchantRecord: LedgerMerchantRecord = { ...merchant, createdAt: now, updatedAt: now };
+    const transactionRecord: LedgerTransactionRecord = { ...input, createdAt: now, updatedAt: now };
+    this.merchants.set(merchantRecord.id, merchantRecord);
+    this.transactions.set(transactionRecord.id, transactionRecord);
+    return transactionRecord;
+  }
+
   async findTransaction(
     workspaceId: string,
     transactionId: string,

@@ -190,7 +190,13 @@ export const ledgerTransactions = pgTable(
         AND ${table.refundedTransactionId} IS NULL
         AND ${table.transferGroupId} IS NOT NULL
       ) OR (
-        ${table.kind} IN ('EXPENSE', 'INCOME')
+        ${table.kind} = 'EXPENSE'
+        AND ${table.accountId} IS NOT NULL
+        AND ${table.transferAccountId} IS NULL
+        AND ${table.refundedTransactionId} IS NULL
+        AND ${table.transferGroupId} IS NULL
+      ) OR (
+        ${table.kind} = 'INCOME'
         AND ${table.accountId} IS NOT NULL
         AND ${table.transferAccountId} IS NULL
         AND ${table.categoryId} IS NOT NULL

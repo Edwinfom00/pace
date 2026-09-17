@@ -127,6 +127,13 @@
       "when": 1789647147890,
       "tag": "0017_colossal_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789651646059,
+      "tag": "0018_robust_killraven",
+      "breakpoints": true
     }
   ]
 }
