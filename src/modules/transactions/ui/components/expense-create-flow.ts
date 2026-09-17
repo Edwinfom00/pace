@@ -1,9 +1,15 @@
 import type { CreatedExpenseDTO } from "@/modules/ledger/create-expense-contract";
 import type { ExpenseFormInput, TransactionFormDraft, TransactionFormErrors, TransactionFormField } from "@/modules/transactions/schemas/transaction-form.schema";
 import {
+  canReconcileCreatedManualTransaction,
+  canStartManualTransactionSubmission,
   formatManualTransactionDate,
   manualTransactionCreationErrorCode,
+  manualTransactionReconciliationPlan,
   parseCreatedManualTransactionDTO,
+  serverManualTransactionFieldErrors,
+  submitCanonicalManualTransaction,
+  type ManualTransactionCreationTransport,
 } from "./manual-transaction-create-flow";
 
 export type ExpenseCreateFailure = {
@@ -31,29 +37,26 @@ export function createExpenseCommand(
 
 export type CreateExpenseCommand = ReturnType<typeof createExpenseCommand>;
 
-export type ExpenseCreationTransport = (
-  command: CreateExpenseCommand,
-) => Promise<{ readonly ok: boolean; readonly payload: unknown }>;
+export type ExpenseCreationTransport = ManualTransactionCreationTransport<CreateExpenseCommand>;
 
 export type ExpenseCreationResponse =
   | { readonly ok: true; readonly expense: CreatedExpenseDTO }
   | { readonly ok: false; readonly failure: ExpenseCreateFailure };
 
-/**
- * The UI accepts a persisted C13A DTO as success and never manufactures a
- * transaction from a form draft before the server confirms it.
- */
+
 export async function submitCanonicalExpense(
   command: CreateExpenseCommand,
   transport: ExpenseCreationTransport,
 ): Promise<ExpenseCreationResponse> {
-  const response = await transport(command);
-  if (!response.ok) return { ok: false, failure: mapExpenseCreateFailure(expenseCreationErrorCode(response.payload)) };
-
-  const expense = parseCreatedExpenseDTO(response.payload);
-  return expense
-    ? { ok: true, expense }
-    : { ok: false, failure: mapExpenseCreateFailure(undefined) };
+  const result = await submitCanonicalManualTransaction(
+    command,
+    transport,
+    parseCreatedExpenseDTO,
+    mapExpenseCreateFailure,
+  );
+  return result.ok
+    ? { ok: true, expense: result.transaction }
+    : { ok: false, failure: result.failure };
 }
 
 
@@ -83,23 +86,7 @@ export function mapExpenseCreateFailure(code: string | undefined): ExpenseCreate
 }
 
 export function serverExpenseFieldErrors(failure: ExpenseCreateFailure): TransactionFormErrors {
-  if (!failure.field) return {};
-
-  const errorByField: Record<TransactionFormField, TransactionFormErrors[TransactionFormField]> = {
-    amount: "transactions.validation.amountInvalid",
-    currency: "transactions.validation.currencyUnsupported",
-    account: "transactions.validation.accountUnavailable",
-    category: "transactions.validation.categoryUnavailable",
-    date: "transactions.validation.invalidDate",
-    time: "transactions.validation.invalidTime",
-    merchant: "transactions.validation.optionalTextBlank",
-    note: "transactions.validation.noteTooLong",
-    source: "transactions.validation.optionalTextBlank",
-    fromAccount: "transactions.validation.accountUnavailable",
-    toAccount: "transactions.validation.accountUnavailable",
-  };
-
-  return { [failure.field]: errorByField[failure.field] };
+  return serverManualTransactionFieldErrors(failure);
 }
 
 export function expenseCreationErrorCode(payload: unknown): string | undefined {
@@ -112,25 +99,22 @@ export function parseCreatedExpenseDTO(payload: unknown): CreatedExpenseDTO | nu
 
 
 export function canStartExpenseSubmission(isSubmitting: boolean): boolean {
-  return !isSubmitting;
+  return canStartManualTransactionSubmission(isSubmitting);
 }
 
 
 export function canReconcileCreatedExpense(requestWorkspaceId: string, currentWorkspaceId: string): boolean {
-  return requestWorkspaceId.length > 0 && requestWorkspaceId === currentWorkspaceId;
+  return canReconcileCreatedManualTransaction(requestWorkspaceId, currentWorkspaceId);
 }
 
-/**
- * The existing server-rendered Transactions and Overview queries remain the
- * sole reconciliation surface. A DTO is confirmation, never a list item.
- */
+
 export function expenseReconciliationPlan(requestWorkspaceId: string, currentWorkspaceId: string) {
-  const belongsToCurrentWorkspace = canReconcileCreatedExpense(requestWorkspaceId, currentWorkspaceId);
+  const reconciliation = manualTransactionReconciliationPlan(requestWorkspaceId, currentWorkspaceId);
   return {
-    shouldAttachTransactionToList: false,
-    shouldCloseDialog: belongsToCurrentWorkspace,
-    shouldRefreshData: true,
-    shouldResetExpenseDraft: belongsToCurrentWorkspace,
+    shouldAttachTransactionToList: reconciliation.shouldAttachTransactionToList,
+    shouldCloseDialog: reconciliation.shouldCloseDialog,
+    shouldRefreshData: reconciliation.shouldRefreshData,
+    shouldResetExpenseDraft: reconciliation.shouldResetDraft,
   } as const;
 }
 

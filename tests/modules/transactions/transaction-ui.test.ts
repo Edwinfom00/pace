@@ -136,6 +136,9 @@ test("transactions labels are complete across English, French, and German", () =
   assert.equal(getTransactionUiLabels(getDashboardLabels("en")).actionSavingIncome, "Saving…");
   assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).incomeCreated, "Revenu ajouté");
   assert.equal(getTransactionUiLabels(getDashboardLabels("de")).incomeCreateErrorGeneric, "Diese Einnahme konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("en")).actionTransferring, "Transferring…");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).transferCreated, "Virement effectué");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("de")).transferCreateErrorGeneric, "Diese Überweisung konnte nicht ausgeführt werden. Bitte versuchen Sie es erneut.");
 });
 
 test("real category fields expose their selected ledger ID, loading, error, and zero-category states", () => {

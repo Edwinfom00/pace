@@ -2,9 +2,14 @@ import type { CreatedIncomeDTO } from "@/modules/ledger/create-income-contract";
 import type { IncomeFormInput, TransactionFormDraft, TransactionFormErrors, TransactionFormField } from "@/modules/transactions/schemas/transaction-form.schema";
 
 import {
+  canReconcileCreatedManualTransaction,
+  canStartManualTransactionSubmission,
   formatManualTransactionDate,
-  manualTransactionCreationErrorCode,
+  manualTransactionReconciliationPlan,
   parseCreatedManualTransactionDTO,
+  serverManualTransactionFieldErrors,
+  submitCanonicalManualTransaction,
+  type ManualTransactionCreationTransport,
 } from "./manual-transaction-create-flow";
 
 export type IncomeCreateFailure = {
@@ -32,9 +37,7 @@ export function createIncomeCommand(
 
 export type CreateIncomeCommand = ReturnType<typeof createIncomeCommand>;
 
-export type IncomeCreationTransport = (
-  command: CreateIncomeCommand,
-) => Promise<{ readonly ok: boolean; readonly payload: unknown }>;
+export type IncomeCreationTransport = ManualTransactionCreationTransport<CreateIncomeCommand>;
 
 export type IncomeCreationResponse =
   | { readonly ok: true; readonly income: CreatedIncomeDTO }
@@ -45,13 +48,15 @@ export async function submitCanonicalIncome(
   command: CreateIncomeCommand,
   transport: IncomeCreationTransport,
 ): Promise<IncomeCreationResponse> {
-  const response = await transport(command);
-  if (!response.ok) return { ok: false, failure: mapIncomeCreateFailure(manualTransactionCreationErrorCode(response.payload)) };
-
-  const income = parseCreatedIncomeDTO(response.payload);
-  return income
-    ? { ok: true, income }
-    : { ok: false, failure: mapIncomeCreateFailure(undefined) };
+  const result = await submitCanonicalManualTransaction(
+    command,
+    transport,
+    parseCreatedIncomeDTO,
+    mapIncomeCreateFailure,
+  );
+  return result.ok
+    ? { ok: true, income: result.transaction }
+    : { ok: false, failure: result.failure };
 }
 
 export function mapIncomeCreateFailure(code: string | undefined): IncomeCreateFailure {
@@ -81,23 +86,7 @@ export function mapIncomeCreateFailure(code: string | undefined): IncomeCreateFa
 }
 
 export function serverIncomeFieldErrors(failure: IncomeCreateFailure): TransactionFormErrors {
-  if (!failure.field) return {};
-
-  const errorByField: Record<TransactionFormField, TransactionFormErrors[TransactionFormField]> = {
-    amount: "transactions.validation.amountInvalid",
-    currency: "transactions.validation.currencyUnsupported",
-    account: "transactions.validation.accountUnavailable",
-    category: "transactions.validation.categoryUnavailable",
-    date: "transactions.validation.invalidDate",
-    time: "transactions.validation.invalidTime",
-    merchant: "transactions.validation.optionalTextBlank",
-    note: "transactions.validation.noteTooLong",
-    source: "transactions.validation.optionalTextBlank",
-    fromAccount: "transactions.validation.accountUnavailable",
-    toAccount: "transactions.validation.accountUnavailable",
-  };
-
-  return { [failure.field]: errorByField[failure.field] };
+  return serverManualTransactionFieldErrors(failure);
 }
 
 export function parseCreatedIncomeDTO(payload: unknown): CreatedIncomeDTO | null {
@@ -105,21 +94,21 @@ export function parseCreatedIncomeDTO(payload: unknown): CreatedIncomeDTO | null
 }
 
 export function canStartIncomeSubmission(isSubmitting: boolean): boolean {
-  return !isSubmitting;
+  return canStartManualTransactionSubmission(isSubmitting);
 }
 
 export function canReconcileCreatedIncome(requestWorkspaceId: string, currentWorkspaceId: string): boolean {
-  return requestWorkspaceId.length > 0 && requestWorkspaceId === currentWorkspaceId;
+  return canReconcileCreatedManualTransaction(requestWorkspaceId, currentWorkspaceId);
 }
 
 
 export function incomeReconciliationPlan(requestWorkspaceId: string, currentWorkspaceId: string) {
-  const belongsToCurrentWorkspace = canReconcileCreatedIncome(requestWorkspaceId, currentWorkspaceId);
+  const reconciliation = manualTransactionReconciliationPlan(requestWorkspaceId, currentWorkspaceId);
   return {
-    shouldAttachTransactionToList: false,
-    shouldCloseDialog: belongsToCurrentWorkspace,
-    shouldRefreshData: true,
-    shouldResetIncomeDraft: belongsToCurrentWorkspace,
+    shouldAttachTransactionToList: reconciliation.shouldAttachTransactionToList,
+    shouldCloseDialog: reconciliation.shouldCloseDialog,
+    shouldRefreshData: reconciliation.shouldRefreshData,
+    shouldResetIncomeDraft: reconciliation.shouldResetDraft,
   } as const;
 }
 

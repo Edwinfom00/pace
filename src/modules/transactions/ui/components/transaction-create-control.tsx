@@ -44,21 +44,27 @@ import {
   type CreateAccountFormErrors,
 } from "./create-account-flow";
 import {
-  canStartExpenseSubmission,
   createExpenseCommand,
-  expenseReconciliationPlan,
   resetExpenseTransactionDraft,
   serverExpenseFieldErrors,
   submitCanonicalExpense,
 } from "./expense-create-flow";
 import {
-  canStartIncomeSubmission,
   createIncomeCommand,
-  incomeReconciliationPlan,
   resetIncomeTransactionDraft,
   serverIncomeFieldErrors,
   submitCanonicalIncome,
 } from "./income-create-flow";
+import {
+  canStartManualTransactionSubmission,
+  manualTransactionReconciliationPlan,
+} from "./manual-transaction-create-flow";
+import {
+  createTransferCommand,
+  resetTransferTransactionDraft,
+  serverTransferFieldErrors,
+  submitCanonicalTransfer,
+} from "./transfer-create-flow";
 import { TransactionFormDialog, type TransactionDialogView } from "./transaction-form-dialog";
 import { TransactionAmountField } from "./transaction-amount-field";
 import { TransactionCategoryField } from "./transaction-category-field";
@@ -78,6 +84,20 @@ export type { AccountCreationTarget } from "./create-account-flow";
 type TransactionFormErrorsByKind = Record<TransactionFormKind, TransactionFormErrors>;
 type SubmittedTransactionFormKinds = Record<TransactionFormKind, boolean>;
 type LocalizedTransactionFormErrors = Partial<Record<TransactionFormField, string>>;
+type TransactionFormMessagesByKind = Record<TransactionFormKind, string | null>;
+
+type ManualTransactionMutationResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly errors: TransactionFormErrors };
+
+type ManualTransactionMutation = {
+  readonly kind: TransactionFormKind;
+  readonly requestWorkspaceId: string;
+  readonly execute: () => Promise<ManualTransactionMutationResult>;
+  readonly genericFailure: string;
+  readonly resetDraft: (draft: TransactionFormDraft) => TransactionFormDraft;
+  readonly successAnnouncement: string;
+};
 
 function accountCreationErrorCode(payload: unknown): string | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
@@ -91,6 +111,10 @@ export function emptyTransactionFormErrors(): TransactionFormErrorsByKind {
 
 export function emptySubmittedTransactionFormKinds(): SubmittedTransactionFormKinds {
   return { EXPENSE: false, INCOME: false, TRANSFER: false };
+}
+
+export function emptyTransactionFormMessages(): TransactionFormMessagesByKind {
+  return { EXPENSE: null, INCOME: null, TRANSFER: null };
 }
 
 export function createTransactionFormDraft(
@@ -250,12 +274,9 @@ export function TransactionCreateControl({
   const [createAccountAnnouncement, setCreateAccountAnnouncement] = useState("");
   const [createdAccountAwaitingReconciliation, setCreatedAccountAwaitingReconciliation] = useState<CreatedAccountDTO | null>(null);
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
-  const [isCreatingExpense, setIsCreatingExpense] = useState(false);
-  const [expenseFormError, setExpenseFormError] = useState<string | null>(null);
-  const [expenseAnnouncement, setExpenseAnnouncement] = useState("");
-  const [isCreatingIncome, setIsCreatingIncome] = useState(false);
-  const [incomeFormError, setIncomeFormError] = useState<string | null>(null);
-  const [incomeAnnouncement, setIncomeAnnouncement] = useState("");
+  const [pendingTransactionKind, setPendingTransactionKind] = useState<TransactionFormKind | null>(null);
+  const [transactionFormErrors, setTransactionFormErrors] = useState<TransactionFormMessagesByKind>(emptyTransactionFormMessages);
+  const [transactionAnnouncements, setTransactionAnnouncements] = useState<TransactionFormMessagesByKind>(emptyTransactionFormMessages);
   const [validationErrors, setValidationErrors] = useState<TransactionFormErrorsByKind>(emptyTransactionFormErrors);
   const [submittedKinds, setSubmittedKinds] = useState<SubmittedTransactionFormKinds>(emptySubmittedTransactionFormKinds);
   const amountInputRef = useRef<HTMLInputElement>(null);
@@ -269,8 +290,7 @@ export function TransactionCreateControl({
   const merchantInputRef = useRef<HTMLInputElement>(null);
   const noteTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const workspaceIdRef = useRef(workspaceId);
-  const isCreatingExpenseRef = useRef(false);
-  const isCreatingIncomeRef = useRef(false);
+  const pendingTransactionKindRef = useRef<TransactionFormKind | null>(null);
   const kind = formDraft.kind;
   const activeAccountDraft = kind === "INCOME" ? formDraft.income : formDraft.expense;
   const authoritativeAccounts = accountOptions.accounts;
@@ -280,6 +300,7 @@ export function TransactionCreateControl({
   const categoryAvailability = isRetryingCategories ? "loading" : categoryOptions.status;
   const activeErrors = validationErrors[kind];
   const activeDisplayErrors = localizeTransactionFormErrors(labels, activeErrors);
+  const isTransactionPending = pendingTransactionKind !== null;
 
   useEffect(() => {
     workspaceIdRef.current = workspaceId;
@@ -295,8 +316,8 @@ export function TransactionCreateControl({
     }
   }, [authoritativeAccounts, createdAccountAwaitingReconciliation]);
 
-  function focusFirstInvalidField(errors: TransactionFormErrors) {
-    const field = getFirstInvalidTransactionFormField(kind, errors);
+  function focusFirstInvalidField(kindToFocus: TransactionFormKind, errors: TransactionFormErrors) {
+    const field = getFirstInvalidTransactionFormField(kindToFocus, errors);
     if (!field) return;
 
     requestAnimationFrame(() => {
@@ -342,8 +363,7 @@ export function TransactionCreateControl({
     categoriesForValidation: readonly TransactionCategoryOption[] = categories,
   ) {
     setFormDraft(nextDraft);
-    if (nextDraft.kind === "EXPENSE") setExpenseFormError(null);
-    if (nextDraft.kind === "INCOME") setIncomeFormError(null);
+    setTransactionFormErrors((current) => ({ ...current, [nextDraft.kind]: null }));
     if (!submittedKinds[nextDraft.kind]) return;
 
     const result = validateTransactionDraft(nextDraft, accountsForValidation, categoriesForValidation);
@@ -354,7 +374,7 @@ export function TransactionCreateControl({
     const result = validateTransactionDraft(formDraft, accounts, categories);
     setSubmittedKinds((current) => ({ ...current, [kind]: true }));
     setValidationErrors((current) => ({ ...current, [kind]: result.errors }));
-    if (!result.isValid) focusFirstInvalidField(result.errors);
+    if (!result.isValid) focusFirstInvalidField(kind, result.errors);
     return result;
   }
 
@@ -363,6 +383,7 @@ export function TransactionCreateControl({
     if (!result.isValid) return;
     if (kind === "EXPENSE") void submitExpense();
     if (kind === "INCOME") void submitIncome();
+    if (kind === "TRANSFER") void submitTransfer();
   }
 
   function updateCurrentDraft(update: Partial<TransactionFormCommonDraft>) {
@@ -384,7 +405,7 @@ export function TransactionCreateControl({
   }
 
   function handleKindChange(nextKind: TransactionFormKind) {
-    if (isCreatingExpenseRef.current || isCreatingIncomeRef.current) return;
+    if (pendingTransactionKindRef.current) return;
     setFormDraft({ ...formDraft, kind: nextKind });
   }
 
@@ -416,7 +437,7 @@ export function TransactionCreateControl({
   }
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen && (isCreatingAccount || isCreatingExpenseRef.current || isCreatingIncomeRef.current)) return;
+    if (!nextOpen && (isCreatingAccount || pendingTransactionKindRef.current)) return;
     setOpen(nextOpen);
     if (nextOpen) return;
 
@@ -428,10 +449,8 @@ export function TransactionCreateControl({
     setValidationErrors(emptyTransactionFormErrors());
     setSubmittedKinds(emptySubmittedTransactionFormKinds());
     setCreateAccountDraft(createEmptyCreateAccountFormDraft(defaultCurrency));
-    setExpenseFormError(null);
-    setExpenseAnnouncement("");
-    setIncomeFormError(null);
-    setIncomeAnnouncement("");
+    setTransactionFormErrors(emptyTransactionFormMessages());
+    setTransactionAnnouncements(emptyTransactionFormMessages());
   }
 
   function updateCreateAccountDraft(nextDraft: CreateAccountFormDraft) {
@@ -523,129 +542,136 @@ export function TransactionCreateControl({
     }
   }
 
-  async function submitExpense() {
-    if (!canStartExpenseSubmission(isCreatingExpenseRef.current)) return;
+  async function submitManualTransaction(mutation: ManualTransactionMutation) {
+    if (!canStartManualTransactionSubmission(Boolean(pendingTransactionKindRef.current))) return;
 
-    const expenseValidation = validateTransactionForm({ kind: "EXPENSE", ...formDraft.expense });
-    if (!expenseValidation.isValid) return;
-    if (expenseValidation.value.kind !== "EXPENSE") return;
-
-    const requestWorkspaceId = workspaceIdRef.current;
-    const command = createExpenseCommand(requestWorkspaceId, expenseValidation.value);
-    isCreatingExpenseRef.current = true;
-    setIsCreatingExpense(true);
-    setExpenseFormError(null);
-    setExpenseAnnouncement("");
+    pendingTransactionKindRef.current = mutation.kind;
+    setPendingTransactionKind(mutation.kind);
+    setTransactionFormErrors((current) => ({ ...current, [mutation.kind]: null }));
+    setTransactionAnnouncements((current) => ({ ...current, [mutation.kind]: null }));
 
     try {
-      const result = await submitCanonicalExpense(command, async (input) => {
-        const response = await fetch(`/api/workspaces/${encodeURIComponent(requestWorkspaceId)}/ledger/transactions`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(input),
-        });
-        return { ok: response.ok, payload: await response.json().catch(() => null) };
-      });
-
+      const result = await mutation.execute();
       if (!result.ok) {
-        const failure = result.failure;
-        const errors = serverExpenseFieldErrors(failure);
-        if (Object.keys(errors).length > 0) {
-          setValidationErrors((current) => ({ ...current, EXPENSE: { ...current.EXPENSE, ...errors } }));
-          setExpenseFormError(null);
-          focusFirstInvalidField(errors);
+        if (Object.keys(result.errors).length > 0) {
+          setValidationErrors((current) => ({
+            ...current,
+            [mutation.kind]: { ...current[mutation.kind], ...result.errors },
+          }));
+          focusFirstInvalidField(mutation.kind, result.errors);
         } else {
-          setExpenseFormError(labels.expenseCreateErrorGeneric);
+          setTransactionFormErrors((current) => ({ ...current, [mutation.kind]: mutation.genericFailure }));
         }
         return;
       }
 
-      // The authoritative response is never inserted into a local ledger list.
-      // If a workspace switch won the race, refresh only and leave the response
-      // unattached to the now-current workspace UI.
-      const reconciliation = expenseReconciliationPlan(requestWorkspaceId, workspaceIdRef.current);
-      if (!reconciliation.shouldResetExpenseDraft) {
+      // A DTO confirms persistence, but never becomes a speculative local row
+      // or balance. Refresh server-owned financial projections instead.
+      const reconciliation = manualTransactionReconciliationPlan(
+        mutation.requestWorkspaceId,
+        workspaceIdRef.current,
+      );
+      if (!reconciliation.shouldResetDraft) {
         if (reconciliation.shouldRefreshData) router.refresh();
         return;
       }
 
-      setFormDraft((current) => resetExpenseTransactionDraft(
-        current,
-        createTransactionFormDraft(defaultCurrency, timeZone).expense,
-      ));
-      setValidationErrors((current) => ({ ...current, EXPENSE: {} }));
-      setSubmittedKinds((current) => ({ ...current, EXPENSE: false }));
-      setExpenseFormError(null);
-      setExpenseAnnouncement(labels.expenseCreated);
+      setFormDraft(mutation.resetDraft);
+      setValidationErrors((current) => ({ ...current, [mutation.kind]: {} }));
+      setSubmittedKinds((current) => ({ ...current, [mutation.kind]: false }));
+      setTransactionFormErrors((current) => ({ ...current, [mutation.kind]: null }));
+      setTransactionAnnouncements((current) => ({ ...current, [mutation.kind]: mutation.successAnnouncement }));
       if (reconciliation.shouldCloseDialog) setOpen(false);
       if (reconciliation.shouldRefreshData) router.refresh();
     } catch {
-      setExpenseFormError(labels.expenseCreateErrorGeneric);
+      setTransactionFormErrors((current) => ({ ...current, [mutation.kind]: mutation.genericFailure }));
     } finally {
-      isCreatingExpenseRef.current = false;
-      setIsCreatingExpense(false);
+      pendingTransactionKindRef.current = null;
+      setPendingTransactionKind(null);
     }
   }
 
-  async function submitIncome() {
-    if (!canStartIncomeSubmission(isCreatingIncomeRef.current)) return;
+  function submitExpense() {
+    const expenseValidation = validateTransactionForm({ kind: "EXPENSE", ...formDraft.expense });
+    if (!expenseValidation.isValid || expenseValidation.value.kind !== "EXPENSE") return;
 
+    const requestWorkspaceId = workspaceIdRef.current;
+    const command = createExpenseCommand(requestWorkspaceId, expenseValidation.value);
+    void submitManualTransaction({
+      kind: "EXPENSE",
+      requestWorkspaceId,
+      genericFailure: labels.expenseCreateErrorGeneric,
+      successAnnouncement: labels.expenseCreated,
+      resetDraft: (current) => resetExpenseTransactionDraft(
+        current,
+        createTransactionFormDraft(defaultCurrency, timeZone).expense,
+      ),
+      execute: async () => {
+        const result = await submitCanonicalExpense(command, postManualTransaction(requestWorkspaceId));
+        return result.ok
+          ? { ok: true }
+          : { ok: false, errors: serverExpenseFieldErrors(result.failure) };
+      },
+    });
+  }
+
+  function submitIncome() {
     const incomeValidation = validateTransactionForm({ kind: "INCOME", ...formDraft.income });
-    if (!incomeValidation.isValid) return;
-    if (incomeValidation.value.kind !== "INCOME") return;
+    if (!incomeValidation.isValid || incomeValidation.value.kind !== "INCOME") return;
 
     const requestWorkspaceId = workspaceIdRef.current;
     const command = createIncomeCommand(requestWorkspaceId, incomeValidation.value);
-    isCreatingIncomeRef.current = true;
-    setIsCreatingIncome(true);
-    setIncomeFormError(null);
-    setIncomeAnnouncement("");
-
-    try {
-      const result = await submitCanonicalIncome(command, async (input) => {
-        const response = await fetch(`/api/workspaces/${encodeURIComponent(requestWorkspaceId)}/ledger/transactions`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(input),
-        });
-        return { ok: response.ok, payload: await response.json().catch(() => null) };
-      });
-
-      if (!result.ok) {
-        const failure = result.failure;
-        const errors = serverIncomeFieldErrors(failure);
-        if (Object.keys(errors).length > 0) {
-          setValidationErrors((current) => ({ ...current, INCOME: { ...current.INCOME, ...errors } }));
-          setIncomeFormError(null);
-          focusFirstInvalidField(errors);
-        } else {
-          setIncomeFormError(labels.incomeCreateErrorGeneric);
-        }
-        return;
-      }
-
-      const reconciliation = incomeReconciliationPlan(requestWorkspaceId, workspaceIdRef.current);
-      if (!reconciliation.shouldResetIncomeDraft) {
-        if (reconciliation.shouldRefreshData) router.refresh();
-        return;
-      }
-
-      setFormDraft((current) => resetIncomeTransactionDraft(
+    void submitManualTransaction({
+      kind: "INCOME",
+      requestWorkspaceId,
+      genericFailure: labels.incomeCreateErrorGeneric,
+      successAnnouncement: labels.incomeCreated,
+      resetDraft: (current) => resetIncomeTransactionDraft(
         current,
         createTransactionFormDraft(defaultCurrency, timeZone).income,
-      ));
-      setValidationErrors((current) => ({ ...current, INCOME: {} }));
-      setSubmittedKinds((current) => ({ ...current, INCOME: false }));
-      setIncomeFormError(null);
-      setIncomeAnnouncement(labels.incomeCreated);
-      if (reconciliation.shouldCloseDialog) setOpen(false);
-      if (reconciliation.shouldRefreshData) router.refresh();
-    } catch {
-      setIncomeFormError(labels.incomeCreateErrorGeneric);
-    } finally {
-      isCreatingIncomeRef.current = false;
-      setIsCreatingIncome(false);
-    }
+      ),
+      execute: async () => {
+        const result = await submitCanonicalIncome(command, postManualTransaction(requestWorkspaceId));
+        return result.ok
+          ? { ok: true }
+          : { ok: false, errors: serverIncomeFieldErrors(result.failure) };
+      },
+    });
+  }
+
+  function submitTransfer() {
+    const transferValidation = validateTransactionForm({ kind: "TRANSFER", ...formDraft.transfer });
+    if (!transferValidation.isValid || transferValidation.value.kind !== "TRANSFER") return;
+
+    const requestWorkspaceId = workspaceIdRef.current;
+    const command = createTransferCommand(requestWorkspaceId, transferValidation.value);
+    void submitManualTransaction({
+      kind: "TRANSFER",
+      requestWorkspaceId,
+      genericFailure: labels.transferCreateErrorGeneric,
+      successAnnouncement: labels.transferCreated,
+      resetDraft: (current) => resetTransferTransactionDraft(
+        current,
+        createTransactionFormDraft(defaultCurrency, timeZone).transfer,
+      ),
+      execute: async () => {
+        const result = await submitCanonicalTransfer(command, postManualTransaction(requestWorkspaceId));
+        return result.ok
+          ? { ok: true }
+          : { ok: false, errors: serverTransferFieldErrors(result.failure) };
+      },
+    });
+  }
+
+  function postManualTransaction(requestWorkspaceId: string) {
+    return async (input: unknown) => {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(requestWorkspaceId)}/ledger/transactions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      return { ok: response.ok, payload: await response.json().catch(() => null) };
+    };
   }
 
   function retryAccounts() {
@@ -667,8 +693,9 @@ export function TransactionCreateControl({
 
   return (
     <>
-      <p aria-live="polite" className="sr-only" role="status">{expenseAnnouncement}</p>
-      <p aria-live="polite" className="sr-only" role="status">{incomeAnnouncement}</p>
+      <p aria-live="polite" className="sr-only" role="status">{transactionAnnouncements.EXPENSE}</p>
+      <p aria-live="polite" className="sr-only" role="status">{transactionAnnouncements.INCOME}</p>
+      <p aria-live="polite" className="sr-only" role="status">{transactionAnnouncements.TRANSFER}</p>
       <Button
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -689,16 +716,16 @@ export function TransactionCreateControl({
         footer={(
           <TransactionFormFooter
             cancelLabel={labels.actionCancel}
-            formError={kind === "EXPENSE" ? expenseFormError : kind === "INCOME" ? incomeFormError : null}
-            isPending={kind === "EXPENSE" ? isCreatingExpense : kind === "INCOME" && isCreatingIncome}
+            formError={transactionFormErrors[kind]}
+            isPending={pendingTransactionKind === kind}
             onCancel={() => handleOpenChange(false)}
             onPrimaryAction={handlePrimaryAction}
-            primaryActionLabel={kind === "EXPENSE" && isCreatingExpense ? labels.actionSavingExpense : kind === "INCOME" && isCreatingIncome ? labels.actionSavingIncome : kind === "TRANSFER" ? labels.actionTransferMoney : kind === "INCOME" ? labels.actionAddIncome : labels.actionAddExpense}
+            primaryActionLabel={kind === "EXPENSE" && pendingTransactionKind === "EXPENSE" ? labels.actionSavingExpense : kind === "INCOME" && pendingTransactionKind === "INCOME" ? labels.actionSavingIncome : kind === "TRANSFER" && pendingTransactionKind === "TRANSFER" ? labels.actionTransferring : kind === "TRANSFER" ? labels.actionTransferMoney : kind === "INCOME" ? labels.actionAddIncome : labels.actionAddExpense}
           />
         )}
         kind={kind}
         isCreateAccountPending={isCreatingAccount}
-        isTransactionPending={isCreatingExpense || isCreatingIncome}
+        isTransactionPending={isTransactionPending}
         onBackToTransaction={returnToTransaction}
         onKindChange={handleKindChange}
         onOpenChange={handleOpenChange}
