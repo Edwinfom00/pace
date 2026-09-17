@@ -29,6 +29,7 @@ import {
   createLedgerCategorySchema,
   createLedgerMerchantSchema,
   createLedgerTransactionSchema,
+  type CreateLedgerTransactionInput,
 } from "./validation";
 
 /**
@@ -140,6 +141,50 @@ export class LedgerService {
     ) {
       throw new ConflictError("A transaction with this deduplication fingerprint already exists.");
     }
+
+    return this.persistTransaction(actor, workspaceId, parsed);
+  }
+
+  /**
+   * Creates one financial operation for one deduplication fingerprint. It
+   * re-reads the stored row and recovers the committed winner of a concurrent
+   * database unique-index race instead of duplicating money on retry.
+   */
+  async createTransactionIdempotently(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: unknown,
+  ): Promise<LedgerTransactionRecord> {
+    const parsed = createLedgerTransactionSchema.parse(input);
+    const fingerprint = parsed.deduplicationFingerprint;
+    if (!fingerprint) {
+      throw new DomainConflictError(
+        "MISSING_IDEMPOTENCY_KEY",
+        "An idempotency key is required for this financial operation.",
+      );
+    }
+    await this.requireWorkspacePermission(actor.userId, workspaceId, "manage_ledger");
+
+    const existing = await this.repository.findTransactionByFingerprint(workspaceId, fingerprint);
+    if (existing) return existing;
+
+    try {
+      const created = await this.persistTransaction(actor, workspaceId, parsed);
+      const persisted = await this.repository.findTransaction(workspaceId, created.id);
+      if (!persisted) throw new Error("Financial transaction was not found after persistence.");
+      return persisted;
+    } catch (error) {
+      const persisted = await this.repository.findTransactionByFingerprint(workspaceId, fingerprint);
+      if (persisted) return persisted;
+      throw error;
+    }
+  }
+
+  private async persistTransaction(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    parsed: CreateLedgerTransactionInput,
+  ): Promise<LedgerTransactionRecord> {
 
     const paidByUserId = parsed.paidByUserId ?? actor.userId;
     await this.requireMember(paidByUserId, workspaceId, "The paidBy member does not belong to this workspace.");

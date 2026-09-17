@@ -1,4 +1,11 @@
-import { AuthorizationError, ConflictError, NotFoundError } from "@/authorization/errors";
+import { createHash } from "node:crypto";
+
+import {
+  AuthorizationError,
+  ConflictError,
+  DomainConflictError,
+  NotFoundError,
+} from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { getCurrencyExponent, toCurrencyCode, type CurrencyCode } from "@/money/currency";
 import { parseDecimalMoney } from "@/money/money";
@@ -7,6 +14,7 @@ import type { WorkspaceRepository } from "@/modules/workspaces/repositories/work
 
 import type { LedgerService } from "./ledger-service";
 import type { LedgerTransactionRecord } from "./domain";
+import { normalizeMerchantName } from "./domain";
 import type {
   CreatedManualTransactionDTO,
   ManualTransactionErrorCode,
@@ -16,6 +24,7 @@ type ManualTransactionKind = "EXPENSE" | "INCOME";
 
 export type ValidManualTransactionCommand<Kind extends ManualTransactionKind> = {
   readonly workspaceId: string;
+  readonly idempotencyKey: string;
   readonly accountId: string;
   readonly amount: string;
   readonly currency: string;
@@ -28,7 +37,7 @@ export type ValidManualTransactionCommand<Kind extends ManualTransactionKind> = 
 };
 
 export type CreateManualTransactionDependencies = {
-  readonly ledger: Pick<LedgerService, "createTransaction">;
+  readonly ledger: Pick<LedgerService, "createTransactionIdempotently">;
   readonly workspaces: Pick<WorkspaceRepository, "findMemberContext">;
 };
 
@@ -61,7 +70,17 @@ export async function createManualTransactionForActor<Kind extends ManualTransac
   }
 
   try {
-    const transaction = await dependencies.ledger.createTransaction(actor, input.workspaceId, {
+    const commandFingerprint = manualTransactionCommandFingerprint([
+      ["kind", input.kind],
+      ["accountId", input.accountId],
+      ["categoryId", input.categoryId ?? null],
+      ["counterparty", input.counterparty ? normalizeMerchantName(input.counterparty) : null],
+      ["amountMinor", amount.minor.toString()],
+      ["currency", currency],
+      ["occurredAt", occurredAt.toISOString()],
+      ["note", input.note ?? null],
+    ]);
+    const transaction = await dependencies.ledger.createTransactionIdempotently(actor, input.workspaceId, {
       kind: input.kind,
       status: "POSTED",
       accountId: input.accountId,
@@ -70,26 +89,85 @@ export async function createManualTransactionForActor<Kind extends ManualTransac
       amountMinor: amount.minor,
       currency,
       occurredAt,
-      source: { provider: "manual" },
+      source: { provider: "manual", origin: "MANUAL", commandFingerprint },
+      deduplicationFingerprint: manualTransactionFingerprint(actor.userId, input.idempotencyKey),
       note: input.note ?? undefined,
     });
+    assertPersistedManualTransactionMatches(
+      transaction,
+      input,
+      amount.minor,
+      currency,
+      occurredAt,
+      actor.userId,
+      commandFingerprint,
+    );
     return { ok: true, transaction: toCreatedManualTransactionDTO(transaction, input.kind) };
   } catch (error) {
     return { ok: false, code: manualLedgerErrorCode(error) };
   }
 }
 
-/**
- * Resolves a civil Pace form date/time deterministically. A missing time means
- * local noon, matching the date field's date-only/noon representation and
- * avoiding day-boundary shifts. Repeated DST times choose the earlier instant;
- * nonexistent local times are rejected by the shared period utility.
- */
+
+/** The persisted retry fingerprint is actor-scoped and bounded in length. */
+export function manualTransactionFingerprint(actorUserId: string, idempotencyKey: string): string {
+  const digest = createHash("sha256")
+    .update(`${actorUserId}:${idempotencyKey}`)
+    .digest("hex");
+  return `manual:${digest}`;
+}
+
+
+export function manualTransactionCommandFingerprint(
+  fields: readonly (readonly [string, string | null])[],
+): string {
+  return createHash("sha256").update(JSON.stringify(fields)).digest("hex");
+}
+
+export function assertPersistedManualTransactionMatches<Kind extends ManualTransactionKind>(
+  transaction: LedgerTransactionRecord,
+  input: ValidManualTransactionCommand<Kind>,
+  amountMinor: bigint,
+  currency: CurrencyCode,
+  occurredAt: Date,
+  actorUserId: string,
+  commandFingerprint: string,
+): void {
+  const matches =
+    transaction.workspaceId === input.workspaceId
+    && transaction.kind === input.kind
+    && transaction.status === "POSTED"
+    && transaction.amountMinor === amountMinor
+    && transaction.currency === currency
+    && transaction.accountId === input.accountId
+    && transaction.transferAccountId === null
+    && transaction.categoryId === (input.categoryId ?? null)
+    && transaction.transferGroupId === null
+    && transaction.refundedTransactionId === null
+    && transaction.createdByUserId === actorUserId
+    && transaction.occurredAt.getTime() === occurredAt.getTime()
+    && transaction.note === (input.note ?? null)
+    && transaction.source.provider === "manual"
+    && transaction.source.origin === "MANUAL"
+    && transaction.source.commandFingerprint === commandFingerprint
+    && transaction.deduplicationFingerprint === manualTransactionFingerprint(actorUserId, input.idempotencyKey);
+
+  if (!matches) {
+    throw new DomainConflictError(
+      "IDEMPOTENCY_KEY_REUSED",
+      "This submission key has already been used for a different transaction.",
+    );
+  }
+}
+
+
+
 export function resolveManualOccurredAt(date: string, time: string | null, timeZone: string): Date {
   const [year, month, day] = date.split("-").map(Number);
   const [hour, minute] = (time ?? "12:00").split(":").map(Number);
   return zonedLocalDateTimeToInstant({ year, month, day }, { hour, minute }, timeZone);
 }
+
 
 /**
  * Converts familiar form decimal/grouping input to an exact decimal string
@@ -183,6 +261,9 @@ export function manualValidationErrorCode(
 
 function manualLedgerErrorCode(error: unknown): ManualTransactionErrorCode {
   if (error instanceof AuthorizationError) return "WORKSPACE_FORBIDDEN";
+  if (error instanceof DomainConflictError && error.code === "IDEMPOTENCY_KEY_REUSED") {
+    return "IDEMPOTENCY_KEY_REUSED";
+  }
   if (error instanceof NotFoundError) {
     if (error.message.startsWith("Account")) return "ACCOUNT_NOT_FOUND";
     if (error.message.startsWith("Category")) return "CATEGORY_NOT_ALLOWED";

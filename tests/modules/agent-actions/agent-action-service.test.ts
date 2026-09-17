@@ -183,6 +183,7 @@ test("approved execution is idempotent and verifies the persisted transaction", 
   assert.equal(ledgerRecords.transactions.size, 1);
   const persisted = ledgerRecords.transactions.get(first.transactionId);
   assert.equal(persisted?.source.agentActionId, action.id);
+  assert.equal(persisted?.source.origin, "AGENT");
   assert.equal(persisted?.deduplicationFingerprint, `agent-action:${action.id}`);
   assert.equal((await actions.findAction(workspaceOne, action.id))?.status, "COMPLETED");
 });

@@ -57,7 +57,9 @@ import {
 } from "./income-create-flow";
 import {
   canStartManualTransactionSubmission,
+  manualTransactionRetryKeyForCommand,
   manualTransactionReconciliationPlan,
+  type ManualTransactionRetryKey,
 } from "./manual-transaction-create-flow";
 import {
   createTransferCommand,
@@ -94,6 +96,7 @@ type ManualTransactionMutation = {
   readonly kind: TransactionFormKind;
   readonly requestWorkspaceId: string;
   readonly execute: () => Promise<ManualTransactionMutationResult>;
+  readonly onSucceeded: () => void;
   readonly genericFailure: string;
   readonly resetDraft: (draft: TransactionFormDraft) => TransactionFormDraft;
   readonly successAnnouncement: string;
@@ -291,6 +294,7 @@ export function TransactionCreateControl({
   const noteTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const workspaceIdRef = useRef(workspaceId);
   const pendingTransactionKindRef = useRef<TransactionFormKind | null>(null);
+  const manualTransactionRetryKeysRef = useRef<Partial<Record<TransactionFormKind, ManualTransactionRetryKey>>>({});
   const kind = formDraft.kind;
   const activeAccountDraft = kind === "INCOME" ? formDraft.income : formDraft.expense;
   const authoritativeAccounts = accountOptions.accounts;
@@ -571,6 +575,7 @@ export function TransactionCreateControl({
         mutation.requestWorkspaceId,
         workspaceIdRef.current,
       );
+      mutation.onSucceeded();
       if (!reconciliation.shouldResetDraft) {
         if (reconciliation.shouldRefreshData) router.refresh();
         return;
@@ -596,10 +601,14 @@ export function TransactionCreateControl({
     if (!expenseValidation.isValid || expenseValidation.value.kind !== "EXPENSE") return;
 
     const requestWorkspaceId = workspaceIdRef.current;
-    const command = createExpenseCommand(requestWorkspaceId, expenseValidation.value);
+    const command = withManualTransactionIdempotency(
+      "EXPENSE",
+      createExpenseCommand(requestWorkspaceId, expenseValidation.value),
+    );
     void submitManualTransaction({
       kind: "EXPENSE",
       requestWorkspaceId,
+      onSucceeded: () => clearManualTransactionIdempotency("EXPENSE", command.idempotencyKey),
       genericFailure: labels.expenseCreateErrorGeneric,
       successAnnouncement: labels.expenseCreated,
       resetDraft: (current) => resetExpenseTransactionDraft(
@@ -620,10 +629,14 @@ export function TransactionCreateControl({
     if (!incomeValidation.isValid || incomeValidation.value.kind !== "INCOME") return;
 
     const requestWorkspaceId = workspaceIdRef.current;
-    const command = createIncomeCommand(requestWorkspaceId, incomeValidation.value);
+    const command = withManualTransactionIdempotency(
+      "INCOME",
+      createIncomeCommand(requestWorkspaceId, incomeValidation.value),
+    );
     void submitManualTransaction({
       kind: "INCOME",
       requestWorkspaceId,
+      onSucceeded: () => clearManualTransactionIdempotency("INCOME", command.idempotencyKey),
       genericFailure: labels.incomeCreateErrorGeneric,
       successAnnouncement: labels.incomeCreated,
       resetDraft: (current) => resetIncomeTransactionDraft(
@@ -644,10 +657,14 @@ export function TransactionCreateControl({
     if (!transferValidation.isValid || transferValidation.value.kind !== "TRANSFER") return;
 
     const requestWorkspaceId = workspaceIdRef.current;
-    const command = createTransferCommand(requestWorkspaceId, transferValidation.value);
+    const command = withManualTransactionIdempotency(
+      "TRANSFER",
+      createTransferCommand(requestWorkspaceId, transferValidation.value),
+    );
     void submitManualTransaction({
       kind: "TRANSFER",
       requestWorkspaceId,
+      onSucceeded: () => clearManualTransactionIdempotency("TRANSFER", command.idempotencyKey),
       genericFailure: labels.transferCreateErrorGeneric,
       successAnnouncement: labels.transferCreated,
       resetDraft: (current) => resetTransferTransactionDraft(
@@ -672,6 +689,29 @@ export function TransactionCreateControl({
       });
       return { ok: response.ok, payload: await response.json().catch(() => null) };
     };
+  }
+
+  function withManualTransactionIdempotency<Command extends Record<string, unknown>>(
+    transactionKind: TransactionFormKind,
+    command: Command,
+  ): Command & { readonly idempotencyKey: string } {
+    const commandSignature = JSON.stringify(command);
+    const retryKey = manualTransactionRetryKeyForCommand(
+      manualTransactionRetryKeysRef.current[transactionKind],
+      commandSignature,
+      () => crypto.randomUUID(),
+    );
+    manualTransactionRetryKeysRef.current[transactionKind] = retryKey;
+    return { ...command, idempotencyKey: retryKey.idempotencyKey };
+  }
+
+  function clearManualTransactionIdempotency(
+    transactionKind: TransactionFormKind,
+    idempotencyKey: string,
+  ): void {
+    if (manualTransactionRetryKeysRef.current[transactionKind]?.idempotencyKey === idempotencyKey) {
+      delete manualTransactionRetryKeysRef.current[transactionKind];
+    }
   }
 
   function retryAccounts() {

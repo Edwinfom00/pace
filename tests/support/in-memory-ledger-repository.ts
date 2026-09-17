@@ -152,6 +152,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   }
 
   async createTransaction(input: CreateLedgerTransactionRecord): Promise<LedgerTransactionRecord> {
+    this.assertTransactionFingerprintAvailable(input);
     const now = new Date();
     const record: LedgerTransactionRecord = { ...input, createdAt: now, updatedAt: now };
     this.transactions.set(record.id, record);
@@ -162,6 +163,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     input: CreateLedgerTransactionRecord,
     merchant: CreateLedgerMerchantRecord,
   ): Promise<LedgerTransactionRecord> {
+    this.assertTransactionFingerprintAvailable(input);
     if (await this.findMerchantByNormalizedName(merchant.workspaceId, merchant.normalizedName)) {
       throw new Error("A merchant with that name already exists in this workspace.");
     }
@@ -289,6 +291,19 @@ export class InMemoryLedgerRepository implements LedgerRepository {
         merchant,
       }];
     });
+  }
+
+  private assertTransactionFingerprintAvailable(input: CreateLedgerTransactionRecord): void {
+    if (
+      input.deduplicationFingerprint
+      && [...this.transactions.values()].some(
+        (transaction) =>
+          transaction.workspaceId === input.workspaceId
+          && transaction.deduplicationFingerprint === input.deduplicationFingerprint,
+      )
+    ) {
+      throw new Error("A transaction with that deduplication fingerprint already exists.");
+    }
   }
 }
 

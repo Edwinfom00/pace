@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import type { AuthenticatedActor } from "@/authorization/session";
@@ -72,6 +73,7 @@ async function fixture() {
   const dependencies = { ledger, workspaces };
   const command = (overrides: Record<string, unknown> = {}) => ({
     workspaceId: workspaceOne,
+    idempotencyKey: randomUUID(),
     accountId: account.id,
     amount: "24,850",
     currency: "XAF",
@@ -110,9 +112,14 @@ test("the canonical expense command writes a posted expense with exact minor uni
 
   const persisted = records.transactions.get(result.expense.id);
   assert.equal(persisted?.kind, "EXPENSE");
+  assert.equal(persisted?.workspaceId, workspaceOne);
+  assert.equal(persisted?.createdByUserId, owner.userId);
+  assert.ok(persisted?.createdAt instanceof Date);
   assert.equal(persisted?.amountMinor, 24_850n);
-  assert.equal(persisted?.deduplicationFingerprint, null);
-  assert.deepEqual(persisted?.source, { provider: "manual" });
+  assert.match(persisted?.deduplicationFingerprint ?? "", /^manual:[a-f0-9]{64}$/);
+  assert.equal(persisted?.source.provider, "manual");
+  assert.equal(persisted?.source.origin, "MANUAL");
+  assert.match(String(persisted?.source.commandFingerprint), /^[a-f0-9]{64}$/);
   assert.equal(records.merchants.get(result.expense.merchantId ?? "")?.normalizedName, "fresh market");
   // M2 balances are ledger-derived: opening balance is never mutated by this write.
   assert.equal(records.accounts.get(account.id)?.openingBalanceMinor, 70_000n);
@@ -227,4 +234,32 @@ test("a repository write failure leaves a new merchant and expense together or n
   );
   assert.equal(records.merchants.size, merchantCount);
   assert.equal(records.transactions.size, transactionCount);
+});
+
+test("Expense retries are idempotent, concurrent, and reject a mismatched reused key", async () => {
+  const { command, dependencies, records } = await fixture();
+  const idempotencyKey = "b0000000-0000-4000-8000-000000000001";
+  const firstCommand = command({ idempotencyKey, categoryId: SYSTEM_GROCERIES_ID });
+
+  const [first, second] = await Promise.all([
+    createExpenseForActor(owner, firstCommand, dependencies),
+    createExpenseForActor(owner, firstCommand, dependencies),
+  ]);
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  if (!first.ok || !second.ok) return;
+  assert.equal(first.expense.id, second.expense.id);
+  assert.equal(records.transactions.size, 1);
+
+  assert.deepEqual(
+    await createExpenseForActor(owner, command({ idempotencyKey, merchant: "Different merchant" }), dependencies),
+    { ok: false, code: "IDEMPOTENCY_KEY_REUSED" },
+  );
+  const newOperation = await createExpenseForActor(
+    owner,
+    command({ idempotencyKey: "b0000000-0000-4000-8000-000000000002", amount: "24,851" }),
+    dependencies,
+  );
+  assert.equal(newOperation.ok, true);
+  assert.equal(records.transactions.size, 2);
 });

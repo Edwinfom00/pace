@@ -8,6 +8,21 @@ export type ManualTransactionCreationTransport<Command> = (
   command: Command,
 ) => Promise<{ readonly ok: boolean; readonly payload: unknown }>;
 
+export type ManualTransactionRetryKey = {
+  readonly commandSignature: string;
+  readonly idempotencyKey: string;
+};
+
+export function manualTransactionRetryKeyForCommand(
+  current: ManualTransactionRetryKey | undefined,
+  commandSignature: string,
+  createKey: () => string,
+): ManualTransactionRetryKey {
+  return current?.commandSignature === commandSignature
+    ? current
+    : { commandSignature, idempotencyKey: createKey() };
+}
+
 export type CanonicalManualTransactionCreationResponse<Success, Failure> =
   | { readonly ok: true; readonly transaction: Success }
   | { readonly ok: false; readonly failure: Failure };

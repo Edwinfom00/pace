@@ -48,6 +48,7 @@ export type CreateTransferErrorCode =
   | "CROSS_CURRENCY_TRANSFER_UNSUPPORTED"
   | "INVALID_OCCURRED_AT"
   | "INVALID_NOTE"
+  | "IDEMPOTENCY_KEY_REUSED"
   | "TRANSFER_CREATE_FAILED";
 
 export type CreateTransferResult =

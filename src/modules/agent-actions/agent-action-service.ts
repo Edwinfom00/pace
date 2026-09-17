@@ -711,7 +711,7 @@ export class AgentActionService {
       amountMinor: draft.amountMinor,
       currency: draft.currency,
       occurredAt: draft.occurredAt,
-      source: { provider: "pace-agent", agentActionId: action.id },
+      source: { provider: "pace-agent", origin: "AGENT", agentActionId: action.id },
       deduplicationFingerprint: this.transactionFingerprint(action.id),
       note: draft.note ?? draft.merchantName ?? undefined,
     };

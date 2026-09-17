@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
 import type { AuthenticatedActor } from "@/authorization/session";
+import { createExpenseForActor } from "@/modules/ledger/create-expense";
+import { createIncomeForActor } from "@/modules/ledger/create-income";
 import {
   createTransferForActor,
   parseTransferAmount,
@@ -11,8 +14,14 @@ import {
 } from "@/modules/ledger/create-transfer";
 import { LedgerService } from "@/modules/ledger/ledger-service";
 import { calculateIncomeAndSpendingTotals } from "@/modules/ledger/totals";
+import { DEFAULT_TRANSACTION_FILTER_STATE } from "@/modules/transactions/domain/transaction-list-url";
+import { getTransactionsPage } from "@/modules/transactions/queries/get-transactions-page";
 
-import { InMemoryLedgerRepository } from "../../support/in-memory-ledger-repository";
+import {
+  InMemoryLedgerRepository,
+  SYSTEM_GROCERIES_ID,
+  SYSTEM_SALARY_ID,
+} from "../../support/in-memory-ledger-repository";
 import { InMemoryWorkspaceRepository } from "../../support/in-memory-workspace-repository";
 
 const owner: AuthenticatedActor = { userId: "owner-1", email: "owner@pace.test", name: "Owner" };
@@ -78,6 +87,7 @@ async function fixture() {
   const dependencies = { ledger, workspaces };
   const command = (overrides: Record<string, unknown> = {}) => ({
     workspaceId: workspaceOne,
+    idempotencyKey: randomUUID(),
     fromAccountId: fromAccount.id,
     toAccountId: toAccount.id,
     amount: "24,850",
@@ -122,6 +132,9 @@ test("the canonical Transfer command persists M2's single grouped transfer with 
 
   const persisted = records.transactions.get(result.transfer.id);
   assert.equal(persisted?.kind, "TRANSFER");
+  assert.equal(persisted?.workspaceId, workspaceOne);
+  assert.equal(persisted?.createdByUserId, owner.userId);
+  assert.ok(persisted?.createdAt instanceof Date);
   assert.equal(persisted?.accountId, fromAccount.id);
   assert.equal(persisted?.transferAccountId, toAccount.id);
   assert.equal(persisted?.transferGroupId, result.transfer.transferGroupId);
@@ -129,9 +142,12 @@ test("the canonical Transfer command persists M2's single grouped transfer with 
   assert.equal(persisted?.status, "POSTED");
   assert.equal(persisted?.categoryId, null);
   assert.equal(persisted?.merchantId, null);
-  // The required JSON column is empty: no Income source or dummy transfer entity is written.
-  assert.deepEqual(persisted?.source, {});
-  assert.equal(persisted?.deduplicationFingerprint, null);
+  // Provenance records a manual financial intent without inventing an Income
+  // source or a dummy transfer entity.
+  assert.equal(persisted?.source.provider, "manual");
+  assert.equal(persisted?.source.origin, "MANUAL");
+  assert.match(String(persisted?.source.commandFingerprint), /^[a-f0-9]{64}$/);
+  assert.match(persisted?.deduplicationFingerprint ?? "", /^manual:[a-f0-9]{64}$/);
   assert.equal(records.transactions.size, 1);
 
   // M2 derives balances from its ledger and permits a transfer above the small
@@ -255,4 +271,71 @@ test("a failed M2 transfer insert leaves no partial transfer because source and 
     [...records.transactions.values()].some((transaction) => transaction.kind === "EXPENSE" || transaction.kind === "INCOME"),
     false,
   );
+});
+
+test("Transfer retries with one key return one verified atomic transfer", async () => {
+  const { command, dependencies, records } = await fixture();
+  const input = command({ idempotencyKey: "b0000000-0000-4000-8000-000000000004" });
+
+  const [first, second] = await Promise.all([
+    createTransferForActor(owner, input, dependencies),
+    createTransferForActor(owner, input, dependencies),
+  ]);
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  if (!first.ok || !second.ok) return;
+  assert.equal(first.transfer.id, second.transfer.id);
+  assert.equal(first.transfer.transferGroupId, second.transfer.transferGroupId);
+  assert.equal(records.transactions.size, 1);
+  assert.equal([...records.transactions.values()][0]?.kind, "TRANSFER");
+});
+
+test("manual Expense, Income, and Transfer reconcile into authoritative transactions and KPIs", async () => {
+  const { command, dependencies, fromAccount, records, toAccount, workspaces } = await fixture();
+  const expense = await createExpenseForActor(owner, {
+    workspaceId: workspaceOne,
+    idempotencyKey: "b0000000-0000-4000-8000-000000000011",
+    accountId: fromAccount.id,
+    categoryId: SYSTEM_GROCERIES_ID,
+    amount: "20",
+    currency: "XAF",
+    date: "2024-02-01",
+  }, dependencies);
+  const income = await createIncomeForActor(owner, {
+    workspaceId: workspaceOne,
+    idempotencyKey: "b0000000-0000-4000-8000-000000000012",
+    accountId: toAccount.id,
+    categoryId: SYSTEM_SALARY_ID,
+    amount: "50",
+    currency: "XAF",
+    date: "2024-02-01",
+  }, dependencies);
+  const transfer = await createTransferForActor(owner, command({
+    idempotencyKey: "b0000000-0000-4000-8000-000000000013",
+    amount: "10",
+  }), dependencies);
+  assert.equal(expense.ok, true);
+  assert.equal(income.ok, true);
+  assert.equal(transfer.ok, true);
+  if (!expense.ok || !income.ok || !transfer.ok) return;
+
+  const page = await getTransactionsPage({
+    actor: owner,
+    workspaceId: workspaceOne,
+    filters: { ...DEFAULT_TRANSACTION_FILTER_STATE, page: 1, pageSize: 20 },
+    timeZone: "Africa/Douala",
+    unknownMerchantName: "Transaction",
+  }, { ledger: records, workspaces });
+  assert.deepEqual(new Set(page.items.map((item) => item.id)), new Set([
+    expense.expense.id,
+    income.income.id,
+    transfer.transfer.id,
+  ]));
+  assert.deepEqual(
+    calculateIncomeAndSpendingTotals([...records.transactions.values()], "XAF"),
+    { incomeMinor: 50n, spendingMinor: 20n },
+  );
+  const persistedTransfer = records.transactions.get(transfer.transfer.id);
+  assert.equal(persistedTransfer?.accountId, fromAccount.id);
+  assert.equal(persistedTransfer?.transferAccountId, toAccount.id);
 });

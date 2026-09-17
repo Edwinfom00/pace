@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import type { AuthenticatedActor } from "@/authorization/session";
@@ -74,6 +75,7 @@ async function fixture() {
   const dependencies = { ledger, workspaces };
   const command = (overrides: Record<string, unknown> = {}) => ({
     workspaceId: workspaceOne,
+    idempotencyKey: randomUUID(),
     accountId: account.id,
     amount: "24,850",
     currency: "XAF",
@@ -112,9 +114,14 @@ test("the canonical Income command writes a posted INCOME with exact minor units
 
   const persisted = records.transactions.get(result.income.id);
   assert.equal(persisted?.kind, "INCOME");
+  assert.equal(persisted?.workspaceId, workspaceOne);
+  assert.equal(persisted?.createdByUserId, owner.userId);
+  assert.ok(persisted?.createdAt instanceof Date);
   assert.equal(persisted?.amountMinor, 24_850n);
-  assert.equal(persisted?.deduplicationFingerprint, null);
-  assert.deepEqual(persisted?.source, { provider: "manual" });
+  assert.match(persisted?.deduplicationFingerprint ?? "", /^manual:[a-f0-9]{64}$/);
+  assert.equal(persisted?.source.provider, "manual");
+  assert.equal(persisted?.source.origin, "MANUAL");
+  assert.match(String(persisted?.source.commandFingerprint), /^[a-f0-9]{64}$/);
   // The UI's source text uses the existing normalized merchant/counterparty relation.
   assert.equal(records.merchants.get(result.income.merchantId ?? "")?.normalizedName, "acme gmbh");
   // M2 balances are ledger-derived; this command does not mutate an account balance.
@@ -242,4 +249,22 @@ test("Income writes are atomic and do not alter the established Expense command"
   const expense = await createExpenseForActor(owner, command({ merchant: "Corner shop" }), dependencies);
   assert.equal(expense.ok, true);
   if (expense.ok) assert.equal(records.transactions.get(expense.expense.id)?.kind, "EXPENSE");
+});
+
+test("Income retries with one key return one persisted operation", async () => {
+  const { command, dependencies, records } = await fixture();
+  const input = command({
+    idempotencyKey: "b0000000-0000-4000-8000-000000000003",
+    categoryId: SYSTEM_SALARY_ID,
+  });
+
+  const [first, second] = await Promise.all([
+    createIncomeForActor(owner, input, dependencies),
+    createIncomeForActor(owner, input, dependencies),
+  ]);
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  if (!first.ok || !second.ok) return;
+  assert.equal(first.income.id, second.income.id);
+  assert.equal(records.transactions.size, 1);
 });

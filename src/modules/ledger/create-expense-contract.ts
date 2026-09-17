@@ -35,6 +35,7 @@ export type CreateExpenseErrorCode =
   | "INVALID_MERCHANT"
   | "INVALID_OCCURRED_AT"
   | "INVALID_NOTE"
+  | "IDEMPOTENCY_KEY_REUSED"
   | "EXPENSE_CREATE_FAILED";
 
 export type CreateExpenseResult =

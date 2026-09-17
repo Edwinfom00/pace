@@ -15,6 +15,7 @@ import {
   validateTransactionForm,
   type TransactionFormDraft,
 } from "@/modules/transactions/schemas/transaction-form.schema";
+import { manualTransactionRetryKeyForCommand } from "@/modules/transactions/ui/components/manual-transaction-create-flow";
 
 const workspaceId = "workspace-one";
 const accountId = "00000000-0000-4000-8000-000000000001";
@@ -198,4 +199,13 @@ test("a response only reconciles in the workspace that issued its command", () =
     shouldRefreshData: true,
     shouldResetExpenseDraft: false,
   });
+});
+
+test("a failed transport keeps its idempotency key only for the unchanged manual command", () => {
+  const first = manualTransactionRetryKeyForCommand(undefined, "expense:one", () => "key-one");
+  const retry = manualTransactionRetryKeyForCommand(first, "expense:one", () => "should-not-be-used");
+  const changed = manualTransactionRetryKeyForCommand(first, "expense:two", () => "key-two");
+
+  assert.equal(retry.idempotencyKey, "key-one");
+  assert.equal(changed.idempotencyKey, "key-two");
 });

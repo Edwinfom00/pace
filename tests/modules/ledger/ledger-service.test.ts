@@ -18,6 +18,7 @@ const payer: AuthenticatedActor = {
   email: "payer@pace.test",
   name: "Payer",
 };
+const admin: AuthenticatedActor = { userId: "admin-1", email: "admin@pace.test", name: "Admin" };
 const viewer: AuthenticatedActor = { userId: "viewer-1", email: "viewer@pace.test", name: "Viewer" };
 const workspaceOne = "workspace-one";
 const workspaceTwo = "workspace-two";
@@ -31,6 +32,7 @@ async function createFixture() {
     [workspaceOne, owner.userId, "OWNER"],
     [workspaceTwo, owner.userId, "OWNER"],
     [workspaceOne, payer.userId, "MEMBER"],
+    [workspaceOne, admin.userId, "ADMIN"],
     [workspaceOne, viewer.userId, "VIEWER"],
   ] as const) {
     workspaceRepository.addMembership({
@@ -208,4 +210,75 @@ test("ledger lookups reject cross-workspace entities and viewers cannot write", 
   const listed = await service.listTransactions(owner, workspaceOne);
   assert.equal(listed.length, 0);
   assert.equal((await service.listCategories(owner, workspaceOne)).some((entry) => entry.id === SYSTEM_SALARY_ID), true);
+});
+
+test("OWNER, ADMIN, and MEMBER may create ledger records while VIEWER remains read-only", async () => {
+  const { service } = await createFixture();
+  const destination = await service.createAccount(owner, workspaceOne, {
+    name: "Shared destination",
+    type: "SAVINGS",
+    currency: "USD",
+  });
+
+  for (const actor of [owner, admin, payer]) {
+    const account = await service.createAccount(actor, workspaceOne, {
+      name: `${actor.name} account`,
+      type: "CHECKING",
+      currency: "USD",
+    });
+    const base = {
+      accountId: account.id,
+      amountMinor: "100",
+      currency: "USD",
+      occurredAt: "2026-02-01T00:00:00.000Z",
+    };
+    await service.createTransaction(actor, workspaceOne, {
+      ...base,
+      kind: "EXPENSE",
+      categoryId: SYSTEM_GROCERIES_ID,
+    });
+    await service.createTransaction(actor, workspaceOne, {
+      ...base,
+      kind: "INCOME",
+      categoryId: SYSTEM_SALARY_ID,
+    });
+    await service.createTransaction(actor, workspaceOne, {
+      ...base,
+      kind: "TRANSFER",
+      transferAccountId: destination.id,
+    });
+  }
+
+  const viewerExpense = {
+    kind: "EXPENSE" as const,
+    accountId: destination.id,
+    categoryId: SYSTEM_GROCERIES_ID,
+    amountMinor: "100",
+    currency: "USD",
+    occurredAt: "2026-02-01T00:00:00.000Z",
+  };
+  await assert.rejects(
+    service.createAccount(viewer, workspaceOne, { name: "Blocked", type: "CASH", currency: "USD" }),
+    AuthorizationError,
+  );
+  await assert.rejects(service.createTransaction(viewer, workspaceOne, viewerExpense), AuthorizationError);
+  await assert.rejects(
+    service.createTransaction(viewer, workspaceOne, {
+      ...viewerExpense,
+      kind: "INCOME",
+      categoryId: SYSTEM_SALARY_ID,
+    }),
+    AuthorizationError,
+  );
+  await assert.rejects(
+    service.createTransaction(viewer, workspaceOne, {
+      kind: "TRANSFER",
+      accountId: destination.id,
+      transferAccountId: (await service.listAccounts(owner, workspaceOne)).find((account) => account.id !== destination.id)!.id,
+      amountMinor: "100",
+      currency: "USD",
+      occurredAt: "2026-02-01T00:00:00.000Z",
+    }),
+    AuthorizationError,
+  );
 });

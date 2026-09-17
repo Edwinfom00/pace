@@ -6,6 +6,8 @@ import type { LedgerTransactionStatus } from "./domain";
 
 const workspaceId = z.string().trim().min(1).max(255);
 export const manualTransactionEntityId = z.string().trim().uuid();
+
+export const manualTransactionIdempotencyKey = z.string().trim().uuid();
 const currency = z
   .string()
   .trim()
@@ -14,9 +16,10 @@ const currency = z
 const localDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/);
 const localTime = z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 
-/** Shared, untrusted form-command fields for all manual financial commands. */
+
 export const manualTransactionCommonCommandFields = {
   workspaceId,
+  idempotencyKey: manualTransactionIdempotencyKey,
   amount: z.string().trim().min(1).max(80),
   currency,
   date: localDate,
@@ -74,4 +77,5 @@ export type ManualTransactionErrorCode =
   | "INVALID_COUNTERPARTY"
   | "INVALID_OCCURRED_AT"
   | "INVALID_NOTE"
+  | "IDEMPOTENCY_KEY_REUSED"
   | "TRANSACTION_CREATE_FAILED";

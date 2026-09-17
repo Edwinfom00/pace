@@ -4,11 +4,7 @@ import { createIncome } from "@/modules/ledger/create-income";
 import { createTransfer } from "@/modules/ledger/create-transfer";
 import { presentLedgerTransaction } from "@/modules/ledger/presenters";
 import { getLedgerService } from "@/modules/ledger/server";
-import { getFinancialInboxService } from "@/modules/financial-inbox/server";
-import {
-  createLedgerTransactionSchema,
-  listLedgerTransactionsSchema,
-} from "@/modules/ledger/validation";
+import { listLedgerTransactionsSchema } from "@/modules/ledger/validation";
 
 import { jsonError } from "../../../../_lib/http";
 
@@ -83,19 +79,10 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
       return Response.json({ expense: result.expense }, { status: 201 });
     }
 
-    const [actor, parsedInput] = await Promise.all([
-      requireAuthenticatedActor(),
-      Promise.resolve(createLedgerTransactionSchema.parse(input)),
-    ]);
-    const transaction = await getLedgerService().createTransaction(actor, workspaceId, parsedInput);
-    try {
-      await getFinancialInboxService().ingestTransaction(actor, workspaceId, { transaction });
-    } catch (classificationError) {
-      // The append-only ledger write is already complete. Classification is an
-      // overlay and cannot invalidate a verified financial mutation.
-      console.error("Financial classification deferred", classificationError);
-    }
-    return Response.json({ transaction: presentLedgerTransaction(transaction) }, { status: 201 });
+    return Response.json(
+      { error: "Transaction creation failed.", code: "INVALID_TRANSACTION_COMMAND" },
+      { status: 400 },
+    );
   } catch (error) {
     return jsonError(error);
   }
@@ -139,6 +126,7 @@ function canonicalManualCreationStatus(code: string): number {
     || code === "CURRENCY_MISMATCH"
     || code === "SAME_TRANSFER_ACCOUNT"
     || code === "CROSS_CURRENCY_TRANSFER_UNSUPPORTED"
+    || code === "IDEMPOTENCY_KEY_REUSED"
   ) {
     return 409;
   }

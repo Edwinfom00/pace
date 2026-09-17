@@ -17,6 +17,8 @@ import {
 import type { LedgerTransactionRecord } from "./domain";
 import { getLedgerService } from "./server";
 import {
+  manualTransactionCommandFingerprint,
+  manualTransactionFingerprint,
   parseManualTransactionAmount,
   resolveManualOccurredAt,
 } from "./manual-transaction";
@@ -72,7 +74,16 @@ export async function createTransferForActor(
   }
 
   try {
-    const transaction = await dependencies.ledger.createTransaction(actor, parsed.data.workspaceId, {
+    const commandFingerprint = manualTransactionCommandFingerprint([
+      ["kind", "TRANSFER"],
+      ["fromAccountId", parsed.data.fromAccountId],
+      ["toAccountId", parsed.data.toAccountId],
+      ["amountMinor", amount.minor.toString()],
+      ["currency", currency],
+      ["occurredAt", occurredAt.toISOString()],
+      ["note", parsed.data.note ?? null],
+    ]);
+    const transaction = await dependencies.ledger.createTransactionIdempotently(actor, parsed.data.workspaceId, {
       kind: "TRANSFER",
       status: "POSTED",
       accountId: parsed.data.fromAccountId,
@@ -80,8 +91,19 @@ export async function createTransferForActor(
       amountMinor: amount.minor,
       currency,
       occurredAt,
+      source: { provider: "manual", origin: "MANUAL", commandFingerprint },
+      deduplicationFingerprint: manualTransactionFingerprint(actor.userId, parsed.data.idempotencyKey),
       note: parsed.data.note ?? undefined,
     });
+    assertPersistedTransferMatches(
+      transaction,
+      parsed.data,
+      amount.minor,
+      currency,
+      occurredAt,
+      actor.userId,
+      commandFingerprint,
+    );
     return { ok: true, transfer: toCreatedTransferDTO(transaction) };
   } catch (error) {
     return { ok: false, code: transferLedgerErrorCode(error) };
@@ -111,6 +133,7 @@ function transferLedgerErrorCode(error: unknown): CreateTransferErrorCode {
     if (error.code === "CROSS_CURRENCY_TRANSFER_UNSUPPORTED") {
       return "CROSS_CURRENCY_TRANSFER_UNSUPPORTED";
     }
+    if (error.code === "IDEMPOTENCY_KEY_REUSED") return "IDEMPOTENCY_KEY_REUSED";
   }
   if (error instanceof NotFoundError) {
     if (error.message.startsWith("From account")) return "FROM_ACCOUNT_NOT_FOUND";
@@ -121,6 +144,43 @@ function transferLedgerErrorCode(error: unknown): CreateTransferErrorCode {
     if (error.message.startsWith("Transaction currency")) return "CURRENCY_MISMATCH";
   }
   return "TRANSFER_CREATE_FAILED";
+}
+
+function assertPersistedTransferMatches(
+  transaction: LedgerTransactionRecord,
+  input: import("./create-transfer-contract").CreateTransferInput,
+  amountMinor: bigint,
+  currency: string,
+  occurredAt: Date,
+  actorUserId: string,
+  commandFingerprint: string,
+): void {
+  const matches =
+    transaction.workspaceId === input.workspaceId
+    && transaction.kind === "TRANSFER"
+    && transaction.status === "POSTED"
+    && transaction.amountMinor === amountMinor
+    && transaction.currency === currency
+    && transaction.accountId === input.fromAccountId
+    && transaction.transferAccountId === input.toAccountId
+    && transaction.categoryId === null
+    && transaction.merchantId === null
+    && transaction.transferGroupId !== null
+    && transaction.refundedTransactionId === null
+    && transaction.createdByUserId === actorUserId
+    && transaction.occurredAt.getTime() === occurredAt.getTime()
+    && transaction.note === (input.note ?? null)
+    && transaction.source.provider === "manual"
+    && transaction.source.origin === "MANUAL"
+    && transaction.source.commandFingerprint === commandFingerprint
+    && transaction.deduplicationFingerprint === manualTransactionFingerprint(actorUserId, input.idempotencyKey);
+
+  if (!matches) {
+    throw new DomainConflictError(
+      "IDEMPOTENCY_KEY_REUSED",
+      "This submission key has already been used for a different transaction.",
+    );
+  }
 }
 
 function toCreatedTransferDTO(transaction: LedgerTransactionRecord): CreatedTransferDTO {
