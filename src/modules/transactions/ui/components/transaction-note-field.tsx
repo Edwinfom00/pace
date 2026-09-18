@@ -5,6 +5,7 @@ import { useId, type RefObject } from "react";
 import { Textarea } from "@/components/ui/textarea";
 
 export type TransactionNoteFieldProps = {
+  readonly disabled?: boolean;
   readonly error?: string;
   readonly label: string;
   readonly optionalLabel: string;
@@ -15,6 +16,7 @@ export type TransactionNoteFieldProps = {
 };
 
 export function TransactionNoteField({
+  disabled = false,
   error,
   label,
   onValueChange,
@@ -37,6 +39,7 @@ export function TransactionNoteField({
         aria-describedby={error ? errorId : undefined}
         aria-invalid={error ? true : undefined}
         className={`min-h-18 max-h-32 resize-y rounded-[8px] bg-white px-3 py-2.5 text-[13px] leading-5 text-[#13213f] placeholder:text-[#71809a] hover:border-[#bac9df] focus-visible:ring-3 ${error ? "border-[#d88690] focus-visible:border-[#c55b68] focus-visible:ring-[#d88690]/15" : "border-[#d9e1ec] focus-visible:border-[#4e7fe3] focus-visible:ring-[#5e8fe8]/15"}`}
+        disabled={disabled}
         id={id}
         onChange={(event) => onValueChange(event.target.value)}
         placeholder={placeholder}

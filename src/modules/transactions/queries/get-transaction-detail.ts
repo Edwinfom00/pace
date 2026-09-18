@@ -24,6 +24,7 @@ import type {
   TransactionDetailMerchant,
   TransactionMonthlyCategoryContext,
   TransactionDetailOrigin,
+  TransactionRefundSummary,
 } from "../domain/transaction-detail";
 import { getTransactionCapabilities } from "../domain/transaction-action-policy";
 
@@ -34,6 +35,7 @@ type TransactionDetailLedgerRepository = Pick<
   | "findCategory"
   | "findMerchant"
   | "listTransactions"
+  | "listRefundsForEffectiveExpense"
   | "findTransactionCorrectionByOriginal"
   | "findTransactionCorrectionByReplacement"
   | "findTransactionCorrectionByTransactionId"
@@ -97,6 +99,15 @@ export async function getTransactionDetail(
         : null,
   ]);
 
+  const isCurrentEffectiveExpense = transaction.kind === "EXPENSE" && effectiveTransaction.id === transaction.id;
+  const refunds = isCurrentEffectiveExpense
+    ? await dependencies.ledger.listRefundsForEffectiveExpense(input.workspaceId, effectiveTransaction.id)
+    : [];
+  const refundedAmountMinor = refunds.reduce((total, refund) => total + refund.amountMinor, 0n);
+  const refundAudit = isCurrentEffectiveExpense
+    ? await dependencies.ledger.listTransactionAudit(input.workspaceId, effectiveTransaction.id)
+    : [];
+
   return {
     id: transaction.id,
     kind: transaction.kind,
@@ -114,10 +125,18 @@ export async function getTransactionDetail(
     capabilities: getTransactionCapabilities({
       transaction,
       workspaceRole: membership.role,
-      refundedAmountMinor: refundedAmountFor(transaction, workspaceTransactions),
+      refundedAmountMinor,
       isCurrentEffective: isCurrentFinancialTransaction(transaction, workspaceTransactions),
     }),
     correction,
+    refund: isCurrentEffectiveExpense
+      ? refundSummary({
+        expense: effectiveTransaction,
+        refunds,
+        audits: refundAudit,
+        sourceAccount: effectiveAccount ? mapAccount(effectiveAccount) : null,
+      })
+      : null,
     context: {
       accountImpacts: [effectiveAccount, effectiveTransferAccount]
         .filter((candidate): candidate is LedgerAccountRecord => candidate !== null)
@@ -269,14 +288,57 @@ function money(transaction: LedgerTransactionRecord) {
   return { currency: transaction.currency, minor: transaction.amountMinor.toString() };
 }
 
-function refundedAmountFor(
-  transaction: LedgerTransactionRecord,
-  workspaceTransactions: readonly LedgerTransactionRecord[],
-): bigint {
-  if (transaction.kind !== "EXPENSE") return 0n;
-  return workspaceTransactions
-    .filter((candidate) => candidate.kind === "REFUND" && candidate.refundedTransactionId === transaction.id)
-    .reduce((total, refund) => total + refund.amountMinor, 0n);
+function refundSummary({
+  expense,
+  refunds,
+  audits,
+  sourceAccount,
+}: {
+  readonly expense: LedgerTransactionRecord;
+  readonly refunds: readonly LedgerTransactionRecord[];
+  readonly audits: readonly LedgerTransactionAuditRecord[];
+  readonly sourceAccount: TransactionDetailAccount | null;
+}): TransactionRefundSummary {
+  const refundedAmountMinor = refunds.reduce((total, refund) => total + refund.amountMinor, 0n);
+  const refundById = new Map(refunds.map((refund) => [refund.id, refund]));
+  const activity = audits.flatMap((audit) => {
+    if (audit.action !== "REFUND_ISSUED") return [];
+    const refundTransactionId = typeof audit.metadata.refundTransactionId === "string"
+      ? audit.metadata.refundTransactionId
+      : null;
+    const refund = refundTransactionId ? refundById.get(refundTransactionId) : undefined;
+    if (!refund) return [];
+    return [{
+      id: audit.id,
+      refundTransactionId: refund.id,
+      amount: money(refund),
+      occurredAt: audit.createdAt.toISOString(),
+      reason: typeof audit.metadata.reason === "string" ? audit.metadata.reason : null,
+    }];
+  });
+  return {
+    effectiveExpenseAmount: money(expense),
+    refundedAmount: { currency: expense.currency, minor: refundedAmountMinor.toString() },
+    remainingRefundableAmount: { currency: expense.currency, minor: (expense.amountMinor - refundedAmountMinor).toString() },
+    status: refundedAmountMinor === 0n ? "NONE" : refundedAmountMinor === expense.amountMinor ? "FULL" : "PARTIAL",
+    sourceAccount,
+    refunds: refunds.map((refund) => ({
+      id: refund.id,
+      amount: money(refund),
+      occurredAt: refund.occurredAt.toISOString(),
+      note: refund.note,
+      reason: refundReason(refund),
+    })),
+    activity,
+  };
+}
+
+function refundReason(refund: LedgerTransactionRecord): string | null {
+  const metadata = refund.source.refund;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  return typeof (metadata as Record<string, unknown>).reason === "string"
+    ? (metadata as Record<string, string>).reason
+    : null;
 }
 
 function mapAccount(account: LedgerAccountRecord): TransactionDetailAccount {

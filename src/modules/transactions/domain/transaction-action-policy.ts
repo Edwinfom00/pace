@@ -74,7 +74,7 @@ export function getTransactionCapabilities({
   }
 
   const editReason = getEditReason(transaction);
-  const refundReason = getRefundReason(transaction, refundedAmountMinor);
+  const refundReason = getRefundReason(transaction, refundedAmountMinor, isCurrentEffective);
   const canCorrectFinancials = isCorrectionAllowed(transaction, isCurrentEffective);
 
   return {
@@ -112,8 +112,10 @@ function getEditReason(transaction: TransactionActionPolicyInput["transaction"])
 function getRefundReason(
   transaction: TransactionActionPolicyInput["transaction"],
   refundedAmountMinor: bigint,
+  isCurrentEffective: boolean,
 ): TransactionActionReason | null {
   if (transaction.status !== "POSTED") return "TRANSACTION_NOT_POSTED";
+  if (!isCurrentEffective) return "REFUND_NOT_APPLICABLE";
   if (transaction.kind !== "EXPENSE") return "REFUND_NOT_APPLICABLE";
   if (!transaction.categoryId) return "REFUND_REQUIRES_CATEGORY";
   if (refundedAmountMinor >= transaction.amountMinor) return "REFUND_FULLY_ISSUED";

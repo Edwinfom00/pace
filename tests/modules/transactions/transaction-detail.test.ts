@@ -8,11 +8,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
+import { toCurrencyCode } from "@/money/currency";
 import { correctTransactionForActor } from "@/modules/ledger/correct-transaction";
 import { LedgerService } from "@/modules/ledger/ledger-service";
 import { getTransactionDetail } from "@/modules/transactions/queries/get-transaction-detail";
 import { TransactionDetailActivity } from "@/modules/transactions/ui/components/transaction-detail-activity";
 import { TransactionDetailCard } from "@/modules/transactions/ui/components/transaction-detail-card";
+import { TransactionRefundSummary } from "@/modules/transactions/ui/components/transaction-refund-summary";
 import { TransactionFinancialContext } from "@/modules/transactions/ui/components/transaction-financial-context";
 import { TransactionDetailActions } from "@/modules/transactions/ui/components/transaction-detail-actions";
 import { TransactionDetailSkeleton } from "@/modules/transactions/ui/components/transaction-detail-skeleton";
@@ -20,6 +22,7 @@ import { TransactionTechnicalDetails } from "@/modules/transactions/ui/component
 import { getTransactionDetailActionLabels } from "@/modules/transactions/ui/transaction-detail-action-labels";
 import { getTransactionDetailLabels } from "@/modules/transactions/ui/transaction-detail-labels";
 import { getTransactionEditLabels } from "@/modules/transactions/ui/transaction-edit-labels";
+import { getTransactionRefundLabels } from "@/modules/transactions/ui/transaction-refund-labels";
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 import { TransactionDetailView } from "@/modules/transactions/ui/views/transaction-detail-view";
@@ -227,6 +230,61 @@ test("financial context and activity only present available ledger facts", async
   assert.match(activityMarkup, /Transaction added/);
   assert.match(activityMarkup, /Categorized as Groceries/);
   assert.match(activityMarkup, /Verified and posted/);
+});
+
+test("detail projects canonical partial and full refunds, related refund links, and source audit activity", async () => {
+  const { detail, expense, main, service } = await fixture();
+  const partial = await service.createRefund(owner, {
+    workspaceId,
+    expenseTransactionId: expense.id,
+    amountMinor: 10_000n,
+    currency: toCurrencyCode("USD"),
+    accountId: main.id,
+    occurredAt: new Date("2026-09-18T09:30:00.000Z"),
+    reason: "RETURNED_ITEM",
+    idempotencyKey: "00000000-0000-4000-8000-000000000071",
+  });
+  const partiallyRefunded = await detail(expense.id);
+  assert.ok(partiallyRefunded?.refund);
+  assert.deepEqual(partiallyRefunded.refund.effectiveExpenseAmount, { currency: "USD", minor: "24850" });
+  assert.deepEqual(partiallyRefunded.refund.refundedAmount, { currency: "USD", minor: "10000" });
+  assert.deepEqual(partiallyRefunded.refund.remainingRefundableAmount, { currency: "USD", minor: "14850" });
+  assert.equal(partiallyRefunded.refund.status, "PARTIAL");
+  assert.equal(partiallyRefunded.capabilities.canRefund, true);
+  assert.equal(partiallyRefunded.refund.activity[0]?.refundTransactionId, partial.refundTransaction.id);
+
+  const labels = detailLabels("en");
+  const summaryMarkup = renderToStaticMarkup(createElement(TransactionRefundSummary, {
+    labels: getTransactionRefundLabels(getDashboardLabels("en")),
+    locale: "en-US",
+    transaction: partiallyRefunded,
+    workspaceSlug: "house",
+  }));
+  const activityMarkup = renderToStaticMarkup(createElement(TransactionDetailActivity, {
+    transaction: partiallyRefunded,
+    labels,
+    locale: "en-US",
+    timeZone: "Africa/Douala",
+  }));
+  assert.match(summaryMarkup, /Partial refund/);
+  assert.match(summaryMarkup, /\$100\.00/);
+  assert.match(summaryMarkup, /View refund/);
+  assert.match(activityMarkup, /Refund created: \$100\.00/);
+
+  await service.createRefund(owner, {
+    workspaceId,
+    expenseTransactionId: expense.id,
+    amountMinor: 14_850n,
+    currency: toCurrencyCode("USD"),
+    accountId: main.id,
+    occurredAt: new Date("2026-09-18T10:00:00.000Z"),
+    idempotencyKey: "00000000-0000-4000-8000-000000000072",
+  });
+  const fullyRefunded = await detail(expense.id);
+  assert.ok(fullyRefunded?.refund);
+  assert.equal(fullyRefunded.refund.status, "FULL");
+  assert.equal(fullyRefunded.refund.remainingRefundableAmount.minor, "0");
+  assert.equal(fullyRefunded.capabilities.canRefund, false);
 });
 
 test("the complete English detail view uses the shared transaction-detail labels", async () => {

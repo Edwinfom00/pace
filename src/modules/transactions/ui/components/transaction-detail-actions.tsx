@@ -8,7 +8,9 @@ import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 
 import type { TransactionDetailActionLabels } from "../transaction-detail-action-labels";
 import type { TransactionEditLabels } from "../transaction-edit-labels";
+import type { TransactionRefundLabels } from "../transaction-refund-labels";
 import { EditTransactionDialog } from "./edit-transaction-dialog";
+import { TransactionRefundDialog } from "./transaction-refund-dialog";
 
 export function TransactionDetailActions({
   accountOptions = { status: "ready", accounts: [] },
@@ -18,6 +20,7 @@ export function TransactionDetailActions({
   timeZone,
   transaction,
   labels,
+  refundLabels,
   language = "en",
   workspaceId,
   workspaceSlug,
@@ -29,6 +32,7 @@ export function TransactionDetailActions({
   readonly timeZone: string;
   readonly transaction: TransactionDetailData;
   readonly labels: TransactionDetailActionLabels;
+  readonly refundLabels?: TransactionRefundLabels;
   readonly language?: OnboardingLanguage;
   readonly workspaceId: string;
   readonly workspaceSlug: string;
@@ -59,7 +63,16 @@ export function TransactionDetailActions({
             reason={editReason ? labels.unavailable[editReason] : labels.comingSoon}
           />
         )}
-        {transaction.kind === "EXPENSE" ? (
+        {transaction.kind === "EXPENSE" && transaction.capabilities.canRefund && transaction.refund && refundLabels ? (
+          <TransactionRefundDialog
+            accountOptions={accountOptions}
+            language={language}
+            labels={refundLabels}
+            locale={locale}
+            transaction={transaction}
+            workspaceId={workspaceId}
+          />
+        ) : transaction.kind === "EXPENSE" ? (
           <ActionUnavailable
             icon={<RefreshCw aria-hidden className="size-4" />}
             label={labels.createRefund}

@@ -53,6 +53,28 @@ export type TransactionMonthlyCategoryContext = {
   readonly total: SerializedMoney;
 };
 
+export type TransactionRefundSummary = {
+  readonly effectiveExpenseAmount: SerializedMoney;
+  readonly refundedAmount: SerializedMoney;
+  readonly remainingRefundableAmount: SerializedMoney;
+  readonly status: "NONE" | "PARTIAL" | "FULL";
+  readonly sourceAccount: TransactionDetailAccount | null;
+  readonly refunds: readonly {
+    readonly id: string;
+    readonly amount: SerializedMoney;
+    readonly occurredAt: string;
+    readonly note: string | null;
+    readonly reason: string | null;
+  }[];
+  readonly activity: readonly {
+    readonly id: string;
+    readonly refundTransactionId: string;
+    readonly amount: SerializedMoney;
+    readonly occurredAt: string;
+    readonly reason: string | null;
+  }[];
+};
+
 export type TransactionCorrectionChange =
   | { readonly field: "AMOUNT"; readonly before: SerializedMoney; readonly after: SerializedMoney }
   | {
@@ -61,7 +83,6 @@ export type TransactionCorrectionChange =
     readonly after: string | null;
   };
 
-/** A concise, user-safe projection of the canonical append-only correction chain. */
 export type TransactionDetailCorrection = {
   readonly state: "CURRENT" | "HISTORICAL" | "TECHNICAL";
   readonly correctionId: string;
@@ -74,7 +95,6 @@ export type TransactionDetailCorrection = {
   readonly changes: readonly TransactionCorrectionChange[];
   readonly originalAmount: SerializedMoney;
   readonly currentAmount: SerializedMoney;
-  /** Present only when the authoritative correction audit was available. */
   readonly activity: { readonly occurredAt: string } | null;
 };
 
@@ -97,10 +117,10 @@ export type TransactionDetailData = {
   } | null;
   readonly capabilities: TransactionCapabilities;
   readonly correction?: TransactionDetailCorrection | null;
+  readonly refund?: TransactionRefundSummary | null;
   readonly context: {
     readonly accountImpacts: readonly TransactionAccountImpact[];
     readonly monthlyCategory: TransactionMonthlyCategoryContext | null;
-    /** The transaction represented by financial context, which may be a later corrected version. */
     readonly effectiveTransactionId?: string;
   };
 };

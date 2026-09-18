@@ -1,6 +1,7 @@
 import { requireAuthenticatedActor } from "@/authorization/session";
 import { createExpense } from "@/modules/ledger/create-expense";
 import { createIncome } from "@/modules/ledger/create-income";
+import { createRefund } from "@/modules/ledger/create-refund";
 import { createTransfer } from "@/modules/ledger/create-transfer";
 import { presentLedgerTransaction } from "@/modules/ledger/presenters";
 import { getLedgerService } from "@/modules/ledger/server";
@@ -41,6 +42,17 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
 export async function POST(request: Request, context: RouteContext): Promise<Response> {
   try {
     const [{ workspaceId }, input] = await Promise.all([context.params, request.json()]);
+
+    if (isCanonicalRefundRequest(input)) {
+      const result = await createRefund({ ...input, workspaceId });
+      if (!result.ok) {
+        return Response.json(
+          { error: "Refund creation failed.", code: result.code },
+          { status: canonicalRefundCreationStatus(result.code) },
+        );
+      }
+      return Response.json({ refund: result.refund }, { status: 201 });
+    }
 
     
     if (isCanonicalTransferRequest(input)) {
@@ -86,6 +98,18 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
   } catch (error) {
     return jsonError(error);
   }
+}
+
+function isCanonicalRefundRequest(input: unknown): input is Record<string, unknown> {
+  return Boolean(
+    input
+    && typeof input === "object"
+    && !Array.isArray(input)
+    && !('kind' in input)
+    && "expenseTransactionId" in input
+    && "amountMinor" in input
+    && "idempotencyKey" in input,
+  );
 }
 
 function isCanonicalExpenseRequest(input: unknown): input is Record<string, unknown> {
@@ -139,5 +163,24 @@ function canonicalManualCreationStatus(code: string): number {
   ) {
     return 400;
   }
+  return 500;
+}
+
+function canonicalRefundCreationStatus(code: string): number {
+  if (code === "UNAUTHENTICATED") return 401;
+  if (code === "WORKSPACE_FORBIDDEN") return 403;
+  if (code === "TRANSACTION_NOT_FOUND" || code === "ACCOUNT_NOT_FOUND") return 404;
+  if (
+    code === "REFUND_NOT_ALLOWED"
+    || code === "SOURCE_NOT_EXPENSE"
+    || code === "TRANSACTION_NOT_CURRENT"
+    || code === "EXPENSE_ALREADY_FULLY_REFUNDED"
+    || code === "REFUND_EXCEEDS_REMAINING_AMOUNT"
+    || code === "CONCURRENT_MODIFICATION"
+    || code === "REFUND_ALREADY_PROCESSED"
+    || code === "ACCOUNT_UNAVAILABLE"
+    || code === "ACCOUNT_WORKSPACE_MISMATCH"
+  ) return 409;
+  if (code.startsWith("INVALID_")) return 400;
   return 500;
 }

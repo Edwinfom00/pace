@@ -1,5 +1,6 @@
 import { CheckCircle2, History, Plus, Tag } from "lucide-react";
 
+import { formatOverviewMoney } from "@/modules/overview/domain/overview-formatters";
 import type { TransactionDetailData } from "@/modules/transactions/domain/transaction-detail";
 
 import type { TransactionDetailLabels } from "../transaction-detail-labels";
@@ -58,6 +59,14 @@ export function TransactionDetailActivity({
       icon: History,
       tone: "success" as const,
     }] : []),
+    ...(transaction.refund?.activity.map((refund) => ({
+      id: `refund-${refund.id}`,
+      title: labels.activity.refundIssued(formatOverviewMoney(refund.amount.minor, refund.amount.currency, locale)),
+      description: refund.reason ? refundReasonLabel(refund.reason, labels) : labels.activity.refundDetails,
+      occurredAt: refund.occurredAt,
+      icon: CheckCircle2,
+      tone: "success" as const,
+    })) ?? []),
   ];
 
   return (
@@ -77,4 +86,9 @@ export function TransactionDetailActivity({
       </ol>
     </section>
   );
+}
+
+function refundReasonLabel(reason: string, labels: TransactionDetailLabels): string {
+  const refund = labels.refund;
+  return ({ RETURNED_ITEM: refund.returnedItem, CANCELLED_SERVICE: refund.cancelledService, PRICE_ADJUSTMENT: refund.priceAdjustment, DUPLICATE_CHARGE: refund.duplicateCharge, OTHER: refund.other } as Record<string, string>)[reason] ?? reason;
 }

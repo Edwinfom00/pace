@@ -76,6 +76,8 @@ export type TransactionDetailLabels = {
     readonly empty: string;
     readonly correction: string;
     readonly correctionDetails: string;
+    readonly refundIssued: (amount: string) => string;
+    readonly refundDetails: string;
   };
   readonly technical: {
     readonly title: string;
@@ -107,6 +109,13 @@ export type TransactionDetailLabels = {
     readonly technicalTitle: string;
     readonly technicalDescription: string;
     readonly technicalCurrent: string;
+  };
+  readonly refund: {
+    readonly returnedItem: string;
+    readonly cancelledService: string;
+    readonly priceAdjustment: string;
+    readonly duplicateCharge: string;
+    readonly other: string;
   };
   readonly askPace: {
     readonly title: string;
@@ -192,6 +201,8 @@ export function getTransactionDetailLabels(labels: DashboardLabels): Transaction
       empty: labels["transactions.detail.activity.empty"],
       correction: labels["transactions.correction.activity"],
       correctionDetails: labels["transactions.correction.activityDetails"],
+      refundIssued: (amount) => formatDashboardLabel(labels, "transactions.refund.activityIssued", { amount }),
+      refundDetails: labels["transactions.refund.activityDetails"],
     },
     technical: {
       title: labels["transactions.detail.technical.title"],
@@ -231,6 +242,13 @@ export function getTransactionDetailLabels(labels: DashboardLabels): Transaction
       technicalTitle: labels["transactions.correction.technicalTitle"],
       technicalDescription: labels["transactions.correction.technicalDescription"],
       technicalCurrent: labels["transactions.correction.technicalCurrent"],
+    },
+    refund: {
+      returnedItem: labels["transactions.refund.reason.returnedItem"],
+      cancelledService: labels["transactions.refund.reason.cancelledService"],
+      priceAdjustment: labels["transactions.refund.reason.priceAdjustment"],
+      duplicateCharge: labels["transactions.refund.reason.duplicateCharge"],
+      other: labels["transactions.refund.reason.other"],
     },
     askPace: {
       title: labels["transactions.detail.askPace.title"],

@@ -9,10 +9,12 @@ import type { TransactionCategoryOption } from "../../domain/transaction-categor
 import { getTransactionDetailActionLabels } from "../transaction-detail-action-labels";
 import { getTransactionDetailLabels } from "../transaction-detail-labels";
 import { getTransactionEditLabels } from "../transaction-edit-labels";
+import { getTransactionRefundLabels } from "../transaction-refund-labels";
 import { TransactionDetailActions } from "../components/transaction-detail-actions";
 import { TransactionDetailActivity } from "../components/transaction-detail-activity";
 import { TransactionDetailAskPace } from "../components/transaction-detail-ask-pace";
 import { TransactionDetailCard } from "../components/transaction-detail-card";
+import { TransactionRefundSummary } from "../components/transaction-refund-summary";
 import { TransactionCorrectionSummary } from "../components/transaction-correction-summary";
 import { TransactionCorrectionTechnicalEntry } from "../components/transaction-correction-technical-entry";
 import { TransactionFinancialContext } from "../components/transaction-financial-context";
@@ -42,6 +44,7 @@ export function TransactionDetailView({
   const dashboardLabels = getDashboardLabels(language);
   const actionLabels = getTransactionDetailActionLabels(dashboardLabels);
   const editLabels = getTransactionEditLabels(dashboardLabels);
+  const refundLabels = getTransactionRefundLabels(dashboardLabels);
   const labels = getTransactionDetailLabels(dashboardLabels);
   const askPaceCategory = transaction.category ? labels.systemCategory(transaction.category) : null;
 
@@ -57,6 +60,7 @@ export function TransactionDetailView({
         <div className="min-w-0 space-y-4">
           <TransactionDetailCard labels={labels} locale={locale} timeZone={timeZone} transaction={transaction} />
           <TransactionCorrectionSummary labels={labels} locale={locale} timeZone={timeZone} transaction={transaction} workspaceSlug={workspaceSlug} />
+          <TransactionRefundSummary labels={refundLabels} locale={locale} transaction={transaction} workspaceSlug={workspaceSlug} />
           <TransactionFinancialContext labels={labels} locale={locale} transaction={transaction} />
           <TransactionSourceInformation labels={labels} transaction={transaction} />
           {transaction.capabilities.canViewTechnicalDetails ? <TransactionTechnicalDetails labels={labels} locale={locale} timeZone={timeZone} transaction={transaction} /> : null}
@@ -67,6 +71,7 @@ export function TransactionDetailView({
             categories={categories}
             editLabels={editLabels}
             labels={actionLabels}
+            refundLabels={refundLabels}
             language={language}
             locale={locale}
             timeZone={timeZone}
