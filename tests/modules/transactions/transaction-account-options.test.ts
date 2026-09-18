@@ -53,6 +53,7 @@ test("manual transaction account DTO mapping exposes only the selector fields", 
     id: active.id,
     name: "Everyday",
     currency: "XAF",
+    type: "CHECKING",
   });
   assert.equal(mapTransactionAccountOption(archived), null);
 });
@@ -64,7 +65,7 @@ test("manual transaction accounts are authorized, workspace-scoped, active, and 
     { actor: owner, workspaceId: workspaceOne },
     { ledger, workspaces },
   );
-  assert.deepEqual(accounts, [{ id: active.id, name: "Everyday", currency: "XAF" }]);
+  assert.deepEqual(accounts, [{ id: active.id, name: "Everyday", currency: "XAF", type: "CHECKING" }]);
   assert.equal(accounts.some((account) => account.id === outside.id), false);
 
   const zeroAccounts = await getTransactionAccountOptions(

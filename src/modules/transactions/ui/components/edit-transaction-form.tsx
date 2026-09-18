@@ -3,20 +3,32 @@
 import type { FormEvent, RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { TransactionDetailData } from "@/modules/transactions/domain/transaction-detail";
+import { toCurrencyCode } from "@/money/currency";
+import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
+import type { TransactionAccountOptionsState, TransactionAccountOption } from "@/modules/transactions/domain/transaction-account-options";
 import type { TransactionCategoryOption } from "@/modules/transactions/domain/transaction-category-options";
+import type { TransactionDetailAccount, TransactionDetailData } from "@/modules/transactions/domain/transaction-detail";
 
 import type { TransactionEditLabels } from "../transaction-edit-labels";
-import { formatTransactionDetailAmount } from "./transaction-detail-formatters";
+import { TransactionAccountField } from "./transaction-account-field";
+import { TransactionAmountField } from "./transaction-amount-field";
 import { TransactionCategoryField } from "./transaction-category-field";
-import type { TransactionEditDraft, TransactionEditFieldErrors, TransactionEditFormError } from "./transaction-edit-flow";
 import { TransactionDateField } from "./transaction-date-field";
 import { TransactionMerchantField } from "./transaction-merchant-field";
 import { TransactionNoteField } from "./transaction-note-field";
+import {
+  type TransactionEditChangeClassification,
+  type TransactionEditDraft,
+  type TransactionEditFieldErrors,
+  type TransactionEditFormError,
+} from "./transaction-edit-flow";
 import { TransactionTimeField } from "./transaction-time-field";
 
 export function EditTransactionForm({
+  accountOptions,
+  amountInputRef,
   categories,
+  classification: suppliedClassification,
   dateTriggerRef,
   draft,
   errors,
@@ -24,6 +36,7 @@ export function EditTransactionForm({
   isDirty,
   isSaving,
   labels,
+  language = "en",
   locale,
   merchantInputRef,
   onCancel,
@@ -33,14 +46,18 @@ export function EditTransactionForm({
   timeZone,
   transaction,
 }: {
+  readonly accountOptions?: TransactionAccountOptionsState;
+  readonly amountInputRef?: RefObject<HTMLInputElement | null>;
   readonly categories: readonly TransactionCategoryOption[];
+  readonly classification?: TransactionEditChangeClassification;
   readonly dateTriggerRef?: RefObject<HTMLButtonElement | null>;
   readonly draft: TransactionEditDraft;
   readonly errors: TransactionEditFieldErrors;
   readonly formError: TransactionEditFormError;
-  readonly isDirty: boolean;
+  readonly isDirty?: boolean;
   readonly isSaving: boolean;
   readonly labels: TransactionEditLabels;
+  readonly language?: OnboardingLanguage;
   readonly locale: string;
   readonly merchantInputRef?: RefObject<HTMLInputElement | null>;
   readonly onCancel: () => void;
@@ -50,20 +67,33 @@ export function EditTransactionForm({
   readonly timeZone: string;
   readonly transaction: TransactionDetailData;
 }) {
+  const resolvedAccountOptions = accountOptions ?? { status: "ready", accounts: [] } as const;
+  const classification = suppliedClassification ?? {
+    hasChanges: isDirty ?? false,
+    hasMetadataChanges: isDirty ?? false,
+    hasFinancialChanges: false,
+    metadataFields: [],
+    financialFields: [],
+  } as const;
   const isCounterpartyTransaction = transaction.kind === "EXPENSE" || transaction.kind === "INCOME";
   const isTransfer = transaction.kind === "TRANSFER";
+  const financialFieldsAvailable = transaction.capabilities.canCorrectFinancials;
+  const accountChoices = getEditAccountChoices(resolvedAccountOptions, transaction);
+  const disabledAccountIds = getDisabledAccountIds(accountChoices, resolvedAccountOptions.accounts, transaction.amount.currency);
   const formMessage = formError === "concurrent"
     ? labels.concurrentModification
     : formError === "notAllowed"
       ? labels.notAllowed
-      : formError === "failed"
-        ? labels.failed
-        : null;
+      : formError === "financialNotAllowed"
+        ? labels.financialCorrectionUnavailable
+        : formError === "failed"
+          ? labels.failed
+          : null;
 
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 sm:px-7 sm:pb-7">
-        <ReadOnlyTransactionSummary labels={labels} locale={locale} transaction={transaction} />
+        <TransactionLocks labels={labels} />
 
         {formMessage ? (
           <div aria-live="assertive" className="mt-5 rounded-[8px] border border-[#f1c7cd] bg-[#fff8f8] px-3 py-2.5 text-[12px] leading-5 text-[#a84653]" role="alert">
@@ -82,6 +112,96 @@ export function EditTransactionForm({
         ) : null}
 
         <div className="mt-5 grid gap-4">
+          <TransactionAmountField
+            currency={toCurrencyCode(transaction.amount.currency)}
+            currencyDisabled
+            currencyEmptyLabel={labels.currencyEmpty}
+            currencyLabel={labels.currency}
+            currencySearchPlaceholder={labels.currencySearch}
+            error={errors.amount}
+            helperText={financialFieldsAvailable ? undefined : labels.financialCorrectionUnavailable}
+            inputDisabled={!financialFieldsAvailable}
+            inputRef={amountInputRef}
+            label={labels.amount}
+            language={language}
+            onCurrencyChange={() => undefined}
+            onValueChange={(amount) => onDraftChange({ amount })}
+            value={draft.amount}
+          />
+
+          {isCounterpartyTransaction ? (
+            <TransactionAccountField
+              accountLoadError={labels.accountValidationUnavailable}
+              accounts={accountChoices}
+              availability={resolvedAccountOptions.status}
+              createAccountLabel={labels.accountsCreate}
+              createFirstAccountLabel={labels.accountsCreateFirst}
+              disabled={!financialFieldsAvailable}
+              disabledAccountIds={disabledAccountIds}
+              disabledAccountLabel={labels.financialAccountUnavailable}
+              emptyDescription={labels.accountsEmptyDescription}
+              emptyTitle={labels.accountsEmptyTitle}
+              error={errors.account}
+              helperText={financialFieldsAvailable
+                ? transaction.kind === "EXPENSE" ? labels.accountHelper : labels.accountIncomeHelper
+                : labels.financialCorrectionUnavailable}
+              label={labels.account}
+              noResultsLabel={labels.accountsNoResults}
+              onValueChange={(account) => onDraftChange({ account })}
+              placeholder={labels.accountPlaceholder}
+              preferredCurrency={transaction.amount.currency}
+              searchPlaceholder={labels.accountSearch}
+              value={draft.account}
+            />
+          ) : null}
+
+          {isTransfer ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TransactionAccountField
+                accountLoadError={labels.accountValidationUnavailable}
+                accounts={accountChoices}
+                availability={resolvedAccountOptions.status}
+                createAccountLabel={labels.accountsCreate}
+                createFirstAccountLabel={labels.accountsCreateFirst}
+                disabled={!financialFieldsAvailable}
+                disabledAccountIds={[...disabledAccountIds, ...(draft.toAccount ? [draft.toAccount] : [])]}
+                disabledAccountLabel={labels.financialAccountUnavailable}
+                emptyDescription={labels.accountsEmptyDescription}
+                emptyTitle={labels.accountsEmptyTitle}
+                error={errors.fromAccount}
+                helperText={financialFieldsAvailable ? undefined : labels.financialCorrectionUnavailable}
+                label={labels.fromAccount}
+                noResultsLabel={labels.accountsNoResults}
+                onValueChange={(fromAccount) => onDraftChange({ fromAccount })}
+                placeholder={labels.accountPlaceholder}
+                preferredCurrency={transaction.amount.currency}
+                searchPlaceholder={labels.accountSearch}
+                value={draft.fromAccount}
+              />
+              <TransactionAccountField
+                accountLoadError={labels.accountValidationUnavailable}
+                accounts={accountChoices}
+                availability={resolvedAccountOptions.status}
+                createAccountLabel={labels.accountsCreate}
+                createFirstAccountLabel={labels.accountsCreateFirst}
+                disabled={!financialFieldsAvailable}
+                disabledAccountIds={[...disabledAccountIds, ...(draft.fromAccount ? [draft.fromAccount] : [])]}
+                disabledAccountLabel={labels.financialAccountUnavailable}
+                emptyDescription={labels.accountsEmptyDescription}
+                emptyTitle={labels.accountsEmptyTitle}
+                error={errors.toAccount}
+                helperText={financialFieldsAvailable ? undefined : labels.financialCorrectionUnavailable}
+                label={labels.toAccount}
+                noResultsLabel={labels.accountsNoResults}
+                onValueChange={(toAccount) => onDraftChange({ toAccount})}
+                placeholder={labels.accountPlaceholder}
+                preferredCurrency={transaction.amount.currency}
+                searchPlaceholder={labels.accountSearch}
+                value={draft.toAccount}
+              />
+            </div>
+          ) : null}
+
           {isCounterpartyTransaction ? (
             <TransactionMerchantField
               error={errors.counterparty}
@@ -148,7 +268,7 @@ export function EditTransactionForm({
       </div>
 
       <div className="flex shrink-0 flex-col gap-2 border-t border-[#e6eaf0] bg-[#fcfdff] px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-7">
-        {!isDirty ? <p className="mr-auto text-[12px] text-[#71809a]">{labels.noChanges}</p> : null}
+        {!classification.hasChanges ? <p className="mr-auto text-[12px] text-[#71809a]">{labels.noChanges}</p> : null}
         <Button
           className="h-10 rounded-[8px] border border-[#dfe5ee] bg-white px-4 text-[13px] font-medium text-[#43516a] hover:bg-[#f3f6fa] hover:text-[#263550]"
           disabled={isSaving}
@@ -159,55 +279,57 @@ export function EditTransactionForm({
           {labels.cancel}
         </Button>
         <Button
-          aria-describedby={!isDirty ? "transaction-edit-no-changes" : undefined}
+          aria-describedby={!classification.hasChanges ? "transaction-edit-no-changes" : undefined}
           className="h-10 rounded-[8px] bg-[#2563eb] px-4 text-[13px] font-semibold text-white hover:bg-[#1e55d1] focus-visible:ring-[#5e8fe8]/35"
-          disabled={!isDirty || isSaving}
+          disabled={!classification.hasChanges || isSaving}
           type="submit"
         >
-          {isSaving ? labels.saving : labels.save}
+          {isSaving ? labels.saving : classification.hasFinancialChanges ? labels.reviewCorrection : labels.save}
         </Button>
-        {!isDirty ? <span className="sr-only" id="transaction-edit-no-changes">{labels.noChanges}</span> : null}
+        {!classification.hasChanges ? <span className="sr-only" id="transaction-edit-no-changes">{labels.noChanges}</span> : null}
       </div>
     </form>
   );
 }
 
-function ReadOnlyTransactionSummary({
-  labels,
-  locale,
-  transaction,
-}: {
-  readonly labels: TransactionEditLabels;
-  readonly locale: string;
-  readonly transaction: TransactionDetailData;
-}) {
-  const amount = formatTransactionDetailAmount(transaction.amount, transaction.kind, locale);
-  const primaryAccount = transaction.account?.name ?? labels.accountUnavailable;
-  const transferAccount = transaction.transferAccount?.name ?? labels.accountUnavailable;
-
+function TransactionLocks({ labels }: { readonly labels: TransactionEditLabels }) {
   return (
     <section aria-label={labels.readOnly} className="rounded-[9px] border border-[#e6eaf0] bg-[#f8faff] px-3.5 py-3">
       <p className="text-[11px] font-medium tracking-[0.04em] text-[#71809a] uppercase">{labels.readOnly}</p>
-      <dl className="mt-2 grid gap-2 sm:grid-cols-2">
-        <SummaryItem label={labels.amount} value={amount} />
-        {transaction.kind === "TRANSFER" ? (
-          <div className="grid grid-cols-2 gap-3">
-            <SummaryItem label={labels.fromAccount} value={primaryAccount} />
-            <SummaryItem label={labels.toAccount} value={transferAccount} />
-          </div>
-        ) : (
-          <SummaryItem label={labels.account} value={primaryAccount} />
-        )}
-      </dl>
+      <p className="mt-1 text-[12px] leading-5 text-[#53627b]">{labels.currencyLocked} {labels.typeLocked}</p>
     </section>
   );
 }
 
-function SummaryItem({ label, value }: { readonly label: string; readonly value: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-[11px] text-[#71809a]">{label}</dt>
-      <dd className="mt-0.5 truncate text-[13px] font-medium tabular-nums text-[#263550]">{value}</dd>
-    </div>
-  );
+function getEditAccountChoices(
+  accountOptions: TransactionAccountOptionsState,
+  transaction: TransactionDetailData,
+): readonly TransactionAccountOption[] {
+  const choices = [...accountOptions.accounts];
+  const historicAccounts = transaction.kind === "TRANSFER"
+    ? [transaction.account, transaction.transferAccount]
+    : [transaction.account];
+
+  for (const account of historicAccounts) {
+    if (account && !choices.some((choice) => choice.id === account.id)) {
+      choices.push(detailAccountAsOption(account));
+    }
+  }
+
+  return choices;
+}
+
+function detailAccountAsOption(account: TransactionDetailAccount): TransactionAccountOption {
+  return { id: account.id, name: account.name, currency: toCurrencyCode(account.currency), type: account.type };
+}
+
+function getDisabledAccountIds(
+  choices: readonly TransactionAccountOption[],
+  activeAccounts: readonly TransactionAccountOption[],
+  currency: string,
+): readonly string[] {
+  const activeIds = new Set(activeAccounts.map((account) => account.id));
+  return choices
+    .filter((account) => !activeIds.has(account.id) || account.currency !== currency)
+    .map((account) => account.id);
 }

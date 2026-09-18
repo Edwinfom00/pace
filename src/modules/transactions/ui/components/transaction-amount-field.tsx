@@ -14,6 +14,7 @@ export type TransactionAmountFieldProps = {
   readonly currencySearchPlaceholder: string;
   readonly currencyError?: string;
   readonly currencyDisabled?: boolean;
+  readonly inputDisabled?: boolean;
   readonly currencyTriggerRef?: RefObject<HTMLButtonElement | null>;
   readonly error?: string;
   readonly helperText?: string;
@@ -38,6 +39,7 @@ export function TransactionAmountField({
   label,
   language,
   inputRef,
+  inputDisabled = false,
   onCurrencyChange,
   onValueChange,
   value,
@@ -59,7 +61,8 @@ export function TransactionAmountField({
           aria-describedby={error ? amountErrorId : helperText ? helperId : undefined}
           aria-invalid={error ? true : undefined}
           autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent px-4 py-3 text-[28px] leading-none font-medium tracking-[-0.035em] text-[#101a35] outline-none placeholder:text-[#a6b2c6] sm:px-5 sm:text-[30px]"
+          className="min-w-0 flex-1 bg-transparent px-4 py-3 text-[28px] leading-none font-medium tracking-[-0.035em] text-[#101a35] outline-none placeholder:text-[#a6b2c6] disabled:cursor-not-allowed disabled:text-[#61708a] sm:px-5 sm:text-[30px]"
+          disabled={inputDisabled}
           id={inputId}
           inputMode="decimal"
           onChange={(event) => onValueChange(event.target.value)}

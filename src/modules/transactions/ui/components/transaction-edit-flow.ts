@@ -1,20 +1,47 @@
+import { getCurrencyExponent } from "@/money/currency";
+import { money, parseDecimalMoney, toDecimalString } from "@/money/money";
 import type { TransactionDetailData } from "@/modules/transactions/domain/transaction-detail";
+import type { TransactionAccountOption } from "@/modules/transactions/domain/transaction-account-options";
 import type { TransactionCategoryOption } from "@/modules/transactions/domain/transaction-category-options";
 
 import { formatManualTransactionDate } from "./manual-transaction-create-flow";
 import { getTransactionFormDateTime } from "./transaction-date-field";
 
 export type TransactionEditDraft = {
+  readonly amount: string;
+  readonly account: string;
   readonly counterparty: string;
   readonly categoryId: string;
   readonly date: Date;
+  readonly fromAccount: string;
   readonly time: string;
+  readonly toAccount: string;
   readonly note: string;
 };
 
-export type TransactionEditField = "counterparty" | "category" | "date" | "time" | "note";
+export type TransactionEditField =
+  | "amount"
+  | "account"
+  | "counterparty"
+  | "category"
+  | "date"
+  | "fromAccount"
+  | "time"
+  | "toAccount"
+  | "note";
+
+export type TransactionEditChangeClassification = {
+  readonly hasChanges: boolean;
+  readonly hasMetadataChanges: boolean;
+  readonly hasFinancialChanges: boolean;
+  readonly metadataFields: readonly TransactionEditField[];
+  readonly financialFields: readonly TransactionEditField[];
+};
+
+export type TransactionEditSubmissionIntent = "none" | "safe-edit" | "review-correction" | "financial-not-allowed";
+
 export type TransactionEditFieldErrors = Partial<Record<TransactionEditField, string>>;
-export type TransactionEditFormError = "concurrent" | "notAllowed" | "failed" | null;
+export type TransactionEditFormError = "concurrent" | "notAllowed" | "financialNotAllowed" | "failed" | null;
 
 export type TransactionEditCommand = {
   readonly workspaceId: string;
@@ -29,15 +56,67 @@ export function createTransactionEditDraft(
 ): TransactionEditDraft {
   const occurredAt = getTransactionFormDateTime(transaction.occurredAt, timeZone);
   return {
+    amount: toDecimalString(money(transaction.amount.currency, BigInt(transaction.amount.minor))),
+    account: transaction.account?.id ?? "",
     counterparty: transaction.merchant?.name ?? "",
     categoryId: transaction.category?.id ?? "",
     date: occurredAt.date,
+    fromAccount: transaction.account?.id ?? "",
     time: occurredAt.time,
+    toAccount: transaction.transferAccount?.id ?? "",
     note: transaction.note ?? "",
   };
 }
 
-/** Builds the C.1A command with only type-allowed fields that actually changed. */
+
+export function classifyTransactionChanges(
+  original: TransactionEditDraft,
+  draft: TransactionEditDraft,
+  input: Pick<TransactionDetailData, "amount" | "kind">,
+): TransactionEditChangeClassification {
+  const metadataFields: TransactionEditField[] = [];
+  const financialFields: TransactionEditField[] = [];
+
+  if (original.date.getTime() !== draft.date.getTime()) metadataFields.push("date");
+  if (original.time !== draft.time) metadataFields.push("time");
+  if (nullableText(original.note) !== nullableText(draft.note)) metadataFields.push("note");
+
+  if (input.kind === "EXPENSE" || input.kind === "INCOME") {
+    if (nullableText(original.counterparty) !== nullableText(draft.counterparty)) metadataFields.push("counterparty");
+    if (original.categoryId !== draft.categoryId) metadataFields.push("category");
+    if (!areTransactionEditAmountsEqual(original.amount, draft.amount, input.amount.currency)) financialFields.push("amount");
+    if (original.account !== draft.account) financialFields.push("account");
+  }
+
+  if (input.kind === "TRANSFER") {
+    if (!areTransactionEditAmountsEqual(original.amount, draft.amount, input.amount.currency)) financialFields.push("amount");
+    if (original.fromAccount !== draft.fromAccount) financialFields.push("fromAccount");
+    if (original.toAccount !== draft.toAccount) financialFields.push("toAccount");
+  }
+
+  return {
+    hasChanges: metadataFields.length > 0 || financialFields.length > 0,
+    hasMetadataChanges: metadataFields.length > 0,
+    hasFinancialChanges: financialFields.length > 0,
+    metadataFields,
+    financialFields,
+  };
+}
+
+/** Resolves the only allowed client transition; financial drafts can never fall through to safe edit. */
+export function getTransactionEditSubmissionIntent(
+  classification: TransactionEditChangeClassification,
+  canCorrectFinancials: boolean,
+): TransactionEditSubmissionIntent {
+  if (!classification.hasChanges) return "none";
+  if (!classification.hasFinancialChanges) return "safe-edit";
+  return canCorrectFinancials ? "review-correction" : "financial-not-allowed";
+}
+
+export function parseTransactionEditAmount(value: string, currency: string) {
+  return parseDecimalMoney(normalizeMoneyInput(value, currency), currency);
+}
+
 export function createTransactionEditCommand(
   workspaceId: string,
   transaction: TransactionDetailData,
@@ -80,7 +159,7 @@ export function isTransactionEditDirty(
   timeZone: string,
   draft: TransactionEditDraft,
 ): boolean {
-  return Object.keys(createTransactionEditCommand("workspace", transaction, timeZone, draft).patch).length > 0;
+  return classifyTransactionChanges(createTransactionEditDraft(transaction, timeZone), draft, transaction).hasChanges;
 }
 
 export function validateTransactionEditDraft(
@@ -88,18 +167,31 @@ export function validateTransactionEditDraft(
   draft: TransactionEditDraft,
   categories: readonly TransactionCategoryOption[],
   labels: {
+    readonly amountInvalid: string;
+    readonly amountPositive: string;
     readonly counterpartyTooLong: string;
+    readonly accountUnavailable: string;
+    readonly fromAccountRequired: string;
     readonly invalidCategory: string;
     readonly invalidDate: string;
     readonly invalidTime: string;
     readonly noteTooLong: string;
+    readonly sameTransferAccount: string;
+    readonly toAccountRequired: string;
   },
+  accounts?: readonly TransactionAccountOption[],
 ): TransactionEditFieldErrors {
   const errors: TransactionEditFieldErrors = {};
 
   if (Number.isNaN(draft.date.getTime())) errors.date = labels.invalidDate;
   if (draft.time && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(draft.time)) errors.time = labels.invalidTime;
   if (draft.note.normalize("NFKC").trim().length > 1_000) errors.note = labels.noteTooLong;
+
+  if (accounts) {
+    const amount = parseTransactionEditAmount(draft.amount, transaction.amount.currency);
+    if (!amount) errors.amount = labels.amountInvalid;
+    else if (amount.minor <= 0n) errors.amount = labels.amountPositive;
+  }
 
   if (transaction.kind === "EXPENSE" || transaction.kind === "INCOME") {
     if (draft.counterparty.normalize("NFKC").trim().length > 160) {
@@ -111,9 +203,63 @@ export function validateTransactionEditDraft(
     ) {
       errors.category = labels.invalidCategory;
     }
+    if (accounts && !isCompatibleAccount(draft.account, accounts, transaction.amount.currency)) {
+      errors.account = labels.accountUnavailable;
+    }
+  }
+
+  if (transaction.kind === "TRANSFER") {
+    if (!draft.fromAccount) errors.fromAccount = labels.fromAccountRequired;
+    else if (accounts && !isCompatibleAccount(draft.fromAccount, accounts, transaction.amount.currency)) {
+      errors.fromAccount = labels.accountUnavailable;
+    }
+
+    if (!draft.toAccount) errors.toAccount = labels.toAccountRequired;
+    else if (draft.fromAccount === draft.toAccount) errors.toAccount = labels.sameTransferAccount;
+    else if (accounts && !isCompatibleAccount(draft.toAccount, accounts, transaction.amount.currency)) {
+      errors.toAccount = labels.accountUnavailable;
+    }
   }
 
   return errors;
+}
+
+function areTransactionEditAmountsEqual(left: string, right: string, currency: string): boolean {
+  const leftMoney = parseTransactionEditAmount(left, currency);
+  const rightMoney = parseTransactionEditAmount(right, currency);
+  if (leftMoney && rightMoney) return leftMoney.minor === rightMoney.minor;
+  return left.normalize("NFKC").trim() === right.normalize("NFKC").trim();
+}
+
+function isCompatibleAccount(
+  id: string,
+  accounts: readonly TransactionAccountOption[],
+  currency: string,
+): boolean {
+  return accounts.some((account) => account.id === id && account.currency === currency);
+}
+
+function normalizeMoneyInput(value: string, currency: string): string {
+  const compact = value.normalize("NFKC").trim().replaceAll(/[\s\u00a0\u202f]/g, "");
+  const exponent = getCurrencyExponent(currency);
+  const comma = compact.lastIndexOf(",");
+  const dot = compact.lastIndexOf(".");
+
+  if (comma >= 0 && dot >= 0) {
+    const decimal = comma > dot ? "," : ".";
+    const grouping = decimal === "," ? "." : ",";
+    return compact.replaceAll(grouping, "").replace(decimal, ".");
+  }
+
+  const separator = comma >= 0 ? "," : dot >= 0 ? "." : null;
+  if (!separator) return compact;
+
+  const fractionLength = compact.length - compact.lastIndexOf(separator) - 1;
+  if (exponent > 0 && fractionLength > 0 && fractionLength <= exponent) {
+    return separator === "," ? compact.replace(",", ".") : compact;
+  }
+
+  return compact.replaceAll(separator, "");
 }
 
 export function mapTransactionEditFailure(code: string | undefined): {

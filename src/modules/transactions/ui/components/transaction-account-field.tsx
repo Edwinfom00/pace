@@ -21,6 +21,7 @@ export type TransactionAccountFieldProps<T extends string = string> = {
   readonly accountRetryLabel?: string;
   readonly disabledAccountIds?: readonly T[];
   readonly disabledAccountLabel?: string;
+  readonly disabled?: boolean;
   readonly error?: string;
   readonly emptyDescription: string;
   readonly emptyTitle: string;
@@ -28,7 +29,7 @@ export type TransactionAccountFieldProps<T extends string = string> = {
   readonly label: string;
   readonly noResultsLabel: string;
   readonly onRetryAccounts?: () => void;
-  readonly onCreateAccount: () => void;
+  readonly onCreateAccount?: () => void;
   readonly onValueChange: (value: T) => void;
   readonly placeholder: string;
   /** Reserved for the later currency-eligibility policy. */
@@ -59,6 +60,7 @@ export function TransactionAccountField<T extends string = string>({
   createFirstAccountLabel,
   disabledAccountIds = [],
   disabledAccountLabel,
+  disabled = false,
   error,
   emptyDescription,
   emptyTitle,
@@ -104,6 +106,7 @@ export function TransactionAccountField<T extends string = string>({
   }
 
   function requestCreateAccount() {
+    if (!onCreateAccount) return;
     handleOpenChange(false);
     onCreateAccount();
   }
@@ -131,6 +134,7 @@ export function TransactionAccountField<T extends string = string>({
             id={triggerId}
             ref={triggerRef}
             role="combobox"
+            disabled={disabled}
             type="button"
           >
           {selectedAccount ? (
@@ -236,7 +240,7 @@ export function TransactionAccountField<T extends string = string>({
                   )}
                 </CommandList>
 
-                <div className="mt-1.5 border-t border-[#e7ecf3] pt-1.5">
+                {onCreateAccount ? <div className="mt-1.5 border-t border-[#e7ecf3] pt-1.5">
                   <button
                     className="flex h-9 w-full items-center gap-2 rounded-[7px] px-2.5 text-left text-[13px] font-medium text-[#2f67e9] outline-none transition-colors hover:bg-[#edf3ff] focus-visible:bg-[#edf3ff] focus-visible:ring-2 focus-visible:ring-[#5e8fe8]/25"
                     onClick={requestCreateAccount}
@@ -245,7 +249,7 @@ export function TransactionAccountField<T extends string = string>({
                     <FiPlus aria-hidden="true" className="size-4" />
                     {createAccountLabel}
                   </button>
-                </div>
+                </div> : null}
               </Command>
             ) : (
               <div className="px-3 py-5 text-center">
@@ -254,14 +258,14 @@ export function TransactionAccountField<T extends string = string>({
                 </span>
                 <p className="text-[13px] font-medium text-[#263550]">{emptyTitle}</p>
                 <p className="mx-auto mt-1 max-w-60 text-[12px] leading-5 text-[#71809a]">{emptyDescription}</p>
-                <button
+                {onCreateAccount ? <button
                   className="mt-4 inline-flex h-9 items-center gap-2 rounded-[7px] bg-[#edf3ff] px-3 text-[12px] font-medium text-[#2f67e9] outline-none transition-colors hover:bg-[#e4eeff] focus-visible:ring-2 focus-visible:ring-[#5e8fe8]/30"
                   onClick={requestCreateAccount}
                   type="button"
                 >
                   <FiPlus aria-hidden="true" className="size-4" />
                   {createFirstAccountLabel}
-                </button>
+                </button> : null}
               </div>
             )}
           </Popover.Content>

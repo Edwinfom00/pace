@@ -2,27 +2,33 @@ import type { ReactNode } from "react";
 import { Pencil, RefreshCw } from "lucide-react";
 
 import type { TransactionDetailData } from "@/modules/transactions/domain/transaction-detail";
+import type { TransactionAccountOptionsState } from "@/modules/transactions/domain/transaction-account-options";
 import type { TransactionCategoryOption } from "@/modules/transactions/domain/transaction-category-options";
+import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 
 import type { TransactionDetailActionLabels } from "../transaction-detail-action-labels";
 import type { TransactionEditLabels } from "../transaction-edit-labels";
 import { EditTransactionDialog } from "./edit-transaction-dialog";
 
 export function TransactionDetailActions({
+  accountOptions = { status: "ready", accounts: [] },
   categories,
   editLabels,
   locale,
   timeZone,
   transaction,
   labels,
+  language = "en",
   workspaceId,
 }: {
+  readonly accountOptions?: TransactionAccountOptionsState;
   readonly categories: readonly TransactionCategoryOption[];
   readonly editLabels: TransactionEditLabels;
   readonly locale: string;
   readonly timeZone: string;
   readonly transaction: TransactionDetailData;
   readonly labels: TransactionDetailActionLabels;
+  readonly language?: OnboardingLanguage;
   readonly workspaceId: string;
 }) {
   const editReason = transaction.capabilities.reasons.edit;
@@ -34,8 +40,10 @@ export function TransactionDetailActions({
       <div className="mt-3 space-y-2">
         {transaction.capabilities.canEdit ? (
           <EditTransactionDialog
+            accountOptions={accountOptions}
             categories={categories}
             labels={editLabels}
+            language={language}
             locale={locale}
             timeZone={timeZone}
             transaction={transaction}

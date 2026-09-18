@@ -4,7 +4,9 @@ import { getAuthenticatedActor } from "@/authorization/session";
 import { getPersistedDashboardLanguage } from "@/i18n/dashboard-server";
 import { loginPathForReturnTo } from "@/modules/auth/post-auth-resolver";
 import { getServerTransactionDetail } from "@/modules/transactions/server/get-transaction-detail";
+import { getServerTransactionAccountOptions } from "@/modules/transactions/server/get-transaction-account-options";
 import { getServerTransactionCategoryOptions } from "@/modules/transactions/server/get-transaction-category-options";
+import { loadTransactionAccountOptions } from "@/modules/transactions/domain/transaction-account-options";
 import { TransactionDetailView } from "@/modules/transactions/ui/views/transaction-detail-view";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
@@ -22,7 +24,7 @@ export default async function TransactionDetailPage({ params }: TransactionDetai
   const workspace = await new DatabaseWorkspaceRepository().findMemberContextBySlug(workspaceSlug, actor.userId);
   if (!workspace) notFound();
 
-  const [language, transaction, categories] = await Promise.all([
+  const [language, transaction, categories, accountOptions] = await Promise.all([
     getPersistedDashboardLanguage(actor.userId),
     getServerTransactionDetail({
       actor,
@@ -31,6 +33,7 @@ export default async function TransactionDetailPage({ params }: TransactionDetai
       timeZone: workspace.preferences.timezone,
     }),
     getServerTransactionCategoryOptions({ actor, workspaceId: workspace.workspace.id }),
+    loadTransactionAccountOptions(() => getServerTransactionAccountOptions({ actor, workspaceId: workspace.workspace.id })),
   ]);
 
  
@@ -38,6 +41,7 @@ export default async function TransactionDetailPage({ params }: TransactionDetai
 
   return (
     <TransactionDetailView
+      accountOptions={accountOptions}
       categories={categories}
       language={language}
       locale={workspace.preferences.locale}

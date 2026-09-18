@@ -101,7 +101,7 @@ function refundedAmountFor(
 }
 
 function mapAccount(account: LedgerAccountRecord): TransactionDetailAccount {
-  return { id: account.id, name: account.name, currency: account.currency };
+  return { id: account.id, name: account.name, currency: account.currency, type: account.type };
 }
 
 function mapMerchant(

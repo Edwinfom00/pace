@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 
 import type { TransactionDetailData } from "../../domain/transaction-detail";
+import type { TransactionAccountOptionsState } from "../../domain/transaction-account-options";
 import type { TransactionCategoryOption } from "../../domain/transaction-category-options";
 import { getTransactionDetailActionLabels } from "../transaction-detail-action-labels";
 import { getTransactionDetailLabels } from "../transaction-detail-labels";
@@ -18,6 +19,7 @@ import { TransactionSourceInformation } from "../components/transaction-source-i
 import { TransactionTechnicalDetails } from "../components/transaction-technical-details";
 
 export function TransactionDetailView({
+  accountOptions = { status: "ready", accounts: [] },
   categories,
   transaction,
   workspaceSlug,
@@ -26,6 +28,7 @@ export function TransactionDetailView({
   locale,
   timeZone,
 }: {
+  readonly accountOptions?: TransactionAccountOptionsState;
   readonly categories: readonly TransactionCategoryOption[];
   readonly transaction: TransactionDetailData;
   readonly workspaceSlug: string;
@@ -53,9 +56,11 @@ export function TransactionDetailView({
         </div>
         <aside aria-label={labels.sideRail} className="space-y-4 xl:sticky xl:top-6">
           <TransactionDetailActions
+            accountOptions={accountOptions}
             categories={categories}
             editLabels={editLabels}
             labels={actionLabels}
+            language={language}
             locale={locale}
             timeZone={timeZone}
             transaction={transaction}

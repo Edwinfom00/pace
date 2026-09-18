@@ -1,9 +1,11 @@
 import type { CurrencyCode } from "@/money/currency";
+import type { LedgerAccountType } from "@/modules/ledger/domain";
 
 export type TransactionAccountOption = {
   readonly id: string;
   readonly name: string;
   readonly currency: CurrencyCode;
+  readonly type?: LedgerAccountType;
 };
 
 export type TransactionAccountOptionsState =
@@ -14,7 +16,6 @@ export function failedTransactionAccountOptions(): TransactionAccountOptionsStat
   return { status: "error", accounts: [] };
 }
 
-/** Converts a failed server read into an explicit empty error state, never fixture data. */
 export async function loadTransactionAccountOptions(
   query: () => Promise<readonly TransactionAccountOption[]>,
 ): Promise<TransactionAccountOptionsState> {

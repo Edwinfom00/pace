@@ -155,8 +155,15 @@ test("detail actions delegate the allowed edit flow while unavailable actions re
   assert.match(source, /EditTransactionDialog/);
   assert.match(source, /disabled/);
   assert.match(dialog, /ResponsiveDialog/);
-  assert.match(dialog, /max-w-\[650px\]/);
+  assert.match(dialog, /max-w-162\.5/);
   assert.match(dialog, /drawerClassName/);
   assert.match(dialog, /method: "PATCH"/);
   assert.match(flow, /CONCURRENT_MODIFICATION/);
+});
+
+test("an obsolete correction-chain record cannot start another financial correction", () => {
+  const result = capabilities({ isCurrentEffective: false });
+
+  assert.equal(result.canEdit, true);
+  assert.equal(result.canCorrectFinancials, false);
 });

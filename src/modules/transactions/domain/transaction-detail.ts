@@ -1,6 +1,7 @@
 import type { MerchantLogoKey } from "@/lib/transaction-visuals/merchant-logo-catalog";
 import type { TransactionIconKey } from "@/lib/transaction-visuals/transaction-icon.types";
 import type {
+  LedgerAccountType,
   LedgerTransactionKind,
   LedgerTransactionStatus,
 } from "@/modules/ledger/domain";
@@ -12,6 +13,8 @@ export type TransactionDetailAccount = {
   readonly id: string;
   readonly name: string;
   readonly currency: string;
+  /** Included when the canonical account record is available for useful review context. */
+  readonly type?: LedgerAccountType;
 };
 
 export type TransactionDetailCategory = {

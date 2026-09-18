@@ -41,5 +41,5 @@ export function mapTransactionAccountOption(
 ): TransactionAccountOption | null {
   if (account.archivedAt !== null) return null;
 
-  return { id: account.id, name: account.name, currency: toCurrencyCode(account.currency) };
+  return { id: account.id, name: account.name, currency: toCurrencyCode(account.currency), type: account.type };
 }
