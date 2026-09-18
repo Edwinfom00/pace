@@ -53,13 +53,13 @@ test("a financial writer can prepare to edit posted income, but cannot refund it
   assert.equal(result.reasons.refund, "REFUND_NOT_APPLICABLE");
 });
 
-test("transfers require a future reversal workflow and never expose refunds", () => {
+test("transfers permit safe detail edits but never expose refunds", () => {
   const result = capabilities({ transaction: transaction({ kind: "TRANSFER", categoryId: null }) });
 
-  assert.equal(result.canEdit, false);
+  assert.equal(result.canEdit, true);
   assert.equal(result.canRefund, false);
   assert.equal(result.canReverse, false);
-  assert.equal(result.reasons.edit, "TRANSFER_REQUIRES_REVERSAL");
+  assert.equal(result.reasons.edit, undefined);
   assert.equal(result.reasons.refund, "REFUND_NOT_APPLICABLE");
 });
 

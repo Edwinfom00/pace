@@ -2,6 +2,7 @@ import type {
   LedgerAccountRecord,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
+  LedgerTransactionAuditRecord,
   LedgerTransactionListFilters,
   LedgerTransactionListPageInput,
   LedgerTransactionListRow,
@@ -12,8 +13,10 @@ import type {
   CreateLedgerAccountRecord,
   CreateLedgerCategoryRecord,
   CreateLedgerMerchantRecord,
+  CreateLedgerTransactionAuditRecord,
   CreateLedgerTransactionRecord,
   LedgerRepository,
+  UpdateLedgerTransactionDetailsRecord,
 } from "@/modules/ledger/repositories/ledger-repository";
 
 export const SYSTEM_GROCERIES_ID = "00000000-0000-4000-8000-000000000001";
@@ -27,6 +30,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   readonly categories = new Map<string, LedgerCategoryRecord>();
   readonly merchants = new Map<string, LedgerMerchantRecord>();
   readonly transactions = new Map<string, LedgerTransactionRecord>();
+  readonly transactionAudits = new Map<string, LedgerTransactionAuditRecord>();
 
   constructor() {
     const now = new Date("2026-01-01T00:00:00.000Z");
@@ -176,6 +180,42 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     return transactionRecord;
   }
 
+  async updateTransactionDetails(
+    input: UpdateLedgerTransactionDetailsRecord,
+  ): Promise<LedgerTransactionRecord | null> {
+    const existing = await this.findTransaction(input.workspaceId, input.transactionId);
+    if (!existing || existing.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) return null;
+
+    let merchantId = input.merchantId;
+    if (input.merchantToCreate) {
+      const duplicate = await this.findMerchantByNormalizedName(
+        input.merchantToCreate.workspaceId,
+        input.merchantToCreate.normalizedName,
+      );
+      if (duplicate) {
+        merchantId = duplicate.id;
+      } else {
+        const now = new Date();
+        const merchant: LedgerMerchantRecord = { ...input.merchantToCreate, createdAt: now, updatedAt: now };
+        this.merchants.set(merchant.id, merchant);
+        merchantId = merchant.id;
+      }
+    }
+
+    const now = new Date(Math.max(Date.now(), existing.updatedAt.getTime() + 1));
+    const updated: LedgerTransactionRecord = {
+      ...existing,
+      categoryId: input.categoryId,
+      merchantId,
+      occurredAt: input.occurredAt,
+      note: input.note,
+      updatedAt: now,
+    };
+    this.transactions.set(updated.id, updated);
+    this.createTransactionAudit(input.audit, now);
+    return updated;
+  }
+
   async findTransaction(
     workspaceId: string,
     transactionId: string,
@@ -264,6 +304,15 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     );
   }
 
+  async listTransactionAudit(
+    workspaceId: string,
+    transactionId: string,
+  ): Promise<LedgerTransactionAuditRecord[]> {
+    return [...this.transactionAudits.values()]
+      .filter((audit) => audit.workspaceId === workspaceId && audit.transactionId === transactionId)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+  }
+
   private transactionListRows(
     workspaceId: string,
     filters: LedgerTransactionListFilters,
@@ -304,6 +353,13 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     ) {
       throw new Error("A transaction with that deduplication fingerprint already exists.");
     }
+  }
+
+  private createTransactionAudit(
+    input: CreateLedgerTransactionAuditRecord,
+    createdAt: Date,
+  ): void {
+    this.transactionAudits.set(input.id, { ...input, createdAt });
   }
 }
 

@@ -212,3 +212,29 @@ export const ledgerTransactions = pgTable(
     ),
   ],
 );
+
+
+export const ledgerTransactionAudits = pgTable(
+  "ledger_transaction_audit",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    transactionId: text("transaction_id")
+      .notNull()
+      .references(() => ledgerTransactions.id, { onDelete: "cascade" }),
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    action: varchar("action", { length: 32 }).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("ledger_transaction_audit_workspace_created_idx").on(table.workspaceId, table.createdAt),
+    index("ledger_transaction_audit_transaction_created_idx").on(table.transactionId, table.createdAt),
+  ],
+);

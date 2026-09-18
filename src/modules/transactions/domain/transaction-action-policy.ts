@@ -8,6 +8,8 @@ export const TRANSACTION_ACTION_REASONS = [
   "READ_ONLY_ROLE",
   "TRANSACTION_NOT_POSTED",
   "IMPORTED_TRANSACTION_RESTRICTED",
+  // Retained for historical action-audit/UI compatibility. The safe-detail
+  // editor now permits transfer note/date changes, so policy no longer emits it.
   "TRANSFER_REQUIRES_REVERSAL",
   "REFUND_IMMUTABLE",
   "REFUND_NOT_APPLICABLE",
@@ -89,7 +91,6 @@ export function getTransactionCapabilities({
 function getEditReason(transaction: TransactionActionPolicyInput["transaction"]): TransactionActionReason | null {
   if (transaction.status !== "POSTED") return "TRANSACTION_NOT_POSTED";
   if (isImportedTransaction(transaction)) return "IMPORTED_TRANSACTION_RESTRICTED";
-  if (transaction.kind === "TRANSFER") return "TRANSFER_REQUIRES_REVERSAL";
   if (transaction.kind === "REFUND") return "REFUND_IMMUTABLE";
   return null;
 }

@@ -114,8 +114,8 @@ test("detail evaluates capabilities after workspace authorization and never rend
   ]);
   assert.ok(expenseDetail && transferDetail && viewerDetail);
 
-  assert.equal(transferDetail.capabilities.canEdit, false);
-  assert.equal(transferDetail.capabilities.reasons.edit, "TRANSFER_REQUIRES_REVERSAL");
+  assert.equal(transferDetail.capabilities.canEdit, true);
+  assert.equal(transferDetail.capabilities.reasons.edit, undefined);
   assert.equal(transferDetail.capabilities.canRefund, false);
   assert.equal(viewerDetail.capabilities.canEdit, false);
   assert.equal(viewerDetail.capabilities.canViewTechnicalDetails, true);
@@ -134,7 +134,7 @@ test("detail evaluates capabilities after workspace authorization and never rend
   assert.match(expenseMarkup, /Create refund/);
   assert.match(expenseMarkup, /Available in a future update/);
   assert.match(expenseMarkup, /disabled=""/);
-  assert.match(transferMarkup, /Transfers require a future reversal workflow/);
+  assert.match(transferMarkup, /Available in a future update/);
   assert.doesNotMatch(transferMarkup, /Create refund|More actions/);
 });
 

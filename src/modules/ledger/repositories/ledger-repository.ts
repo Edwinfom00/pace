@@ -13,11 +13,12 @@ import {
   or,
 } from "drizzle-orm";
 
-import { db } from "@/db/client";
+import { db, neonSql } from "@/db/client";
 import {
   ledgerAccounts,
   ledgerCategories,
   ledgerMerchants,
+  ledgerTransactionAudits,
   ledgerTransactions,
 } from "@/db/schema";
 
@@ -25,6 +26,7 @@ import type {
   LedgerAccountRecord,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
+  LedgerTransactionAuditRecord,
   LedgerTransactionListFilters,
   LedgerTransactionListPageInput,
   LedgerTransactionListRow,
@@ -42,6 +44,23 @@ export type CreateLedgerTransactionRecord = Omit<
   LedgerTransactionRecord,
   "createdAt" | "updatedAt"
 >;
+export type CreateLedgerTransactionAuditRecord = Omit<LedgerTransactionAuditRecord, "createdAt">;
+
+/**
+ * This is intentionally a closed, detail-only persistence shape. It has no
+ * amount, currency, account, kind, source, status, or transfer fields.
+ */
+export interface UpdateLedgerTransactionDetailsRecord {
+  workspaceId: string;
+  transactionId: string;
+  expectedUpdatedAt: Date;
+  categoryId: string | null;
+  merchantId: string | null;
+  occurredAt: Date;
+  note: string | null;
+  merchantToCreate: CreateLedgerMerchantRecord | null;
+  audit: CreateLedgerTransactionAuditRecord;
+}
 
 export interface LedgerRepository {
   createAccount(input: CreateLedgerAccountRecord): Promise<LedgerAccountRecord>;
@@ -69,6 +88,9 @@ export interface LedgerRepository {
     input: CreateLedgerTransactionRecord,
     merchant: CreateLedgerMerchantRecord,
   ): Promise<LedgerTransactionRecord>;
+  updateTransactionDetails(
+    input: UpdateLedgerTransactionDetailsRecord,
+  ): Promise<LedgerTransactionRecord | null>;
   findTransaction(
     workspaceId: string,
     transactionId: string,
@@ -94,6 +116,10 @@ export interface LedgerRepository {
     workspaceId: string,
     transactionId: string,
   ): Promise<LedgerTransactionRecord[]>;
+  listTransactionAudit(
+    workspaceId: string,
+    transactionId: string,
+  ): Promise<LedgerTransactionAuditRecord[]>;
 }
 
 export class DatabaseLedgerRepository implements LedgerRepository {
@@ -196,6 +222,65 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     const [record] = transactions;
     if (!record) throw new Error("Failed to create ledger transaction.");
     return record;
+  }
+
+  async updateTransactionDetails(
+    input: UpdateLedgerTransactionDetailsRecord,
+  ): Promise<LedgerTransactionRecord | null> {
+    const merchant = input.merchantToCreate;
+    // Neon HTTP cannot use Drizzle's interactive transaction API. This single
+    // Postgres statement is atomic: the optimistic-lock candidate must exist
+    // before an optional merchant is created, the transaction is updated, and
+    // its audit record is written. Any failure rolls back every CTE.
+    const rows = await neonSql`
+      WITH candidate AS (
+        SELECT id
+        FROM ledger_transaction
+        WHERE workspace_id = ${input.workspaceId}
+          AND id = ${input.transactionId}
+          AND date_trunc('milliseconds', updated_at) = ${input.expectedUpdatedAt}
+        FOR UPDATE
+      ),
+      merchant_to_upsert AS (
+        INSERT INTO ledger_merchant (id, workspace_id, name, normalized_name, created_by_user_id)
+        SELECT ${merchant?.id ?? null}, ${merchant?.workspaceId ?? null}, ${merchant?.name ?? null},
+          ${merchant?.normalizedName ?? null}, ${merchant?.createdByUserId ?? null}
+        WHERE ${merchant !== null} AND EXISTS (SELECT 1 FROM candidate)
+        ON CONFLICT (workspace_id, normalized_name)
+          DO UPDATE SET normalized_name = EXCLUDED.normalized_name
+        RETURNING id
+      ),
+      updated AS (
+        UPDATE ledger_transaction
+        SET category_id = ${input.categoryId},
+          merchant_id = COALESCE((SELECT id FROM merchant_to_upsert), ${input.merchantId}),
+          occurred_at = ${input.occurredAt},
+          note = ${input.note},
+          -- Detail DTO timestamps have millisecond precision. Move every
+          -- successful write at least one millisecond for a reliable token.
+          updated_at = greatest(clock_timestamp(), updated_at + interval '1 millisecond')
+        WHERE id IN (SELECT id FROM candidate)
+        RETURNING id, workspace_id AS "workspaceId", kind, status,
+          amount_minor AS "amountMinor", currency, occurred_at AS "occurredAt",
+          account_id AS "accountId", transfer_account_id AS "transferAccountId",
+          category_id AS "categoryId", merchant_id AS "merchantId",
+          created_by_user_id AS "createdByUserId", paid_by_user_id AS "paidByUserId",
+          transfer_group_id AS "transferGroupId", refunded_transaction_id AS "refundedTransactionId",
+          source, deduplication_fingerprint AS "deduplicationFingerprint", note,
+          created_at AS "createdAt", updated_at AS "updatedAt"
+      ),
+      audited AS (
+        INSERT INTO ledger_transaction_audit (
+          id, workspace_id, transaction_id, actor_user_id, action, metadata
+        )
+        SELECT ${input.audit.id}, ${input.audit.workspaceId}, updated.id,
+          ${input.audit.actorUserId}, ${input.audit.action}, ${JSON.stringify(input.audit.metadata)}::jsonb
+        FROM updated
+      )
+      SELECT * FROM updated;
+    ` as unknown as readonly RawLedgerTransaction[];
+    const record = rows[0];
+    return record ? mapLedgerTransaction(record) : null;
   }
 
   async findTransaction(
@@ -326,6 +411,23 @@ export class DatabaseLedgerRepository implements LedgerRepository {
       );
   }
 
+  async listTransactionAudit(
+    workspaceId: string,
+    transactionId: string,
+  ): Promise<LedgerTransactionAuditRecord[]> {
+    const records = await db
+      .select()
+      .from(ledgerTransactionAudits)
+      .where(
+        and(
+          eq(ledgerTransactionAudits.workspaceId, workspaceId),
+          eq(ledgerTransactionAudits.transactionId, transactionId),
+        ),
+      )
+      .orderBy(asc(ledgerTransactionAudits.createdAt), asc(ledgerTransactionAudits.id));
+    return records.map((record) => ({ ...record, action: record.action as LedgerTransactionAuditRecord["action"] }));
+  }
+
   private transactionListPredicates(
     workspaceId: string,
     filters: LedgerTransactionListFilters,
@@ -346,6 +448,32 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     }
     return predicates;
   }
+}
+
+type RawLedgerTransaction = Omit<
+  LedgerTransactionRecord,
+  "amountMinor" | "occurredAt" | "createdAt" | "updatedAt" | "source"
+> & {
+  amountMinor: bigint | string | number;
+  occurredAt: Date | string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  source: Record<string, unknown> | string;
+};
+
+function mapLedgerTransaction(record: RawLedgerTransaction): LedgerTransactionRecord {
+  const source = typeof record.source === "string" ? JSON.parse(record.source) : record.source;
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new Error("Updated transaction has invalid source metadata.");
+  }
+  return {
+    ...record,
+    amountMinor: typeof record.amountMinor === "bigint" ? record.amountMinor : BigInt(record.amountMinor),
+    occurredAt: new Date(record.occurredAt),
+    createdAt: new Date(record.createdAt),
+    updatedAt: new Date(record.updatedAt),
+    source,
+  };
 }
 
 function transactionListOrder(sort: LedgerTransactionListPageInput["sort"]) {

@@ -71,6 +71,19 @@ export interface LedgerTransactionRecord {
   updatedAt: Date;
 }
 
+export const LEDGER_TRANSACTION_AUDIT_ACTIONS = ["UPDATE"] as const;
+export type LedgerTransactionAuditAction = (typeof LEDGER_TRANSACTION_AUDIT_ACTIONS)[number];
+
+export interface LedgerTransactionAuditRecord {
+  id: string;
+  workspaceId: string;
+  transactionId: string;
+  actorUserId: string;
+  action: LedgerTransactionAuditAction;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+}
+
 export interface LedgerTransactionFilters {
   statuses?: readonly LedgerTransactionStatus[];
   accountId?: string;
