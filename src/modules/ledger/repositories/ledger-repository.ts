@@ -130,6 +130,11 @@ export interface LedgerRepository {
     workspaceId: string,
     transactionId: string,
   ): Promise<LedgerTransactionCorrectionRecord | null>;
+  /** Finds the canonical correction immediately preceding a replacement version. */
+  findTransactionCorrectionByReplacement(
+    workspaceId: string,
+    replacementTransactionId: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null>;
   findTransactionCorrectionByIdempotencyKey(
     workspaceId: string,
     actorUserId: string,
@@ -399,6 +404,23 @@ export class DatabaseLedgerRepository implements LedgerRepository {
             eq(ledgerTransactionCorrections.reversalTransactionId, transactionId),
             eq(ledgerTransactionCorrections.replacementTransactionId, transactionId),
           ),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findTransactionCorrectionByReplacement(
+    workspaceId: string,
+    replacementTransactionId: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null> {
+    const [record] = await db
+      .select()
+      .from(ledgerTransactionCorrections)
+      .where(
+        and(
+          eq(ledgerTransactionCorrections.workspaceId, workspaceId),
+          eq(ledgerTransactionCorrections.replacementTransactionId, replacementTransactionId),
         ),
       )
       .limit(1);

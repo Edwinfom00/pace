@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
+import { correctTransactionForActor } from "@/modules/ledger/correct-transaction";
 import { LedgerService } from "@/modules/ledger/ledger-service";
 import { getTransactionDetail } from "@/modules/transactions/queries/get-transaction-detail";
 import { TransactionDetailActivity } from "@/modules/transactions/ui/components/transaction-detail-activity";
@@ -24,7 +25,12 @@ import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui
 import { TransactionDetailView } from "@/modules/transactions/ui/views/transaction-detail-view";
 import { formatDetailDate } from "@/modules/transactions/ui/components/transaction-detail-formatters";
 
-import { InMemoryLedgerRepository, SYSTEM_GROCERIES_ID, SYSTEM_SALARY_ID } from "../../support/in-memory-ledger-repository";
+import {
+  InMemoryLedgerRepository,
+  SYSTEM_GROCERIES_ID,
+  SYSTEM_SALARY_ID,
+  SYSTEM_TRANSPORT_ID,
+} from "../../support/in-memory-ledger-repository";
 import { InMemoryWorkspaceRepository } from "../../support/in-memory-workspace-repository";
 
 const owner: AuthenticatedActor = { userId: "detail-owner", email: "owner@pace.test", name: "Owner" };
@@ -45,6 +51,25 @@ async function fixture() {
   const ledger = new InMemoryLedgerRepository();
   const workspaces = new InMemoryWorkspaceRepository();
   const service = new LedgerService(ledger, workspaces);
+  const now = new Date();
+  workspaces.workspaces.set(workspaceId, {
+    id: workspaceId,
+    name: "Detail workspace",
+    slug: "detail-workspace",
+    type: "PERSONAL",
+    createdByUserId: owner.userId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  workspaces.preferences.set(workspaceId, {
+    workspaceId,
+    currency: "USD",
+    locale: "en-US",
+    timezone: "Africa/Douala",
+    weekStartsOn: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
   workspaces.addMembership({ workspaceId, userId: owner.userId, role: "OWNER", invitedByUserId: null, joinedAt: new Date() });
   workspaces.addMembership({ workspaceId, userId: viewer.userId, role: "VIEWER", invitedByUserId: null, joinedAt: new Date() });
   workspaces.addMembership({ workspaceId: otherWorkspaceId, userId: owner.userId, role: "OWNER", invitedByUserId: null, joinedAt: new Date() });
@@ -91,7 +116,7 @@ async function fixture() {
     timeZone: "Africa/Douala",
   }, { ledger, workspaces });
 
-  return { detail, expense, income, transfer, sparseExpense, outsideTransaction };
+  return { detail, expense, income, transfer, sparseExpense, outsideTransaction, service, main, savings };
 }
 
 test("an authorized member sees persisted, workspace-scoped transaction detail and ledger-derived context", async () => {
@@ -341,6 +366,24 @@ test("Ask Pace receives serializable translated templates across the server-clie
   }
 });
 
+test("correction history labels are available in English, French, and German", () => {
+  const english = detailLabels("en").correction;
+  const french = detailLabels("fr").correction;
+  const german = detailLabels("de").correction;
+
+  assert.equal(english.badge, "Corrected");
+  assert.equal(french.badge, "Corrigée");
+  assert.equal(german.badge, "Korrigiert");
+  for (const labels of [english, french, german]) {
+    assert.ok(labels.title);
+    assert.ok(labels.wasCorrected);
+    assert.ok(labels.correctedAgain);
+    assert.ok(labels.viewCurrent);
+    assert.ok(labels.changes.AMOUNT);
+    assert.ok(labels.technicalDescription);
+  }
+});
+
 test("detail date and system-category presentation follow locale without changing user data", async () => {
   const { detail, expense } = await fixture();
   const transaction = await detail(expense.id);
@@ -373,6 +416,145 @@ test("technical details start collapsed and keep operational metadata secondary"
   assert.doesNotMatch(markup, /<details[^>]*\sopen(?:=|\s|>)/);
   assert.match(markup, /Transaction ID/);
   assert.doesNotMatch(markup, /deduplication|fingerprint/i);
+});
+
+test("correction history uses canonical records for current, historical, and technical detail states", async () => {
+  const { detail, expense, savings, service } = await fixture();
+  const first = await correctTransactionForActor(owner, {
+    workspaceId,
+    transactionId: expense.id,
+    kind: "EXPENSE",
+    financialChanges: { amountMinor: "9000", accountId: savings.id },
+    details: {
+      categoryId: SYSTEM_TRANSPORT_ID,
+      merchant: "Carrefour Express",
+      note: "Corrected receipt",
+    },
+    reason: "Incorrect amount",
+    idempotencyKey: "70000000-0000-4000-8000-000000000001",
+  }, { ledger: service });
+  assert.equal(first.ok, true, JSON.stringify(first));
+  if (!first.ok) return;
+
+  const { originalTransaction, reversalTransaction, replacementTransaction } = first.correction;
+  const [original, current, reversal] = await Promise.all([
+    detail(originalTransaction.id),
+    detail(replacementTransaction.id),
+    detail(reversalTransaction.id),
+  ]);
+  assert.ok(original && current && reversal);
+
+  assert.equal(original.correction?.state, "HISTORICAL");
+  assert.equal(original.correction?.currentTransactionId, replacementTransaction.id);
+  assert.equal(original.correction?.nextTransactionId, replacementTransaction.id);
+  assert.equal(original.capabilities.canCorrectFinancials, false);
+  assert.equal(original.context.effectiveTransactionId, replacementTransaction.id);
+  assert.equal(original.context.accountImpacts[0]?.account.name, "Savings");
+  assert.equal(original.context.monthlyCategory?.categoryName, "Transport");
+
+  assert.equal(current.correction?.state, "CURRENT");
+  assert.equal(current.correction?.originalTransactionId, expense.id);
+  assert.equal(current.correction?.previousTransactionId, expense.id);
+  assert.equal(current.correction?.originalAmount.minor, "24850");
+  assert.equal(current.correction?.currentAmount.minor, "9000");
+  assert.deepEqual(current.correction?.changes.map((change) => change.field), [
+    "AMOUNT", "ACCOUNT", "CATEGORY", "MERCHANT", "NOTE",
+  ]);
+  assert.equal(current.correction?.reason, "Incorrect amount");
+  assert.equal(current.capabilities.canCorrectFinancials, true);
+
+  const originalMarkup = renderToStaticMarkup(createElement(TransactionDetailView, {
+    categories: editCategories,
+    language: "en",
+    locale: "en-US",
+    timeZone: "Africa/Douala",
+    transaction: { ...original, capabilities: { ...original.capabilities, canEdit: false } },
+    workspaceId,
+    workspaceSlug: "house",
+  }));
+  assert.match(originalMarkup, /This transaction was corrected and is kept for your financial history/);
+  assert.match(originalMarkup, new RegExp(`/w/house/transactions/${replacementTransaction.id}`));
+  assert.match(originalMarkup, /Financial context uses the current corrected transaction/);
+
+  const currentMarkup = renderToStaticMarkup(createElement(TransactionDetailView, {
+    categories: editCategories,
+    language: "en",
+    locale: "en-US",
+    timeZone: "Africa/Douala",
+    transaction: { ...current, capabilities: { ...current.capabilities, canEdit: false } },
+    workspaceId,
+    workspaceSlug: "house",
+  }));
+  assert.match(currentMarkup, /Corrected/);
+  assert.match(currentMarkup, /Originally recorded as/);
+  assert.match(currentMarkup, /Carrefour Market/);
+  assert.match(currentMarkup, /Carrefour Express/);
+  assert.match(currentMarkup, /Main account/);
+  assert.match(currentMarkup, /Savings/);
+  assert.match(currentMarkup, /Groceries/);
+  assert.match(currentMarkup, /Transport/);
+  assert.match(currentMarkup, /Corrected receipt/);
+  assert.match(currentMarkup, /Incorrect amount/);
+  assert.match(currentMarkup, /Transaction corrected/);
+  assert.match(currentMarkup, new RegExp(`/w/house/transactions/${expense.id}`));
+
+  assert.equal(reversal.correction?.state, "TECHNICAL");
+  const reversalMarkup = renderToStaticMarkup(createElement(TransactionDetailView, {
+    categories: editCategories,
+    language: "en",
+    locale: "en-US",
+    timeZone: "Africa/Douala",
+    transaction: reversal,
+    workspaceId,
+    workspaceSlug: "house",
+  }));
+  assert.match(reversalMarkup, /Technical correction entry/);
+  assert.doesNotMatch(reversalMarkup, /Transaction details/);
+  assert.match(reversalMarkup, new RegExp(`/w/house/transactions/${replacementTransaction.id}`));
+});
+
+test("correction history follows an append-only chain without making intermediate versions current", async () => {
+  const { detail, expense, service } = await fixture();
+  const first = await correctTransactionForActor(owner, {
+    workspaceId,
+    transactionId: expense.id,
+    kind: "EXPENSE",
+    financialChanges: { amountMinor: "9000" },
+    reason: "Incorrect amount",
+    idempotencyKey: "70000000-0000-4000-8000-000000000002",
+  }, { ledger: service });
+  assert.equal(first.ok, true, JSON.stringify(first));
+  if (!first.ok) return;
+
+  const second = await correctTransactionForActor(owner, {
+    workspaceId,
+    transactionId: first.correction.replacementTransaction.id,
+    kind: "EXPENSE",
+    financialChanges: { amountMinor: "8000" },
+    reason: "Updated receipt",
+    idempotencyKey: "70000000-0000-4000-8000-000000000003",
+  }, { ledger: service });
+  assert.equal(second.ok, true);
+  if (!second.ok) return;
+
+  const [original, intermediate, current] = await Promise.all([
+    detail(expense.id),
+    detail(first.correction.replacementTransaction.id),
+    detail(second.correction.replacementTransaction.id),
+  ]);
+  assert.ok(original && intermediate && current);
+  assert.equal(original.correction?.state, "HISTORICAL");
+  assert.equal(original.correction?.currentTransactionId, current.id);
+  assert.equal(intermediate.correction?.state, "HISTORICAL");
+  assert.equal(intermediate.correction?.previousTransactionId, expense.id);
+  assert.equal(intermediate.correction?.nextTransactionId, current.id);
+  assert.equal(intermediate.correction?.currentTransactionId, current.id);
+  assert.equal(intermediate.capabilities.canCorrectFinancials, false);
+  assert.equal(current.correction?.state, "CURRENT");
+  assert.equal(current.correction?.originalTransactionId, expense.id);
+  assert.equal(current.correction?.previousTransactionId, intermediate.id);
+  assert.equal(current.correction?.currentAmount.minor, "8000");
+  assert.equal(current.capabilities.canCorrectFinancials, true);
 });
 
 test("detail view stacks safely below desktop and list-detail affordances remain responsive", async () => {

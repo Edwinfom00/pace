@@ -45,6 +45,7 @@ export function TransactionDetailHero({
               <TypeIcon aria-hidden className="size-3" />
               {labels.kind[transaction.kind]}
             </span>
+            {transaction.correction?.state === "CURRENT" ? <span className="inline-flex items-center rounded-full bg-[#edf3ff] px-2.5 py-1 text-[11px] font-medium text-[#365fba]">{labels.correction.badge}</span> : null}
             {transaction.category ? <span className="rounded-full bg-[#f2f4f7] px-2.5 py-1 text-[11px] font-medium text-[#596780]">{labels.systemCategory(transaction.category)}</span> : null}
             {transaction.source ? <span className="rounded-full bg-[#f2f4f7] px-2.5 py-1 text-[11px] font-medium text-[#596780]">{labels.source.origin[transaction.source.origin]}</span> : null}
           </div>

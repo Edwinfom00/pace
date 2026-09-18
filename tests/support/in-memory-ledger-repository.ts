@@ -274,6 +274,19 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     );
   }
 
+  async findTransactionCorrectionByReplacement(
+    workspaceId: string,
+    replacementTransactionId: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null> {
+    return (
+      [...this.transactionCorrections.values()].find(
+        (correction) =>
+          correction.workspaceId === workspaceId
+          && correction.replacementTransactionId === replacementTransactionId,
+      ) ?? null
+    );
+  }
+
   async findTransactionCorrectionByIdempotencyKey(
     workspaceId: string,
     actorUserId: string,

@@ -27,6 +27,9 @@ export function TransactionTechnicalDetails({
         <div><dt className="text-[#71809a]">{labels.technical.transactionId}</dt><dd className="mt-1 break-all font-mono text-[#34405d]">{transaction.id}</dd></div>
         <div><dt className="text-[#71809a]">{labels.technical.created}</dt><dd className="mt-1 text-[#34405d]"><time dateTime={transaction.createdAt}>{formatDetailTimestamp(transaction.createdAt, locale, timeZone)}</time></dd></div>
         <div><dt className="text-[#71809a]">{labels.technical.updated}</dt><dd className="mt-1 text-[#34405d]"><time dateTime={transaction.updatedAt}>{formatDetailTimestamp(transaction.updatedAt, locale, timeZone)}</time></dd></div>
+        {transaction.correction ? <div><dt className="text-[#71809a]">{labels.technical.correctionId}</dt><dd className="mt-1 break-all font-mono text-[#34405d]">{transaction.correction.correctionId}</dd></div> : null}
+        {transaction.correction ? <div><dt className="text-[#71809a]">{labels.technical.originalTransactionId}</dt><dd className="mt-1 break-all font-mono text-[#34405d]">{transaction.correction.originalTransactionId}</dd></div> : null}
+        {transaction.correction ? <div><dt className="text-[#71809a]">{labels.technical.currentTransactionId}</dt><dd className="mt-1 break-all font-mono text-[#34405d]">{transaction.correction.currentTransactionId}</dd></div> : null}
       </dl>
     </details>
   );

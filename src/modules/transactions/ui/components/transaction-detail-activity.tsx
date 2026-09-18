@@ -1,4 +1,4 @@
-import { CheckCircle2, Plus, Tag } from "lucide-react";
+import { CheckCircle2, History, Plus, Tag } from "lucide-react";
 
 import type { TransactionDetailData } from "@/modules/transactions/domain/transaction-detail";
 
@@ -48,6 +48,14 @@ export function TransactionDetailActivity({
       description: labels.activity.included,
       occurredAt: transaction.updatedAt,
       icon: CheckCircle2,
+      tone: "success" as const,
+    }] : []),
+    ...(transaction.correction?.activity ? [{
+      id: `correction-${transaction.correction.correctionId}`,
+      title: labels.activity.correction,
+      description: transaction.correction.reason ?? labels.activity.correctionDetails,
+      occurredAt: transaction.correction.activity.occurredAt,
+      icon: History,
       tone: "success" as const,
     }] : []),
   ];

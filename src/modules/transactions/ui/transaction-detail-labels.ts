@@ -63,6 +63,7 @@ export type TransactionDetailLabels = {
     readonly accountImpact: string;
     readonly balanceAfter: string;
     readonly empty: string;
+    readonly currentFinancialTruth: string;
   };
   readonly activity: {
     readonly title: string;
@@ -73,12 +74,39 @@ export type TransactionDetailLabels = {
     readonly posted: string;
     readonly included: string;
     readonly empty: string;
+    readonly correction: string;
+    readonly correctionDetails: string;
   };
   readonly technical: {
     readonly title: string;
     readonly transactionId: string;
     readonly created: string;
     readonly updated: string;
+    readonly correctionId: string;
+    readonly originalTransactionId: string;
+    readonly currentTransactionId: string;
+  };
+  readonly correction: {
+    readonly badge: string;
+    readonly title: string;
+    readonly wasCorrected: string;
+    readonly correctedAgain: string;
+    readonly currentVersion: string;
+    readonly originalVersion: string;
+    readonly previousVersion: string;
+    readonly viewOriginal: string;
+    readonly viewCurrent: string;
+    readonly viewPrevious: string;
+    readonly originallyRecorded: string;
+    readonly correctedTo: string;
+    readonly correctedAt: (date: string) => string;
+    readonly reason: string;
+    readonly notProvided: string;
+    readonly changeDescription: (field: string, before: string, after: string) => string;
+    readonly changes: Readonly<Record<"AMOUNT" | "ACCOUNT" | "TRANSFER_ACCOUNT" | "CATEGORY" | "MERCHANT" | "NOTE" | "DATE", string>>;
+    readonly technicalTitle: string;
+    readonly technicalDescription: string;
+    readonly technicalCurrent: string;
   };
   readonly askPace: {
     readonly title: string;
@@ -151,6 +179,7 @@ export function getTransactionDetailLabels(labels: DashboardLabels): Transaction
       accountImpact: labels["transactions.detail.financial.accountImpact"],
       balanceAfter: labels["transactions.detail.financial.balanceAfter"],
       empty: labels["transactions.detail.financial.empty"],
+      currentFinancialTruth: labels["transactions.correction.currentFinancialTruth"],
     },
     activity: {
       title: labels["transactions.detail.activity.title"],
@@ -161,12 +190,47 @@ export function getTransactionDetailLabels(labels: DashboardLabels): Transaction
       posted: labels["transactions.detail.activity.posted"],
       included: labels["transactions.detail.activity.included"],
       empty: labels["transactions.detail.activity.empty"],
+      correction: labels["transactions.correction.activity"],
+      correctionDetails: labels["transactions.correction.activityDetails"],
     },
     technical: {
       title: labels["transactions.detail.technical.title"],
       transactionId: labels["transactions.detail.technical.transactionId"],
       created: labels["transactions.detail.technical.created"],
       updated: labels["transactions.detail.technical.updated"],
+      correctionId: labels["transactions.correction.technicalId"],
+      originalTransactionId: labels["transactions.correction.technicalOriginalId"],
+      currentTransactionId: labels["transactions.correction.technicalCurrentId"],
+    },
+    correction: {
+      badge: labels["transactions.correction.badge"],
+      title: labels["transactions.correction.historyTitle"],
+      wasCorrected: labels["transactions.correction.wasCorrected"],
+      correctedAgain: labels["transactions.correction.correctedAgain"],
+      currentVersion: labels["transactions.correction.currentVersion"],
+      originalVersion: labels["transactions.correction.originalVersion"],
+      previousVersion: labels["transactions.correction.previousVersion"],
+      viewOriginal: labels["transactions.correction.viewOriginal"],
+      viewCurrent: labels["transactions.correction.viewCurrent"],
+      viewPrevious: labels["transactions.correction.viewPrevious"],
+      originallyRecorded: labels["transactions.correction.originallyRecorded"],
+      correctedTo: labels["transactions.correction.correctedTo"],
+      correctedAt: (date) => formatDashboardLabel(labels, "transactions.correction.correctedAt", { date }),
+      reason: labels["transactions.correction.reason"],
+      notProvided: labels["transactions.correction.notProvided"],
+      changeDescription: (field, before, after) => formatDashboardLabel(labels, "transactions.correction.changeDescription", { field, before, after }),
+      changes: {
+        AMOUNT: labels["transactions.correction.change.amount"],
+        ACCOUNT: labels["transactions.correction.change.account"],
+        TRANSFER_ACCOUNT: labels["transactions.correction.change.transferAccount"],
+        CATEGORY: labels["transactions.correction.change.category"],
+        MERCHANT: labels["transactions.correction.change.merchant"],
+        NOTE: labels["transactions.correction.change.note"],
+        DATE: labels["transactions.correction.change.date"],
+      },
+      technicalTitle: labels["transactions.correction.technicalTitle"],
+      technicalDescription: labels["transactions.correction.technicalDescription"],
+      technicalCurrent: labels["transactions.correction.technicalCurrent"],
     },
     askPace: {
       title: labels["transactions.detail.askPace.title"],

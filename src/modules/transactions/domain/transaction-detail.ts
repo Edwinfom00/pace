@@ -53,6 +53,31 @@ export type TransactionMonthlyCategoryContext = {
   readonly total: SerializedMoney;
 };
 
+export type TransactionCorrectionChange =
+  | { readonly field: "AMOUNT"; readonly before: SerializedMoney; readonly after: SerializedMoney }
+  | {
+    readonly field: "ACCOUNT" | "TRANSFER_ACCOUNT" | "CATEGORY" | "MERCHANT" | "NOTE" | "DATE";
+    readonly before: string | null;
+    readonly after: string | null;
+  };
+
+/** A concise, user-safe projection of the canonical append-only correction chain. */
+export type TransactionDetailCorrection = {
+  readonly state: "CURRENT" | "HISTORICAL" | "TECHNICAL";
+  readonly correctionId: string;
+  readonly originalTransactionId: string;
+  readonly currentTransactionId: string;
+  readonly previousTransactionId: string | null;
+  readonly nextTransactionId: string | null;
+  readonly correctedAt: string | null;
+  readonly reason: string | null;
+  readonly changes: readonly TransactionCorrectionChange[];
+  readonly originalAmount: SerializedMoney;
+  readonly currentAmount: SerializedMoney;
+  /** Present only when the authoritative correction audit was available. */
+  readonly activity: { readonly occurredAt: string } | null;
+};
+
 export type TransactionDetailData = {
   readonly id: string;
   readonly kind: LedgerTransactionKind;
@@ -71,8 +96,11 @@ export type TransactionDetailData = {
     readonly channel: TransactionDetailSourceChannel | null;
   } | null;
   readonly capabilities: TransactionCapabilities;
+  readonly correction?: TransactionDetailCorrection | null;
   readonly context: {
     readonly accountImpacts: readonly TransactionAccountImpact[];
     readonly monthlyCategory: TransactionMonthlyCategoryContext | null;
+    /** The transaction represented by financial context, which may be a later corrected version. */
+    readonly effectiveTransactionId?: string;
   };
 };

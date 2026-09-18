@@ -19,6 +19,7 @@ export function TransactionFinancialContext({
   return (
     <section aria-labelledby="financial-context-heading" className="rounded-[13px] border border-[#e6eaf0] bg-white p-4 sm:p-5">
       <h2 className="text-[17px] font-semibold tracking-tight text-[#101a35]" id="financial-context-heading">{labels.financial.title}</h2>
+      {transaction.context.effectiveTransactionId && transaction.context.effectiveTransactionId !== transaction.id ? <p className="mt-1.5 text-[12px] leading-5 text-[#53627b]">{labels.financial.currentFinancialTruth}</p> : null}
       {monthlyCategory || accountImpacts.length ? (
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           {monthlyCategory ? (

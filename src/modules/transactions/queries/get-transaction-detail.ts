@@ -7,6 +7,8 @@ import type {
   LedgerAccountRecord,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
+  LedgerTransactionAuditRecord,
+  LedgerTransactionCorrectionRecord,
   LedgerTransactionRecord,
 } from "@/modules/ledger/domain";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
@@ -15,7 +17,9 @@ import type { WorkspaceRepository } from "@/modules/workspaces/repositories/work
 
 import type {
   TransactionAccountImpact,
+  TransactionCorrectionChange,
   TransactionDetailAccount,
+  TransactionDetailCorrection,
   TransactionDetailData,
   TransactionDetailMerchant,
   TransactionMonthlyCategoryContext,
@@ -25,7 +29,15 @@ import { getTransactionCapabilities } from "../domain/transaction-action-policy"
 
 type TransactionDetailLedgerRepository = Pick<
   LedgerRepository,
-  "findTransaction" | "findAccount" | "findCategory" | "findMerchant" | "listTransactions"
+  | "findTransaction"
+  | "findAccount"
+  | "findCategory"
+  | "findMerchant"
+  | "listTransactions"
+  | "findTransactionCorrectionByOriginal"
+  | "findTransactionCorrectionByReplacement"
+  | "findTransactionCorrectionByTransactionId"
+  | "listTransactionAudit"
 >;
 type TransactionDetailWorkspaceRepository = Pick<WorkspaceRepository, "findMembership">;
 
@@ -58,6 +70,32 @@ export async function getTransactionDetail(
     transaction.merchantId ? dependencies.ledger.findMerchant(input.workspaceId, transaction.merchantId) : null,
     dependencies.ledger.listTransactions(input.workspaceId),
   ]);
+  const correction = await getDetailCorrection({
+    ledger: dependencies.ledger,
+    transaction,
+    transactions: workspaceTransactions,
+    workspaceId: input.workspaceId,
+  });
+  const effectiveTransaction = correction
+    ? workspaceTransactions.find((candidate) => candidate.id === correction.currentTransactionId) ?? transaction
+    : transaction;
+  const [effectiveAccount, effectiveTransferAccount, effectiveCategory] = await Promise.all([
+    effectiveTransaction.accountId === transaction.accountId
+      ? account
+      : effectiveTransaction.accountId
+        ? dependencies.ledger.findAccount(input.workspaceId, effectiveTransaction.accountId)
+        : null,
+    effectiveTransaction.transferAccountId === transaction.transferAccountId
+      ? transferAccount
+      : effectiveTransaction.transferAccountId
+        ? dependencies.ledger.findAccount(input.workspaceId, effectiveTransaction.transferAccountId)
+        : null,
+    effectiveTransaction.categoryId === transaction.categoryId
+      ? category
+      : effectiveTransaction.categoryId
+        ? dependencies.ledger.findCategory(input.workspaceId, effectiveTransaction.categoryId)
+        : null,
+  ]);
 
   return {
     id: transaction.id,
@@ -79,15 +117,156 @@ export async function getTransactionDetail(
       refundedAmountMinor: refundedAmountFor(transaction, workspaceTransactions),
       isCurrentEffective: isCurrentFinancialTransaction(transaction, workspaceTransactions),
     }),
+    correction,
     context: {
-      accountImpacts: [account, transferAccount]
+      accountImpacts: [effectiveAccount, effectiveTransferAccount]
         .filter((candidate): candidate is LedgerAccountRecord => candidate !== null)
-        .map((candidate) => mapAccountImpact(candidate, transaction, workspaceTransactions)),
-      monthlyCategory: category
-        ? mapMonthlyCategoryContext(transaction, category, workspaceTransactions, input.timeZone)
+        .map((candidate) => mapAccountImpact(candidate, effectiveTransaction, workspaceTransactions)),
+      monthlyCategory: effectiveCategory
+        ? mapMonthlyCategoryContext(effectiveTransaction, effectiveCategory, workspaceTransactions, input.timeZone)
         : null,
+      effectiveTransactionId: effectiveTransaction.id,
     },
   };
+}
+
+async function getDetailCorrection({
+  ledger,
+  transaction,
+  transactions,
+  workspaceId,
+}: {
+  readonly ledger: TransactionDetailLedgerRepository;
+  readonly transaction: LedgerTransactionRecord;
+  readonly transactions: readonly LedgerTransactionRecord[];
+  readonly workspaceId: string;
+}): Promise<TransactionDetailCorrection | null> {
+  const [outgoing, incoming, direct] = await Promise.all([
+    ledger.findTransactionCorrectionByOriginal(workspaceId, transaction.id),
+    ledger.findTransactionCorrectionByReplacement(workspaceId, transaction.id),
+    transaction.reversalOfTransactionId === null
+      ? Promise.resolve(null)
+      : ledger.findTransactionCorrectionByTransactionId(workspaceId, transaction.id),
+  ]);
+  if (!outgoing && !incoming && !direct) return null;
+
+  const technical = transaction.reversalOfTransactionId !== null;
+  const eventCorrection = technical ? direct : outgoing ?? incoming;
+  if (!eventCorrection) return null;
+
+  const transactionById = new Map(transactions.map((candidate) => [candidate.id, candidate]));
+  const original = technical
+    ? transactionById.get(eventCorrection.originalTransactionId) ?? transaction
+    : await correctionRoot(transaction.id, incoming, ledger, workspaceId, transactionById);
+  const current = technical
+    ? transactionById.get(eventCorrection.replacementTransactionId) ?? transaction
+    : await correctionCurrent(transaction.id, outgoing, ledger, workspaceId, transactionById);
+  const audit = await correctionAudit(ledger, workspaceId, eventCorrection);
+  const before = transactionById.get(eventCorrection.originalTransactionId);
+  const after = transactionById.get(eventCorrection.replacementTransactionId);
+
+  return {
+    state: technical ? "TECHNICAL" : current.id === transaction.id ? "CURRENT" : "HISTORICAL",
+    correctionId: eventCorrection.id,
+    originalTransactionId: original.id,
+    currentTransactionId: current.id,
+    previousTransactionId: technical || !incoming ? null : incoming.originalTransactionId,
+    nextTransactionId: technical || !outgoing ? null : outgoing.replacementTransactionId,
+    correctedAt: (audit ?? eventCorrection).createdAt.toISOString(),
+    reason: eventCorrection.reason,
+    changes: before && after && audit
+      ? await correctionChanges(audit, before, after, ledger, workspaceId)
+      : [],
+    originalAmount: money(original),
+    currentAmount: money(current),
+    activity: audit ? { occurredAt: audit.createdAt.toISOString() } : null,
+  };
+}
+
+async function correctionRoot(
+  transactionId: string,
+  incoming: LedgerTransactionCorrectionRecord | null,
+  ledger: TransactionDetailLedgerRepository,
+  workspaceId: string,
+  transactions: ReadonlyMap<string, LedgerTransactionRecord>,
+): Promise<LedgerTransactionRecord> {
+  let currentId = transactionId;
+  let correction = incoming;
+  const seen = new Set<string>();
+  while (correction && !seen.has(correction.id)) {
+    seen.add(correction.id);
+    currentId = correction.originalTransactionId;
+    correction = await ledger.findTransactionCorrectionByReplacement(workspaceId, currentId);
+  }
+  return transactions.get(currentId) ?? transactions.get(transactionId)!;
+}
+
+async function correctionCurrent(
+  transactionId: string,
+  outgoing: LedgerTransactionCorrectionRecord | null,
+  ledger: TransactionDetailLedgerRepository,
+  workspaceId: string,
+  transactions: ReadonlyMap<string, LedgerTransactionRecord>,
+): Promise<LedgerTransactionRecord> {
+  let currentId = transactionId;
+  let correction = outgoing;
+  const seen = new Set<string>();
+  while (correction && !seen.has(correction.id)) {
+    seen.add(correction.id);
+    currentId = correction.replacementTransactionId;
+    correction = await ledger.findTransactionCorrectionByOriginal(workspaceId, currentId);
+  }
+  return transactions.get(currentId) ?? transactions.get(transactionId)!;
+}
+
+async function correctionAudit(
+  ledger: TransactionDetailLedgerRepository,
+  workspaceId: string,
+  correction: LedgerTransactionCorrectionRecord,
+): Promise<LedgerTransactionAuditRecord | null> {
+  const audits = await ledger.listTransactionAudit(workspaceId, correction.originalTransactionId);
+  return audits.find(
+    (audit) => audit.action === "CORRECT" && audit.metadata.correctionId === correction.id,
+  ) ?? null;
+}
+
+async function correctionChanges(
+  audit: LedgerTransactionAuditRecord,
+  before: LedgerTransactionRecord,
+  after: LedgerTransactionRecord,
+  ledger: TransactionDetailLedgerRepository,
+  workspaceId: string,
+): Promise<readonly TransactionCorrectionChange[]> {
+  const rawChanges = audit.metadata.changes;
+  if (!rawChanges || typeof rawChanges !== "object" || Array.isArray(rawChanges)) return [];
+  const changed = rawChanges as Record<string, unknown>;
+  const accountName = async (id: string | null) => id ? (await ledger.findAccount(workspaceId, id))?.name ?? null : null;
+  const categoryName = async (id: string | null) => id ? (await ledger.findCategory(workspaceId, id))?.name ?? null : null;
+  const merchantName = async (id: string | null) => id ? (await ledger.findMerchant(workspaceId, id))?.name ?? null : null;
+  const changes: TransactionCorrectionChange[] = [];
+
+  if ("amountMinor" in changed) changes.push({ field: "AMOUNT", before: money(before), after: money(after) });
+  if ("accountId" in changed) changes.push({
+    field: "ACCOUNT", before: await accountName(before.accountId), after: await accountName(after.accountId),
+  });
+  if ("transferAccountId" in changed) changes.push({
+    field: "TRANSFER_ACCOUNT", before: await accountName(before.transferAccountId), after: await accountName(after.transferAccountId),
+  });
+  if ("categoryId" in changed) changes.push({
+    field: "CATEGORY", before: await categoryName(before.categoryId), after: await categoryName(after.categoryId),
+  });
+  if ("counterpartyId" in changed) changes.push({
+    field: "MERCHANT", before: await merchantName(before.merchantId), after: await merchantName(after.merchantId),
+  });
+  if ("occurredAt" in changed) changes.push({
+    field: "DATE", before: before.occurredAt.toISOString(), after: after.occurredAt.toISOString(),
+  });
+  if ("note" in changed) changes.push({ field: "NOTE", before: before.note, after: after.note });
+  return changes;
+}
+
+function money(transaction: LedgerTransactionRecord) {
+  return { currency: transaction.currency, minor: transaction.amountMinor.toString() };
 }
 
 function refundedAmountFor(
