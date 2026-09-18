@@ -329,6 +329,13 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     if (this.transactions.has(reversal.id) || this.transactions.has(replacement.id)) {
       throw new Error("Correction transaction ID already exists.");
     }
+    if (input.merchantToCreate) {
+      this.merchants.set(input.merchantToCreate.id, {
+        ...input.merchantToCreate,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
     this.transactions.set(reversal.id, reversal);
     this.transactions.set(replacement.id, replacement);
     this.transactionCorrections.set(correction.id, correction);

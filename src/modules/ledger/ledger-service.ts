@@ -51,7 +51,7 @@ import {
 export class LedgerService {
   constructor(
     private readonly repository: LedgerRepository,
-    private readonly workspaces: Pick<WorkspaceRepository, "findMembership">,
+    private readonly workspaces: Pick<WorkspaceRepository, "findMemberContext" | "findMembership">,
   ) { }
 
   async createAccount(
@@ -319,6 +319,8 @@ export class LedgerService {
     command: CorrectTransactionCommand,
   ): Promise<LedgerFinancialCorrectionResult> {
     const membership = await this.requireWorkspacePermission(actor.userId, command.workspaceId, "manage_ledger");
+    const workspace = await this.workspaces.findMemberContext(command.workspaceId, actor.userId);
+    if (!workspace) throw new AuthorizationError("You are not a member of this workspace.");
     const idempotencyKey = correctionIdempotencyKey(actor.userId, command.idempotencyKey);
     const commandFingerprint = correctionCommandFingerprint(command);
 
@@ -362,12 +364,16 @@ export class LedgerService {
     }
 
     const correctionId = randomUUID();
-    const replacementInput = this.buildCorrectionReplacementInput(original, command, correctionId);
+    const details = await this.resolveTransactionDetailsPatch(
+      actor,
+      command.workspaceId,
+      original,
+      command.details ?? {},
+      workspace.preferences.timezone,
+    );
+    const replacementInput = this.buildCorrectionReplacementInput(original, command, correctionId, details);
     await this.assertCorrectionReplacementAccounts(command.workspaceId, replacementInput);
     const replacement = await this.prepareCanonicalTransaction(actor, command.workspaceId, replacementInput);
-    if (replacement.merchant) {
-      throw new DomainConflictError("INVALID_CORRECTION", "Correction cannot create a new merchant.");
-    }
     const reversal = createCorrectionReversal(original, actor.userId, correctionId);
     const correction: CreateLedgerTransactionCorrectionRecord = {
       id: correctionId,
@@ -396,6 +402,7 @@ export class LedgerService {
         correction,
         reversal,
         replacement: replacement.transaction,
+        merchantToCreate: replacement.merchant,
         audits,
       });
     } catch (error) {
@@ -428,7 +435,7 @@ export class LedgerService {
     }
 
     const result = await this.hydrateCorrection(created);
-    assertVerifiedFinancialCorrection(result, original, replacement.transaction);
+    assertVerifiedFinancialCorrection(result, original, replacement.transaction, replacement.merchant !== null);
     const persistedAuditIds = new Set(
       (await Promise.all([
         this.repository.listTransactionAudit(command.workspaceId, original.id),
@@ -562,16 +569,23 @@ export class LedgerService {
     original: LedgerTransactionRecord,
     command: CorrectTransactionCommand,
     correctionId: string,
+    details: {
+      categoryId: string | null;
+      merchantId: string | null;
+      occurredAt: Date;
+      note: string | null;
+      merchantToCreate: CreateLedgerMerchantRecord | null;
+    },
   ): CreateLedgerTransactionInput {
     const common = {
       status: "POSTED" as const,
       amountMinor: command.financialChanges.amountMinor ?? original.amountMinor,
       currency: toCurrencyCode(original.currency),
-      occurredAt: original.occurredAt,
+      occurredAt: details.occurredAt,
       paidByUserId: original.paidByUserId ?? undefined,
       source: correctionSource(original.source, "REPLACEMENT", correctionId, original.id) as CreateLedgerTransactionInput["source"],
       deduplicationFingerprint: correctionTransactionFingerprint(correctionId, "replacement"),
-      note: original.note ?? undefined,
+      note: details.note ?? undefined,
     };
 
     switch (command.kind) {
@@ -583,8 +597,12 @@ export class LedgerService {
           kind: "EXPENSE",
           ...common,
           accountId,
-          categoryId: original.categoryId ?? undefined,
-          merchantId: original.merchantId ?? undefined,
+          categoryId: details.categoryId ?? undefined,
+          ...(details.merchantToCreate
+            ? { merchantName: details.merchantToCreate.name }
+            : details.merchantId
+              ? { merchantId: details.merchantId }
+              : {}),
         };
       }
       case "INCOME": {
@@ -595,8 +613,12 @@ export class LedgerService {
           kind: "INCOME",
           ...common,
           accountId,
-          categoryId: original.categoryId ?? undefined,
-          merchantId: original.merchantId ?? undefined,
+          categoryId: details.categoryId ?? undefined,
+          ...(details.merchantToCreate
+            ? { merchantName: details.merchantToCreate.name }
+            : details.merchantId
+              ? { merchantId: details.merchantId }
+              : {}),
         };
       }
       case "TRANSFER": {
@@ -1012,8 +1034,8 @@ function correctionAudits({
 function correctionFinancialChanges(
   original: LedgerTransactionRecord,
   replacement: CreateLedgerTransactionRecord,
-): Record<string, { before: string; after: string }> {
-  const changes: Record<string, { before: string; after: string }> = {};
+): Record<string, { before: string | null; after: string | null }> {
+  const changes: Record<string, { before: string | null; after: string | null }> = {};
   if (original.amountMinor !== replacement.amountMinor) {
     changes.amountMinor = { before: original.amountMinor.toString(), after: replacement.amountMinor.toString() };
   }
@@ -1024,6 +1046,21 @@ function correctionFinancialChanges(
     changes.transferAccountId = {
       before: original.transferAccountId ?? "",
       after: replacement.transferAccountId ?? "",
+    };
+  }
+  if (original.categoryId !== replacement.categoryId) {
+    changes.categoryId = { before: original.categoryId, after: replacement.categoryId };
+  }
+  if (original.merchantId !== replacement.merchantId) {
+    changes.counterpartyId = { before: original.merchantId, after: replacement.merchantId };
+  }
+  if (original.occurredAt.getTime() !== replacement.occurredAt.getTime()) {
+    changes.occurredAt = { before: original.occurredAt.toISOString(), after: replacement.occurredAt.toISOString() };
+  }
+  if (original.note !== replacement.note) {
+    changes.note = {
+      before: original.note === null ? null : "[present]",
+      after: replacement.note === null ? null : "[present]",
     };
   }
   return changes;
@@ -1061,6 +1098,7 @@ function correctionCommandFingerprint(command: CorrectTransactionCommand): strin
           typeof value === "bigint" ? value.toString() : value,
         ]),
       ),
+      details: command.details ?? null,
       reason: command.reason ?? null,
       expectedVersion,
     }))
@@ -1075,6 +1113,7 @@ function assertVerifiedFinancialCorrection(
   result: LedgerFinancialCorrectionResult,
   original: LedgerTransactionRecord,
   expectedReplacement: CreateLedgerTransactionRecord,
+  merchantMayBeReconciled: boolean,
 ): void {
   const { correction, reversalTransaction: reversal, replacementTransaction: replacement } = result;
   const commonLinkageValid =
@@ -1091,7 +1130,10 @@ function assertVerifiedFinancialCorrection(
     && replacement.accountId === expectedReplacement.accountId
     && replacement.transferAccountId === expectedReplacement.transferAccountId
     && replacement.categoryId === expectedReplacement.categoryId
-    && replacement.merchantId === expectedReplacement.merchantId
+    // A concurrent merchant creation may resolve the same normalized name to
+    // the already-created record within the atomic CTE. Its relation must
+    // exist, but it need not retain this request's provisional UUID.
+    && (merchantMayBeReconciled ? replacement.merchantId !== null : replacement.merchantId === expectedReplacement.merchantId)
     && replacement.occurredAt.getTime() === expectedReplacement.occurredAt.getTime()
     && replacement.note === expectedReplacement.note;
   const reversalMatches =

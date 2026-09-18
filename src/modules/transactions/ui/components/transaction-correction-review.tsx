@@ -10,6 +10,7 @@ import type { TransactionEditLabels } from "../transaction-edit-labels";
 import { formatTransactionFormDate } from "./transaction-date-field";
 import {
   parseTransactionEditAmount,
+  type TransactionCorrectionFormError,
   type TransactionEditChangeClassification,
   type TransactionEditDraft,
   type TransactionEditField,
@@ -25,7 +26,11 @@ export function TransactionCorrectionReview({
   draft,
   labels,
   locale,
+  correctionError,
+  isApplying,
+  onApply,
   onBack,
+  onReloadLatest,
   onReasonChange,
   onReasonDetailsChange,
   reason,
@@ -39,7 +44,11 @@ export function TransactionCorrectionReview({
   readonly draft: TransactionEditDraft;
   readonly labels: TransactionEditLabels;
   readonly locale: string;
+  readonly correctionError: TransactionCorrectionFormError;
+  readonly isApplying: boolean;
+  readonly onApply: () => void;
   readonly onBack: () => void;
+  readonly onReloadLatest: () => void;
   readonly onReasonChange: (value: TransactionCorrectionReason) => void;
   readonly onReasonDetailsChange: (value: string) => void;
   readonly reason: TransactionCorrectionReason;
@@ -48,6 +57,7 @@ export function TransactionCorrectionReview({
 }) {
   const changes = [...classification.financialFields, ...classification.metadataFields]
     .map((field) => reviewChangeFor(field, baseline, draft, transaction, categories, accounts, labels, locale));
+  const feedback = correctionFeedback(correctionError, labels);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -79,6 +89,7 @@ export function TransactionCorrectionReview({
             </label>
             <select
               className="h-11 rounded-[8px] border border-[#d9e1ec] bg-white px-3 text-[13px] text-[#13213f] outline-none transition-[border-color,box-shadow] hover:border-[#bac9df] focus-visible:border-[#4e7fe3] focus-visible:ring-3 focus-visible:ring-[#5e8fe8]/15"
+              disabled={isApplying}
               id="transaction-correction-reason"
               onChange={(event) => onReasonChange(event.target.value as TransactionCorrectionReason)}
               value={reason}
@@ -91,7 +102,10 @@ export function TransactionCorrectionReview({
             </select>
             {reason === "OTHER" ? (
               <input
+                aria-label={labels.correction.reasonDetails}
                 className="h-11 rounded-[8px] border border-[#d9e1ec] bg-white px-3 text-[13px] text-[#13213f] outline-none transition-[border-color,box-shadow] placeholder:text-[#8a9ab3] hover:border-[#bac9df] focus-visible:border-[#4e7fe3] focus-visible:ring-3 focus-visible:ring-[#5e8fe8]/15"
+                disabled={isApplying}
+                maxLength={500}
                 onChange={(event) => onReasonDetailsChange(event.target.value)}
                 placeholder={labels.correction.reasonDetails}
                 type="text"
@@ -105,26 +119,70 @@ export function TransactionCorrectionReview({
       </div>
 
       <div className="flex shrink-0 flex-col gap-2 border-t border-[#e6eaf0] bg-[#fcfdff] px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-7">
-        <p className="mr-auto text-[12px] leading-5 text-[#71809a]" id="transaction-correction-apply-status">{labels.correction.applyUnavailable}</p>
+        <p
+          aria-live={correctionError === "conflict" || correctionError === "notAllowed" ? "assertive" : "polite"}
+          className="mr-auto text-[12px] leading-5 text-[#71809a]"
+          id="transaction-correction-apply-status"
+          role={correctionError ? "alert" : "status"}
+        >
+          {isApplying ? labels.correction.applying : feedback ?? ""}
+        </p>
         <Button
           className="h-10 rounded-[8px] border border-[#dfe5ee] bg-white px-4 text-[13px] font-medium text-[#43516a] hover:bg-[#f3f6fa] hover:text-[#263550]"
+          disabled={isApplying}
           onClick={onBack}
           type="button"
           variant="ghost"
         >
           {labels.correction.backToEdit}
         </Button>
+        {correctionError === "conflict" ? (
+          <Button
+            className="h-10 rounded-[8px] border border-[#dfe5ee] bg-white px-4 text-[13px] font-medium text-[#43516a] hover:bg-[#f3f6fa] hover:text-[#263550]"
+            disabled={isApplying}
+            onClick={onReloadLatest}
+            type="button"
+            variant="ghost"
+          >
+            {labels.correction.reloadLatest}
+          </Button>
+        ) : null}
         <Button
           aria-describedby="transaction-correction-apply-status"
           className="h-10 rounded-[8px] bg-[#2563eb] px-4 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          disabled
+          disabled={isApplying || correctionError === "conflict" || correctionError === "notAllowed"}
+          onClick={onApply}
           type="button"
         >
-          {labels.correction.apply}
+          {isApplying ? labels.correction.applying : labels.correction.apply}
         </Button>
       </div>
     </div>
   );
+}
+
+function correctionFeedback(
+  error: TransactionCorrectionFormError,
+  labels: TransactionEditLabels,
+): string | null {
+  switch (error) {
+    case "amount":
+      return labels.amountInvalid;
+    case "account":
+      return labels.accountUnavailable;
+    case "currency":
+      return labels.crossCurrencyTransferUnsupported;
+    case "transfer":
+      return labels.sameTransferAccount;
+    case "conflict":
+      return labels.correction.conflict;
+    case "notAllowed":
+      return labels.correction.notAllowed;
+    case "failed":
+      return labels.correction.failed;
+    default:
+      return null;
+  }
 }
 
 function ComparisonValue({ label, value, emphasized = false }: { readonly label: string; readonly value: string; readonly emphasized?: boolean }) {

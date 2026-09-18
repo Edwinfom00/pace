@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  expenseTransactionDetailsPatchSchema,
+  incomeTransactionDetailsPatchSchema,
+  transferTransactionDetailsPatchSchema,
+} from "./update-transaction-details-contract";
+
 const entityId = z.string().trim().uuid();
 const workspaceId = z.string().trim().min(1).max(255);
 const idempotencyKey = z.string().trim().uuid();
@@ -50,9 +56,24 @@ const transferChanges = z
 
 
 export const correctTransactionSchema = z.discriminatedUnion("kind", [
-  z.object({ ...correctionBase, kind: z.literal("EXPENSE"), financialChanges: expenseChanges }).strict(),
-  z.object({ ...correctionBase, kind: z.literal("INCOME"), financialChanges: expenseChanges }).strict(),
-  z.object({ ...correctionBase, kind: z.literal("TRANSFER"), financialChanges: transferChanges }).strict(),
+  z.object({
+    ...correctionBase,
+    kind: z.literal("EXPENSE"),
+    financialChanges: expenseChanges,
+    details: expenseTransactionDetailsPatchSchema.optional(),
+  }).strict(),
+  z.object({
+    ...correctionBase,
+    kind: z.literal("INCOME"),
+    financialChanges: expenseChanges,
+    details: incomeTransactionDetailsPatchSchema.optional(),
+  }).strict(),
+  z.object({
+    ...correctionBase,
+    kind: z.literal("TRANSFER"),
+    financialChanges: transferChanges,
+    details: transferTransactionDetailsPatchSchema.optional(),
+  }).strict(),
 ]);
 
 export type CorrectTransactionInput = z.input<typeof correctTransactionSchema>;
@@ -82,6 +103,10 @@ export type CorrectTransactionErrorCode =
   | "TRANSACTION_NOT_CURRENT"
   | "INVALID_CORRECTION"
   | "INVALID_AMOUNT"
+  | "INVALID_CATEGORY"
+  | "CATEGORY_NOT_ALLOWED"
+  | "INVALID_COUNTERPARTY"
+  | "INVALID_OCCURRED_AT"
   | "ACCOUNT_NOT_FOUND"
   | "ACCOUNT_UNAVAILABLE"
   | "ACCOUNT_WORKSPACE_MISMATCH"

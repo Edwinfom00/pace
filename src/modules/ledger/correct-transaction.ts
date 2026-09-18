@@ -89,7 +89,15 @@ function presentCorrectedTransaction(transaction: LedgerTransactionRecord): Corr
 
 function correctionValidationErrorCode(error: z.ZodError): CorrectTransactionErrorCode {
   const paths = error.issues.map((issue) => issue.path.join("."));
-  return paths.some((path) => path.endsWith("amountMinor")) ? "INVALID_AMOUNT" : "INVALID_CORRECTION";
+  if (paths.some((path) => path.endsWith("amountMinor"))) return "INVALID_AMOUNT";
+  if (paths.some((path) => path.endsWith("categoryId"))) return "INVALID_CATEGORY";
+  if (paths.some((path) => path.endsWith("merchant") || path.endsWith("source"))) {
+    return "INVALID_COUNTERPARTY";
+  }
+  if (paths.some((path) => path.includes("occurredAt") || path.endsWith("date") || path.endsWith("time"))) {
+    return "INVALID_OCCURRED_AT";
+  }
+  return "INVALID_CORRECTION";
 }
 
 function correctionErrorCode(error: unknown): CorrectTransactionErrorCode {
@@ -113,6 +121,10 @@ function isCorrectionErrorCode(value: string): value is Extract<
   | "TRANSACTION_NOT_CURRENT"
   | "INVALID_CORRECTION"
   | "INVALID_AMOUNT"
+  | "INVALID_CATEGORY"
+  | "CATEGORY_NOT_ALLOWED"
+  | "INVALID_COUNTERPARTY"
+  | "INVALID_OCCURRED_AT"
   | "ACCOUNT_WORKSPACE_MISMATCH"
   | "SAME_TRANSFER_ACCOUNT"
   | "CROSS_CURRENCY_TRANSFER_UNSUPPORTED"
@@ -125,6 +137,10 @@ function isCorrectionErrorCode(value: string): value is Extract<
     "TRANSACTION_NOT_CURRENT",
     "INVALID_CORRECTION",
     "INVALID_AMOUNT",
+    "INVALID_CATEGORY",
+    "CATEGORY_NOT_ALLOWED",
+    "INVALID_COUNTERPARTY",
+    "INVALID_OCCURRED_AT",
     "ACCOUNT_WORKSPACE_MISMATCH",
     "SAME_TRANSFER_ACCOUNT",
     "CROSS_CURRENCY_TRANSFER_UNSUPPORTED",

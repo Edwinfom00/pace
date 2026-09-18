@@ -20,6 +20,7 @@ export function TransactionDetailActions({
   labels,
   language = "en",
   workspaceId,
+  workspaceSlug,
 }: {
   readonly accountOptions?: TransactionAccountOptionsState;
   readonly categories: readonly TransactionCategoryOption[];
@@ -30,6 +31,7 @@ export function TransactionDetailActions({
   readonly labels: TransactionDetailActionLabels;
   readonly language?: OnboardingLanguage;
   readonly workspaceId: string;
+  readonly workspaceSlug: string;
 }) {
   const editReason = transaction.capabilities.reasons.edit;
   const refundReason = transaction.capabilities.reasons.refund;
@@ -48,6 +50,7 @@ export function TransactionDetailActions({
             timeZone={timeZone}
             transaction={transaction}
             workspaceId={workspaceId}
+            workspaceSlug={workspaceSlug}
           />
         ) : (
           <ActionUnavailable

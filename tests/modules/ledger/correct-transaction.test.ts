@@ -67,6 +67,9 @@ async function fixture() {
   const foreignCash = await ledger.createAccount(owner, workspaceTwo, {
     name: "Foreign", type: "CASH", currency: "XAF",
   });
+  const household = await ledger.createCategory(owner, workspaceOne, {
+    name: "Household", kind: "EXPENSE",
+  });
 
   const expense = await ledger.createTransaction(owner, workspaceOne, {
     kind: "EXPENSE", status: "POSTED", accountId: cash.id, amountMinor: 100_000n, currency: "XAF",
@@ -90,6 +93,7 @@ async function fixture() {
     expectedUpdatedAt?: string;
     workspaceId?: string;
     reason?: string;
+    details?: object;
   } = {}) => correctTransactionForActor(options.actor === undefined ? owner : options.actor, {
     workspaceId: options.workspaceId ?? workspaceOne,
     transactionId,
@@ -98,9 +102,10 @@ async function fixture() {
     idempotencyKey: options.idempotencyKey ?? randomUUID(),
     expectedUpdatedAt: options.expectedUpdatedAt,
     reason: options.reason,
+    details: options.details,
   }, { ledger });
 
-  return { cash, correct, euro, expense, foreignCash, income, ledger, mobile, records, savings, transfer, workspaces };
+  return { cash, correct, euro, expense, foreignCash, household, income, ledger, mobile, records, savings, transfer, workspaces };
 }
 
 function accountBalance(records: InMemoryLedgerRepository, accountId: string): bigint {
@@ -185,6 +190,53 @@ test("expense and income account/amount correction move only the corrected curre
   assert.equal(incomeResult.correction.replacementTransaction.accountId, mobile.id);
 });
 
+test("mixed financial and final metadata changes create one authoritative replacement", async () => {
+  const { correct, expense, household, income, mobile, records } = await fixture();
+
+  const expenseResult = await correct(expense.id, "EXPENSE", {
+    amountMinor: "10000",
+    accountId: mobile.id,
+  }, {
+    details: {
+      merchant: "Corrected purchase",
+      categoryId: household.id,
+      occurredAt: { date: "2026-09-05", time: "10:15" },
+      note: "Corrected note",
+    },
+    reason: "Receipt OCR issue",
+  });
+  assert.equal(expenseResult.ok, true);
+  if (!expenseResult.ok) return;
+
+  const expenseReplacement = expenseResult.correction.replacementTransaction;
+  assert.equal(expenseReplacement.amountMinor, "10000");
+  assert.equal(expenseReplacement.accountId, mobile.id);
+  assert.equal(expenseReplacement.categoryId, household.id);
+  assert.equal(expenseReplacement.occurredAt, "2026-09-05T09:15:00.000Z");
+  assert.equal(expenseReplacement.note, "Corrected note");
+  assert.notEqual(expenseReplacement.merchantId, expense.merchantId);
+  assert.equal(records.merchants.get(expenseReplacement.merchantId!)?.name, "Corrected purchase");
+  assert.equal(records.transactions.get(expense.id)?.note, "Weekly food");
+  assert.equal(records.transactions.size, 5);
+
+  const incomeResult = await correct(income.id, "INCOME", { accountId: mobile.id }, {
+    details: { source: "Corrected client", note: "Corrected invoice" },
+  });
+  assert.equal(incomeResult.ok, true);
+  if (!incomeResult.ok) return;
+
+  const incomeReplacement = incomeResult.correction.replacementTransaction;
+  assert.equal(incomeReplacement.accountId, mobile.id);
+  assert.equal(incomeReplacement.categoryId, income.categoryId);
+  assert.equal(incomeReplacement.note, "Corrected invoice");
+  assert.equal(records.merchants.get(incomeReplacement.merchantId!)?.name, "Corrected client");
+
+  const audit = await records.listTransactionAudit(workspaceOne, expense.id);
+  assert.equal(audit.at(-1)?.metadata.reason, "Receipt OCR issue");
+  assert.ok("categoryId" in ((audit.at(-1)?.metadata.changes ?? {}) as object));
+  assert.ok("note" in ((audit.at(-1)?.metadata.changes ?? {}) as object));
+});
+
 test("transfer correction reverses both one-row legs and replacement remains a transfer outside spend/income KPIs", async () => {
   const { cash, correct, mobile, records, savings, transfer } = await fixture();
   const result = await correct(transfer.id, "TRANSFER", {
@@ -238,6 +290,9 @@ test("correction validates current type-aware invariants, workspace ownership, v
   assert.deepEqual(await correct(transfer.id, "TRANSFER", { toAccountId: euro.id }), {
     ok: false, code: "CROSS_CURRENCY_TRANSFER_UNSUPPORTED",
   });
+  assert.deepEqual(await correct(transfer.id, "TRANSFER", { amountMinor: "1" }, {
+    details: { merchant: "Not allowed on transfers" },
+  }), { ok: false, code: "INVALID_CORRECTION" });
   assert.deepEqual(await correct(expense.id, "EXPENSE", { amountMinor: "1" }, {
     actor: viewer,
   }), { ok: false, code: "WORKSPACE_FORBIDDEN" });
@@ -259,6 +314,10 @@ test("idempotency returns one correction, and chains make only the terminal repl
   if (!first.ok || !retry.ok) return;
   assert.equal(first.correction.id, retry.correction.id);
   assert.equal(records.transactionCorrections.size, 1);
+  assert.deepEqual(await correct(expense.id, "EXPENSE", { amountMinor: "9000" }, {
+    idempotencyKey,
+    details: { note: "A different correction intent" },
+  }), { ok: false, code: "CORRECTION_ALREADY_PROCESSED" });
   assert.deepEqual(await correct(expense.id, "EXPENSE", { amountMinor: "8000" }), {
     ok: false,
     code: "TRANSACTION_NOT_CURRENT",

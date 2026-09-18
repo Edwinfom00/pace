@@ -141,6 +141,7 @@ test("detail evaluates capabilities after workspace authorization and opens an e
     transaction: viewerDetail,
     labels,
     workspaceId,
+    workspaceSlug: "house",
   }));
 
   assert.match(viewerMarkup, /Edit transaction/);

@@ -45,6 +45,7 @@ export type TransactionEditLabels = {
   readonly fromAccountRequired: string;
   readonly toAccountRequired: string;
   readonly sameTransferAccount: string;
+  readonly crossCurrencyTransferUnsupported: string;
   readonly merchant: string;
   readonly merchantPlaceholder: string;
   readonly merchantHelper: string;
@@ -79,6 +80,12 @@ export type TransactionEditLabels = {
     readonly originalPreserved: string;
     readonly backToEdit: string;
     readonly apply: string;
+    readonly applying: string;
+    readonly failed: string;
+    readonly success: string;
+    readonly conflict: string;
+    readonly reloadLatest: string;
+    readonly notAllowed: string;
     readonly applyUnavailable: string;
     readonly incorrectAmount: string;
     readonly wrongAccount: string;
@@ -132,6 +139,7 @@ export function getTransactionEditLabels(labels: DashboardLabels): TransactionEd
     fromAccountRequired: labels["transactions.validation.fromAccountRequired"],
     toAccountRequired: labels["transactions.validation.toAccountRequired"],
     sameTransferAccount: labels["transactions.validation.sameTransferAccount"],
+    crossCurrencyTransferUnsupported: labels["transactions.validation.crossCurrencyTransferUnsupported"],
     merchant: labels["transactions.form.merchant"],
     merchantPlaceholder: labels["transactions.form.merchantPlaceholder"],
     merchantHelper: labels["transactions.form.merchantHelper"],
@@ -173,6 +181,12 @@ export function getTransactionEditLabels(labels: DashboardLabels): TransactionEd
       originalPreserved: labels["transactions.correction.originalPreserved"],
       backToEdit: labels["transactions.correction.backToEdit"],
       apply: labels["transactions.correction.apply"],
+      applying: labels["transactions.correction.applying"],
+      failed: labels["transactions.correction.failed"],
+      success: labels["transactions.correction.success"],
+      conflict: labels["transactions.correction.conflict"],
+      reloadLatest: labels["transactions.correction.reloadLatest"],
+      notAllowed: labels["transactions.correction.notAllowed"],
       applyUnavailable: labels["transactions.correction.applyUnavailable"],
       incorrectAmount: labels["transactions.correction.incorrectAmount"],
       wrongAccount: labels["transactions.correction.wrongAccount"],

@@ -50,6 +50,27 @@ export type TransactionEditCommand = {
   readonly patch: Record<string, unknown>;
 };
 
+export type TransactionCorrectionCommand = {
+  readonly workspaceId: string;
+  readonly transactionId: string;
+  readonly expectedUpdatedAt: string;
+  readonly idempotencyKey: string;
+  readonly kind: "EXPENSE" | "INCOME" | "TRANSFER";
+  readonly financialChanges: Record<string, string>;
+  readonly details?: Record<string, unknown>;
+  readonly reason?: string;
+};
+
+export type TransactionCorrectionFormError =
+  | "account"
+  | "amount"
+  | "conflict"
+  | "currency"
+  | "failed"
+  | "notAllowed"
+  | "transfer"
+  | null;
+
 export function createTransactionEditDraft(
   transaction: TransactionDetailData,
   timeZone: string,
@@ -151,6 +172,60 @@ export function createTransactionEditCommand(
     transactionId: transaction.id,
     expectedUpdatedAt: transaction.updatedAt,
     patch,
+  };
+}
+
+
+export function createTransactionCorrectionCommand(
+  workspaceId: string,
+  transaction: TransactionDetailData,
+  baseline: TransactionEditDraft,
+  draft: TransactionEditDraft,
+  idempotencyKey: string,
+  reason: string,
+): TransactionCorrectionCommand | null {
+  if (transaction.kind === "REFUND") return null;
+  const classification = classifyTransactionChanges(baseline, draft, transaction);
+  if (!classification.hasFinancialChanges) return null;
+
+  const financialChanges: Record<string, string> = {};
+  const details: Record<string, unknown> = {};
+  const initialAmount = parseTransactionEditAmount(baseline.amount, transaction.amount.currency);
+  const finalAmount = parseTransactionEditAmount(draft.amount, transaction.amount.currency);
+  if (!initialAmount || !finalAmount || finalAmount.minor <= 0n) return null;
+
+  if (initialAmount.minor !== finalAmount.minor) financialChanges.amountMinor = finalAmount.minor.toString();
+  if (baseline.date.getTime() !== draft.date.getTime() || baseline.time !== draft.time) {
+    details.occurredAt = {
+      date: formatManualTransactionDate(draft.date),
+      time: draft.time || null,
+    };
+  }
+  if (nullableText(baseline.note) !== nullableText(draft.note)) details.note = nullableText(draft.note);
+
+  if (transaction.kind === "EXPENSE" || transaction.kind === "INCOME") {
+    if (baseline.account !== draft.account) financialChanges.accountId = draft.account;
+    if (baseline.categoryId !== draft.categoryId) details.categoryId = draft.categoryId || null;
+    if (nullableText(baseline.counterparty) !== nullableText(draft.counterparty)) {
+      details[transaction.kind === "EXPENSE" ? "merchant" : "source"] = nullableText(draft.counterparty);
+    }
+  } else {
+    if (baseline.fromAccount !== draft.fromAccount) financialChanges.fromAccountId = draft.fromAccount;
+    if (baseline.toAccount !== draft.toAccount) financialChanges.toAccountId = draft.toAccount;
+  }
+
+  if (Object.keys(financialChanges).length === 0) return null;
+
+  const correctionReason = nullableText(reason);
+  return {
+    workspaceId,
+    transactionId: transaction.id,
+    expectedUpdatedAt: transaction.updatedAt,
+    idempotencyKey,
+    kind: transaction.kind,
+    financialChanges,
+    ...(Object.keys(details).length > 0 ? { details } : {}),
+    ...(correctionReason ? { reason: correctionReason } : {}),
   };
 }
 
@@ -283,10 +358,67 @@ export function mapTransactionEditFailure(code: string | undefined): {
   }
 }
 
+export function mapTransactionCorrectionFailure(code: string | undefined): {
+  readonly fieldErrors: TransactionEditFieldErrors;
+  readonly formError: TransactionCorrectionFormError;
+} {
+  return mapTransactionCorrectionFailureForKind(code);
+}
+
+export function mapTransactionCorrectionFailureForKind(
+  code: string | undefined,
+  kind?: TransactionDetailData["kind"],
+): {
+  readonly fieldErrors: TransactionEditFieldErrors;
+  readonly formError: TransactionCorrectionFormError;
+} {
+  const accountFields = kind === "TRANSFER"
+    ? { fromAccount: "fromAccount" as const, toAccount: "toAccount" as const }
+    : { account: "account" as const };
+  switch (code) {
+    case "INVALID_AMOUNT":
+      return { fieldErrors: { amount: "amount" }, formError: "amount" };
+    case "ACCOUNT_NOT_FOUND":
+    case "ACCOUNT_UNAVAILABLE":
+    case "ACCOUNT_WORKSPACE_MISMATCH":
+      return { fieldErrors: accountFields, formError: "account" };
+    case "SAME_TRANSFER_ACCOUNT":
+      return { fieldErrors: { toAccount: "toAccount" }, formError: "transfer" };
+    case "CROSS_CURRENCY_TRANSFER_UNSUPPORTED":
+    case "CURRENCY_MISMATCH":
+      return { fieldErrors: accountFields, formError: "currency" };
+    case "INVALID_CATEGORY":
+    case "CATEGORY_NOT_ALLOWED":
+      return { fieldErrors: { category: "category" }, formError: "failed" };
+    case "INVALID_COUNTERPARTY":
+      return { fieldErrors: { counterparty: "counterparty" }, formError: "failed" };
+    case "INVALID_OCCURRED_AT":
+      return { fieldErrors: { date: "date", time: "time" }, formError: "failed" };
+    case "TRANSACTION_CORRECTION_NOT_ALLOWED":
+      return { fieldErrors: {}, formError: "notAllowed" };
+    case "TRANSACTION_ALREADY_REVERSED":
+    case "TRANSACTION_NOT_CURRENT":
+    case "CONCURRENT_MODIFICATION":
+      return { fieldErrors: {}, formError: "conflict" };
+    default:
+      return { fieldErrors: {}, formError: "failed" };
+  }
+}
+
 export function transactionEditErrorCode(payload: unknown): string | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
   const code = (payload as { readonly code?: unknown }).code;
   return typeof code === "string" ? code : undefined;
+}
+
+export function correctionReplacementTransactionId(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const correction = (payload as { readonly correction?: unknown }).correction;
+  if (!correction || typeof correction !== "object" || Array.isArray(correction)) return null;
+  const replacement = (correction as { readonly replacementTransaction?: unknown }).replacementTransaction;
+  if (!replacement || typeof replacement !== "object" || Array.isArray(replacement)) return null;
+  const id = (replacement as { readonly id?: unknown }).id;
+  return typeof id === "string" && id.length > 0 ? id : null;
 }
 
 function nullableText(value: string): string | null {

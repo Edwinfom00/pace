@@ -59,12 +59,15 @@ export interface CreateLedgerFinancialCorrectionRecord {
   correction: CreateLedgerTransactionCorrectionRecord;
   reversal: CreateLedgerTransactionRecord;
   replacement: CreateLedgerTransactionRecord;
+  /** Created inside the same all-or-nothing correction write when needed. */
+  merchantToCreate: CreateLedgerMerchantRecord | null;
   audits: readonly [
     CreateLedgerTransactionAuditRecord,
     CreateLedgerTransactionAuditRecord,
     CreateLedgerTransactionAuditRecord,
   ];
 }
+
 
 /**
  * This is intentionally a closed, detail-only persistence shape. It has no
@@ -423,6 +426,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
   async createFinancialCorrection(
     input: CreateLedgerFinancialCorrectionRecord,
   ): Promise<LedgerTransactionCorrectionRecord | null> {
+    const merchant = input.merchantToCreate;
     const [originalAudit, reversalAudit, replacementAudit] = input.audits;
     const rows = await neonSql`
       WITH candidate AS (
@@ -440,6 +444,15 @@ export class DatabaseLedgerRepository implements LedgerRepository {
             WHERE original_transaction_id = ${input.originalTransactionId}
           )
         FOR UPDATE
+      ),
+      merchant_to_upsert AS (
+        INSERT INTO ledger_merchant (id, workspace_id, name, normalized_name, created_by_user_id)
+        SELECT ${merchant?.id ?? null}, ${merchant?.workspaceId ?? null}, ${merchant?.name ?? null},
+          ${merchant?.normalizedName ?? null}, ${merchant?.createdByUserId ?? null}
+        WHERE ${merchant !== null} AND EXISTS (SELECT 1 FROM candidate)
+        ON CONFLICT (workspace_id, normalized_name)
+          DO UPDATE SET normalized_name = EXCLUDED.normalized_name
+        RETURNING id
       ),
       reversal AS (
         INSERT INTO ledger_transaction (
@@ -471,7 +484,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         SELECT ${input.replacement.id}, ${input.replacement.workspaceId}, ${input.replacement.kind},
           ${input.replacement.status}, ${input.replacement.amountMinor}, ${input.replacement.currency},
           ${input.replacement.occurredAt}, ${input.replacement.accountId}, ${input.replacement.transferAccountId},
-          ${input.replacement.categoryId}, ${input.replacement.merchantId}, ${input.replacement.createdByUserId},
+          ${input.replacement.categoryId}, COALESCE((SELECT id FROM merchant_to_upsert), ${input.replacement.merchantId}), ${input.replacement.createdByUserId},
           ${input.replacement.paidByUserId}, ${input.replacement.transferGroupId},
           ${input.replacement.refundedTransactionId}, ${input.replacement.reversalOfTransactionId},
           ${JSON.stringify(input.replacement.source)}::jsonb, ${input.replacement.deduplicationFingerprint},

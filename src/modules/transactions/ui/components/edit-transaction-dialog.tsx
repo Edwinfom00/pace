@@ -22,13 +22,17 @@ import { EditTransactionForm } from "./edit-transaction-form";
 import { TransactionCorrectionReview, type TransactionCorrectionReason } from "./transaction-correction-review";
 import {
   classifyTransactionChanges,
+  correctionReplacementTransactionId,
+  createTransactionCorrectionCommand,
   createTransactionEditCommand,
   createTransactionEditDraft,
   getTransactionEditSubmissionIntent,
   mapTransactionEditFailure,
+  mapTransactionCorrectionFailureForKind,
   transactionEditErrorCode,
   validateTransactionEditDraft,
   type TransactionEditDraft,
+  type TransactionCorrectionFormError,
   type TransactionEditFieldErrors,
   type TransactionEditFormError,
 } from "./transaction-edit-flow";
@@ -44,6 +48,7 @@ export function EditTransactionDialog({
   timeZone,
   transaction,
   workspaceId,
+  workspaceSlug,
 }: {
   readonly accountOptions: TransactionAccountOptionsState;
   readonly categories: readonly TransactionCategoryOption[];
@@ -53,6 +58,7 @@ export function EditTransactionDialog({
   readonly timeZone: string;
   readonly transaction: TransactionDetailData;
   readonly workspaceId: string;
+  readonly workspaceSlug: string;
 }) {
   const router = useRouter();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -66,6 +72,8 @@ export function EditTransactionDialog({
   const [draft, setDraft] = useState(() => createTransactionEditDraft(transaction, timeZone));
   const [errors, setErrors] = useState<TransactionEditFieldErrors>({});
   const [formError, setFormError] = useState<TransactionEditFormError>(null);
+  const [correctionError, setCorrectionError] = useState<TransactionCorrectionFormError>(null);
+  const [correctionIdempotencyKey, setCorrectionIdempotencyKey] = useState<string | null>(null);
   const [reason, setReason] = useState<TransactionCorrectionReason>("");
   const [reasonDetails, setReasonDetails] = useState("");
   const classification = classifyTransactionChanges(baseline, draft, transaction);
@@ -85,6 +93,8 @@ export function EditTransactionDialog({
     setDraft(snapshot);
     setErrors({});
     setFormError(null);
+    setCorrectionError(null);
+    setCorrectionIdempotencyKey(null);
     setReason("");
     setReasonDetails("");
     setView("edit");
@@ -113,6 +123,22 @@ export function EditTransactionDialog({
     setDraft((current) => ({ ...current, ...change }));
     setErrors({});
     setFormError(null);
+    setCorrectionError(null);
+    setCorrectionIdempotencyKey(null);
+  }
+
+  function updateCorrectionReason(nextReason: TransactionCorrectionReason) {
+    if (isSaving) return;
+    setReason(nextReason);
+    setCorrectionError(null);
+    setCorrectionIdempotencyKey(null);
+  }
+
+  function updateCorrectionReasonDetails(nextReasonDetails: string) {
+    if (isSaving) return;
+    setReasonDetails(nextReasonDetails);
+    setCorrectionError(null);
+    setCorrectionIdempotencyKey(null);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -194,7 +220,91 @@ export function EditTransactionDialog({
     setFormError(failure.formError);
   }
 
+  function applyCorrectionServerFailure(code: string | undefined) {
+    const failure = mapTransactionCorrectionFailureForKind(code, transaction.kind);
+    setErrors({
+      ...(failure.fieldErrors.amount ? { amount: labels.amountInvalid } : {}),
+      ...(failure.fieldErrors.account ? { account: labels.accountUnavailable } : {}),
+      ...(failure.fieldErrors.fromAccount ? { fromAccount: labels.accountUnavailable } : {}),
+      ...(failure.fieldErrors.counterparty ? { counterparty: labels.counterpartyTooLong } : {}),
+      ...(failure.fieldErrors.category ? { category: labels.invalidCategory } : {}),
+      ...(failure.fieldErrors.date ? { date: labels.invalidDate } : {}),
+      ...(failure.fieldErrors.time ? { time: labels.invalidTime } : {}),
+      ...(failure.fieldErrors.toAccount ? { toAccount: labels.sameTransferAccount } : {}),
+    });
+    setCorrectionError(failure.formError);
+  }
+
+  async function applyCorrection() {
+    if (isSaving) return;
+    if (!classification.hasFinancialChanges) {
+      // Defensive guard: metadata-only changes remain on the safe-edit path.
+      setView("edit");
+      return;
+    }
+    if (!transaction.capabilities.canCorrectFinancials) {
+      setCorrectionError("notAllowed");
+      return;
+    }
+
+    const idempotencyKey = correctionIdempotencyKey ?? window.crypto.randomUUID();
+    if (!correctionIdempotencyKey) setCorrectionIdempotencyKey(idempotencyKey);
+    const command = createTransactionCorrectionCommand(
+      workspaceId,
+      transaction,
+      baseline,
+      draft,
+      idempotencyKey,
+      reason === "OTHER" ? reasonDetails : reason,
+    );
+    if (!command) {
+      setView("edit");
+      return;
+    }
+
+    setIsSaving(true);
+    setErrors({});
+    setCorrectionError(null);
+
+    try {
+      const response = await fetch(
+        `/api/workspaces/${encodeURIComponent(workspaceId)}/ledger/transactions/${encodeURIComponent(transaction.id)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(command),
+        },
+      );
+      const payload: unknown = await response.json().catch(() => null);
+      const replacementTransactionId = correctionReplacementTransactionId(payload);
+
+      if (!response.ok || !replacementTransactionId || replacementTransactionId === transaction.id) {
+        applyCorrectionServerFailure(transactionEditErrorCode(payload));
+        return;
+      }
+
+      setOpen(false);
+      resetForEdit();
+      router.refresh();
+      router.replace(
+        `/w/${encodeURIComponent(workspaceSlug)}/transactions/${encodeURIComponent(replacementTransactionId)}`,
+      );
+    } catch {
+      // Keep the same key: the request may have committed after the network
+      // became uncertain, and a retry must reconcile its canonical result.
+      setCorrectionError("failed");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function reloadTransaction() {
+    if (isSaving) return;
+    closeDialog();
+    router.refresh();
+  }
+
+  function reloadLatestTransaction() {
     if (isSaving) return;
     closeDialog();
     router.refresh();
@@ -258,9 +368,13 @@ export function EditTransactionDialog({
             draft={draft}
             labels={labels}
             locale={locale}
+            correctionError={correctionError}
+            isApplying={isSaving}
+            onApply={applyCorrection}
             onBack={backToEdit}
-            onReasonChange={setReason}
-            onReasonDetailsChange={setReasonDetails}
+            onReloadLatest={reloadLatestTransaction}
+            onReasonChange={updateCorrectionReason}
+            onReasonDetailsChange={updateCorrectionReasonDetails}
             reason={reason}
             reasonDetails={reasonDetails}
             transaction={transaction}
@@ -287,7 +401,7 @@ export function EditTransactionDialog({
             transaction={transaction}
           />
         )}
-        <p aria-live="polite" className="sr-only">{isSaving ? labels.saving : ""}</p>
+        <p aria-live="polite" className="sr-only">{isSaving ? view === "review" ? labels.correction.applying : labels.saving : ""}</p>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );

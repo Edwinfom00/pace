@@ -65,6 +65,7 @@ export function TransactionDetailView({
             timeZone={timeZone}
             transaction={transaction}
             workspaceId={workspaceId}
+            workspaceSlug={workspaceSlug}
           />
           <TransactionDetailActivity labels={labels} locale={locale} timeZone={timeZone} transaction={transaction} />
           <TransactionDetailAskPace categoryLabel={askPaceCategory} labels={labels.askPace} language={language} locale={locale} timeZone={timeZone} transaction={transaction} workspaceId={workspaceId} />

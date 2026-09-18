@@ -14,10 +14,14 @@ import { EditTransactionForm } from "@/modules/transactions/ui/components/edit-t
 import { TransactionCorrectionReview } from "@/modules/transactions/ui/components/transaction-correction-review";
 import {
   classifyTransactionChanges,
+  correctionReplacementTransactionId,
+  createTransactionCorrectionCommand,
   createTransactionEditCommand,
   createTransactionEditDraft,
   getTransactionEditSubmissionIntent,
   isTransactionEditDirty,
+  mapTransactionCorrectionFailure,
+  mapTransactionCorrectionFailureForKind,
   mapTransactionEditFailure,
   validateTransactionEditDraft,
 } from "@/modules/transactions/ui/components/transaction-edit-flow";
@@ -145,6 +149,90 @@ test("transfer exposes and submits only its safe date, time, and note details", 
   });
 });
 
+test("financial correction commands send canonical financial IDs plus final replacement details", () => {
+  const expense = transaction();
+  const expenseBaseline = createTransactionEditDraft(expense, timeZone);
+  const expenseDraft = {
+    ...expenseBaseline,
+    amount: "10000",
+    account: "account-3",
+    categoryId: "expense-household",
+    counterparty: "Corrected purchase",
+    note: "Corrected note",
+  };
+  assert.deepEqual(
+    createTransactionCorrectionCommand(
+      "workspace-1",
+      expense,
+      expenseBaseline,
+      expenseDraft,
+      "00000000-0000-4000-8000-000000000031",
+      "  Receipt issue  ",
+    ),
+    {
+      workspaceId: "workspace-1",
+      transactionId: expense.id,
+      expectedUpdatedAt: expense.updatedAt,
+      idempotencyKey: "00000000-0000-4000-8000-000000000031",
+      kind: "EXPENSE",
+      financialChanges: { amountMinor: "10000", accountId: "account-3" },
+      details: {
+        note: "Corrected note",
+        categoryId: "expense-household",
+        merchant: "Corrected purchase",
+      },
+      reason: "Receipt issue",
+    },
+  );
+
+  const income = transaction({
+    kind: "INCOME",
+    category: { id: "income-salary", name: "Salary", systemKey: "income:salary" },
+    merchant: { id: "merchant-2", name: "Client North", iconKey: null, merchantLogoKey: null },
+  });
+  const incomeBaseline = createTransactionEditDraft(income, timeZone);
+  const incomeCommand = createTransactionCorrectionCommand(
+    "workspace-1",
+    income,
+    incomeBaseline,
+    { ...incomeBaseline, account: "account-3", counterparty: "Client South" },
+    "00000000-0000-4000-8000-000000000032",
+    "",
+  );
+  assert.deepEqual(incomeCommand?.financialChanges, { accountId: "account-3" });
+  assert.deepEqual(incomeCommand?.details, { source: "Client South" });
+
+  const transfer = transaction({
+    kind: "TRANSFER",
+    merchant: null,
+    category: null,
+    transferAccount: { id: "account-2", name: "Savings", currency: "XAF", type: "SAVINGS" },
+  });
+  const transferBaseline = createTransactionEditDraft(transfer, timeZone);
+  const transferCommand = createTransactionCorrectionCommand(
+    "workspace-1",
+    transfer,
+    transferBaseline,
+    { ...transferBaseline, amount: "5000", fromAccount: "account-3", note: "Corrected transfer" },
+    "00000000-0000-4000-8000-000000000033",
+    "",
+  );
+  assert.deepEqual(transferCommand?.financialChanges, { amountMinor: "5000", fromAccountId: "account-3" });
+  assert.deepEqual(transferCommand?.details, { note: "Corrected transfer" });
+  assert.doesNotMatch(JSON.stringify(transferCommand), /category|merchant|source/);
+  assert.equal(
+    createTransactionCorrectionCommand(
+      "workspace-1",
+      expense,
+      expenseBaseline,
+      { ...expenseBaseline, note: "Only metadata" },
+      "00000000-0000-4000-8000-000000000034",
+      "",
+    ),
+    null,
+  );
+});
+
 test("the change classifier separates metadata and financial fields using normalized canonical money", () => {
   const expense = transaction();
   const original = createTransactionEditDraft(expense, timeZone);
@@ -252,7 +340,11 @@ test("review displays only changed values, preserves mixed changes, and does not
     draft,
     labels,
     locale: "en-US",
+    correctionError: null,
+    isApplying: false,
+    onApply: () => undefined,
     onBack: () => undefined,
+    onReloadLatest: () => undefined,
     onReasonChange: () => undefined,
     onReasonDetailsChange: () => undefined,
     reason: "OTHER",
@@ -271,7 +363,7 @@ test("review displays only changed values, preserves mixed changes, and does not
   assert.match(markup, /The original transaction will remain in your history/);
   assert.match(markup, /Receipt was entered twice/);
   assert.match(markup, /Apply correction/);
-  assert.match(markup, /disabled/);
+  assert.doesNotMatch(markup, /Applying corrections will be available soon/);
   assert.doesNotMatch(markup, /Merchant/);
   const review = await readFile("src/modules/transactions/ui/components/transaction-correction-review.tsx", "utf8");
   assert.doesNotMatch(review, /fetch\(/);
@@ -315,7 +407,11 @@ test("policy gates financial correction controls and financial drafts never reac
   assert.match(dialog, /function backToEdit\(\) \{\s+setView\("edit"\);/);
   assert.match(dialog, /const command = createTransactionEditCommand/);
   assert.match(dialog, /method: "PATCH"/);
-  assert.match(dialog, /onReasonChange=\{setReason\}/);
+  assert.match(dialog, /createTransactionCorrectionCommand/);
+  assert.match(dialog, /method: "POST"/);
+  assert.match(dialog, /router\.replace/);
+  assert.match(dialog, /setCorrectionIdempotencyKey\(null\)/);
+  assert.match(dialog, /onReasonChange=\{updateCorrectionReason\}/);
 });
 
 test("server failures map to safe fields or a non-overwriting conflict state", () => {
@@ -324,6 +420,17 @@ test("server failures map to safe fields or a non-overwriting conflict state", (
   assert.deepEqual(mapTransactionEditFailure("CONCURRENT_MODIFICATION"), { fieldErrors: {}, formError: "concurrent" });
   assert.deepEqual(mapTransactionEditFailure("TRANSACTION_EDIT_NOT_ALLOWED"), { fieldErrors: {}, formError: "notAllowed" });
   assert.deepEqual(mapTransactionEditFailure("UNEXPECTED"), { fieldErrors: {}, formError: "failed" });
+  assert.deepEqual(mapTransactionCorrectionFailure("INVALID_AMOUNT"), { fieldErrors: { amount: "amount" }, formError: "amount" });
+  assert.deepEqual(mapTransactionCorrectionFailure("SAME_TRANSFER_ACCOUNT"), { fieldErrors: { toAccount: "toAccount" }, formError: "transfer" });
+  assert.deepEqual(mapTransactionCorrectionFailure("CONCURRENT_MODIFICATION"), { fieldErrors: {}, formError: "conflict" });
+  assert.deepEqual(mapTransactionCorrectionFailure("TRANSACTION_CORRECTION_NOT_ALLOWED"), { fieldErrors: {}, formError: "notAllowed" });
+  assert.deepEqual(
+    mapTransactionCorrectionFailureForKind("CROSS_CURRENCY_TRANSFER_UNSUPPORTED", "TRANSFER"),
+    { fieldErrors: { fromAccount: "fromAccount", toAccount: "toAccount" }, formError: "currency" },
+  );
+  assert.deepEqual(mapTransactionCorrectionFailure("UNEXPECTED"), { fieldErrors: {}, formError: "failed" });
+  assert.equal(correctionReplacementTransactionId({ correction: { replacementTransaction: { id: "replacement-1" } } }), "replacement-1");
+  assert.equal(correctionReplacementTransactionId({ correction: { replacementTransaction: {} } }), null);
 });
 
 test("Edit and correction labels are complete in English, French, and German", () => {
@@ -336,5 +443,10 @@ test("Edit and correction labels are complete in English, French, and German", (
     assert.ok(translated.correction.reviewDescription.length > 0, language);
     assert.ok(translated.correction.originalPreserved.length > 0, language);
     assert.ok(translated.correction.apply.length > 0, language);
+    assert.ok(translated.correction.applying.length > 0, language);
+    assert.ok(translated.correction.failed.length > 0, language);
+    assert.ok(translated.correction.conflict.length > 0, language);
+    assert.ok(translated.correction.reloadLatest.length > 0, language);
+    assert.ok(translated.correction.notAllowed.length > 0, language);
   }
 });
