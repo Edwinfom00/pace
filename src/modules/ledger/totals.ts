@@ -1,19 +1,17 @@
 import type { LedgerTransactionRecord } from "./domain";
+import { currentFinancialTransactions } from "./correction-chain";
 
 export interface IncomeAndSpendingTotals {
   incomeMinor: bigint;
   spendingMinor: bigint;
 }
 
-/**
- * Produces a same-currency reporting total. Transfers intentionally have no
- * effect: moving money between accounts is neither income nor spending.
- */
+
 export function calculateIncomeAndSpendingTotals(
   transactions: readonly LedgerTransactionRecord[],
   currency: string,
 ): IncomeAndSpendingTotals {
-  return transactions.reduce<IncomeAndSpendingTotals>(
+  return currentFinancialTransactions(transactions).reduce<IncomeAndSpendingTotals>(
     (totals, transaction) => {
       if (transaction.status !== "POSTED" || transaction.currency !== currency) return totals;
       if (transaction.kind === "INCOME") {

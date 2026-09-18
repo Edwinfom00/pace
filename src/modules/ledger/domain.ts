@@ -64,6 +64,8 @@ export interface LedgerTransactionRecord {
   paidByUserId: string | null;
   transferGroupId: string | null;
   refundedTransactionId: string | null;
+  /** Present only on a bookkeeping reversal, never on a real-world refund. */
+  reversalOfTransactionId: string | null;
   source: SourceMetadata;
   deduplicationFingerprint: string | null;
   note: string | null;
@@ -71,7 +73,25 @@ export interface LedgerTransactionRecord {
   updatedAt: Date;
 }
 
-export const LEDGER_TRANSACTION_AUDIT_ACTIONS = ["UPDATE"] as const;
+export interface LedgerTransactionCorrectionRecord {
+  id: string;
+  workspaceId: string;
+  originalTransactionId: string;
+  reversalTransactionId: string;
+  replacementTransactionId: string;
+  actorUserId: string;
+  idempotencyKey: string;
+  commandFingerprint: string;
+  reason: string | null;
+  createdAt: Date;
+}
+
+export const LEDGER_TRANSACTION_AUDIT_ACTIONS = [
+  "UPDATE",
+  "CORRECT",
+  "CORRECTION_REVERSAL",
+  "CORRECTION_REPLACEMENT",
+] as const;
 export type LedgerTransactionAuditAction = (typeof LEDGER_TRANSACTION_AUDIT_ACTIONS)[number];
 
 export interface LedgerTransactionAuditRecord {

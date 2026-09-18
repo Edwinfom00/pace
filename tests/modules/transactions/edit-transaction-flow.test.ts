@@ -39,6 +39,7 @@ function transaction(overrides: Partial<TransactionDetailData> = {}): Transactio
     source: { origin: "MANUAL", channel: "WEB" },
     capabilities: {
       canEdit: true,
+      canCorrectFinancials: true,
       canRefund: true,
       canReverse: false,
       canDelete: false,
@@ -103,6 +104,7 @@ test("transfer exposes and submits only its safe date, time, and note details", 
     transferAccount: { id: "account-2", name: "Savings", currency: "XAF" },
     capabilities: {
       canEdit: true,
+      canCorrectFinancials: true,
       canRefund: false,
       canReverse: false,
       canDelete: false,

@@ -1,6 +1,7 @@
 import {
   calculateDailyPace,
   calculateTotals,
+  currentMoneyTransactions,
   money,
   sum,
   type MoneyTransaction,
@@ -230,7 +231,7 @@ function transactionsInPeriod(transactions: readonly MoneyTransaction[], period:
 }
 
 function transferTotal(transactions: readonly MoneyTransaction[], currency: string): bigint {
-  const values = transactions
+  const values = currentMoneyTransactions(transactions)
     .filter((transaction) => transaction.kind === "TRANSFER" && transaction.status === "POSTED")
     .map((transaction) => money(transaction.currency, transaction.amountMinor));
   return sum(values, { currency }).minor;

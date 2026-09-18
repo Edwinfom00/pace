@@ -18,7 +18,6 @@ import {
 export type MoneyTransactionKind = "EXPENSE" | "INCOME" | "TRANSFER" | "REFUND";
 export type MoneyTransactionStatus = "PENDING" | "POSTED";
 
-/** Structural input keeps the Money Engine independent of the database and AI layers. */
 export interface MoneyTransaction {
   readonly id: string;
   readonly kind: MoneyTransactionKind;
@@ -29,21 +28,18 @@ export interface MoneyTransaction {
   readonly categoryId: string | null;
   readonly merchantId: string | null;
   readonly refundedTransactionId: string | null;
+  readonly reversalOfTransactionId?: string | null;
 }
 
 export interface MoneyEngineOptions {
-  /** Financial reports default to posted transactions. Pending data is opt-in. */
   readonly statuses?: readonly MoneyTransactionStatus[];
-  /** Required for an empty report; otherwise inferred only from a single currency. */
   readonly currency?: CurrencyCode | string;
-  /** Required when an aggregate spans currencies. */
   readonly conversion?: CurrencyConversionStrategy;
 }
 
 export interface Totals {
   readonly currency: CurrencyCode;
   readonly income: Money;
-  /** Positive for net spending; refunds lower it and can make it negative. */
   readonly spending: Money;
   readonly net: Money;
   readonly incomeTransactionCount: number;
@@ -164,6 +160,18 @@ export function calculateDailyPace(
         ? null
         : money(target, totals.spending.minor / BigInt(elapsedDayCount)),
   };
+}
+
+
+export function currentMoneyTransactions<T extends MoneyTransaction>(transactions: readonly T[]): T[] {
+  const reversedIds = new Set(
+    transactions.flatMap((transaction) =>
+      transaction.reversalOfTransactionId == null ? [] : [transaction.reversalOfTransactionId],
+    ),
+  );
+  return transactions.filter(
+    (transaction) => transaction.reversalOfTransactionId == null && !reversedIds.has(transaction.id),
+  );
 }
 
 function summarizePeriodInCurrency(
@@ -314,7 +322,7 @@ function selectIncluded(
   options: MoneyEngineOptions,
 ): MoneyTransaction[] {
   const statuses = new Set(options.statuses ?? ["POSTED"]);
-  return transactions.filter((transaction) => {
+  return currentMoneyTransactions(transactions).filter((transaction) => {
     if (!statuses.has(transaction.status)) return false;
     if (!Number.isFinite(transaction.occurredAt.getTime())) {
       throw new Error(`Transaction ${transaction.id} has an invalid occurredAt instant.`);

@@ -19,6 +19,7 @@ import {
   ledgerCategories,
   ledgerMerchants,
   ledgerTransactionAudits,
+  ledgerTransactionCorrections,
   ledgerTransactions,
 } from "@/db/schema";
 
@@ -27,6 +28,7 @@ import type {
   LedgerCategoryRecord,
   LedgerMerchantRecord,
   LedgerTransactionAuditRecord,
+  LedgerTransactionCorrectionRecord,
   LedgerTransactionListFilters,
   LedgerTransactionListPageInput,
   LedgerTransactionListRow,
@@ -45,6 +47,24 @@ export type CreateLedgerTransactionRecord = Omit<
   "createdAt" | "updatedAt"
 >;
 export type CreateLedgerTransactionAuditRecord = Omit<LedgerTransactionAuditRecord, "createdAt">;
+export type CreateLedgerTransactionCorrectionRecord = Omit<
+  LedgerTransactionCorrectionRecord,
+  "createdAt"
+>;
+
+export interface CreateLedgerFinancialCorrectionRecord {
+  workspaceId: string;
+  originalTransactionId: string;
+  expectedOriginalUpdatedAt: Date | undefined;
+  correction: CreateLedgerTransactionCorrectionRecord;
+  reversal: CreateLedgerTransactionRecord;
+  replacement: CreateLedgerTransactionRecord;
+  audits: readonly [
+    CreateLedgerTransactionAuditRecord,
+    CreateLedgerTransactionAuditRecord,
+    CreateLedgerTransactionAuditRecord,
+  ];
+}
 
 /**
  * This is intentionally a closed, detail-only persistence shape. It has no
@@ -66,6 +86,8 @@ export interface LedgerRepository {
   createAccount(input: CreateLedgerAccountRecord): Promise<LedgerAccountRecord>;
   listAccounts(workspaceId: string): Promise<LedgerAccountRecord[]>;
   findAccount(workspaceId: string, accountId: string): Promise<LedgerAccountRecord | null>;
+  /** Internal correction validation only; never exposed to an untrusted caller. */
+  findAccountById(accountId: string): Promise<LedgerAccountRecord | null>;
 
   createCategory(input: CreateLedgerCategoryRecord): Promise<LedgerCategoryRecord>;
   listCategories(workspaceId: string): Promise<LedgerCategoryRecord[]>;
@@ -80,10 +102,7 @@ export interface LedgerRepository {
   ): Promise<LedgerMerchantRecord | null>;
 
   createTransaction(input: CreateLedgerTransactionRecord): Promise<LedgerTransactionRecord>;
-  /**
-   * Persists a newly discovered merchant and its transaction in one database
-   * batch. Existing merchants continue through createTransaction.
-   */
+
   createTransactionWithMerchant(
     input: CreateLedgerTransactionRecord,
     merchant: CreateLedgerMerchantRecord,
@@ -99,6 +118,23 @@ export interface LedgerRepository {
     workspaceId: string,
     fingerprint: string,
   ): Promise<LedgerTransactionRecord | null>;
+  findTransactionCorrectionByOriginal(
+    workspaceId: string,
+    originalTransactionId: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null>;
+  findTransactionCorrectionByTransactionId(
+    workspaceId: string,
+    transactionId: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null>;
+  findTransactionCorrectionByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null>;
+  /** Returns null when the optimistic candidate is no longer current. */
+  createFinancialCorrection(
+    input: CreateLedgerFinancialCorrectionRecord,
+  ): Promise<LedgerTransactionCorrectionRecord | null>;
   listTransactions(
     workspaceId: string,
     filters?: LedgerTransactionFilters,
@@ -138,6 +174,15 @@ export class DatabaseLedgerRepository implements LedgerRepository {
       .select()
       .from(ledgerAccounts)
       .where(and(eq(ledgerAccounts.workspaceId, workspaceId), eq(ledgerAccounts.id, accountId)))
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findAccountById(accountId: string): Promise<LedgerAccountRecord | null> {
+    const [record] = await db
+      .select()
+      .from(ledgerAccounts)
+      .where(eq(ledgerAccounts.id, accountId))
       .limit(1);
     return record ?? null;
   }
@@ -266,6 +311,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
           category_id AS "categoryId", merchant_id AS "merchantId",
           created_by_user_id AS "createdByUserId", paid_by_user_id AS "paidByUserId",
           transfer_group_id AS "transferGroupId", refunded_transaction_id AS "refundedTransactionId",
+          reversal_of_transaction_id AS "reversalOfTransactionId",
           source, deduplication_fingerprint AS "deduplicationFingerprint", note,
           created_at AS "createdAt", updated_at AS "updatedAt"
       ),
@@ -315,6 +361,161 @@ export class DatabaseLedgerRepository implements LedgerRepository {
       )
       .limit(1);
     return record ?? null;
+  }
+
+  async findTransactionCorrectionByOriginal(
+    workspaceId: string,
+    originalTransactionId: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null> {
+    const [record] = await db
+      .select()
+      .from(ledgerTransactionCorrections)
+      .where(
+        and(
+          eq(ledgerTransactionCorrections.workspaceId, workspaceId),
+          eq(ledgerTransactionCorrections.originalTransactionId, originalTransactionId),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findTransactionCorrectionByTransactionId(
+    workspaceId: string,
+    transactionId: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null> {
+    const [record] = await db
+      .select()
+      .from(ledgerTransactionCorrections)
+      .where(
+        and(
+          eq(ledgerTransactionCorrections.workspaceId, workspaceId),
+          or(
+            eq(ledgerTransactionCorrections.originalTransactionId, transactionId),
+            eq(ledgerTransactionCorrections.reversalTransactionId, transactionId),
+            eq(ledgerTransactionCorrections.replacementTransactionId, transactionId),
+          ),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findTransactionCorrectionByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null> {
+    const [record] = await db
+      .select()
+      .from(ledgerTransactionCorrections)
+      .where(
+        and(
+          eq(ledgerTransactionCorrections.workspaceId, workspaceId),
+          eq(ledgerTransactionCorrections.actorUserId, actorUserId),
+          eq(ledgerTransactionCorrections.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
+  async createFinancialCorrection(
+    input: CreateLedgerFinancialCorrectionRecord,
+  ): Promise<LedgerTransactionCorrectionRecord | null> {
+    const [originalAudit, reversalAudit, replacementAudit] = input.audits;
+    const rows = await neonSql`
+      WITH candidate AS (
+        SELECT id
+        FROM ledger_transaction
+        WHERE workspace_id = ${input.workspaceId}
+          AND id = ${input.originalTransactionId}
+          AND (
+            ${input.expectedOriginalUpdatedAt ?? null}::timestamptz IS NULL
+            OR date_trunc('milliseconds', updated_at) = ${input.expectedOriginalUpdatedAt ?? null}
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ledger_transaction_correction
+            WHERE original_transaction_id = ${input.originalTransactionId}
+          )
+        FOR UPDATE
+      ),
+      reversal AS (
+        INSERT INTO ledger_transaction (
+          id, workspace_id, kind, status, amount_minor, currency, occurred_at,
+          account_id, transfer_account_id, category_id, merchant_id,
+          created_by_user_id, paid_by_user_id, transfer_group_id,
+          refunded_transaction_id, reversal_of_transaction_id, source,
+          deduplication_fingerprint, note
+        )
+        SELECT ${input.reversal.id}, ${input.reversal.workspaceId}, ${input.reversal.kind},
+          ${input.reversal.status}, ${input.reversal.amountMinor}, ${input.reversal.currency},
+          ${input.reversal.occurredAt}, ${input.reversal.accountId}, ${input.reversal.transferAccountId},
+          ${input.reversal.categoryId}, ${input.reversal.merchantId}, ${input.reversal.createdByUserId},
+          ${input.reversal.paidByUserId}, ${input.reversal.transferGroupId},
+          ${input.reversal.refundedTransactionId}, ${input.reversal.reversalOfTransactionId},
+          ${JSON.stringify(input.reversal.source)}::jsonb, ${input.reversal.deduplicationFingerprint},
+          ${input.reversal.note}
+        WHERE EXISTS (SELECT 1 FROM candidate)
+        RETURNING id
+      ),
+      replacement AS (
+        INSERT INTO ledger_transaction (
+          id, workspace_id, kind, status, amount_minor, currency, occurred_at,
+          account_id, transfer_account_id, category_id, merchant_id,
+          created_by_user_id, paid_by_user_id, transfer_group_id,
+          refunded_transaction_id, reversal_of_transaction_id, source,
+          deduplication_fingerprint, note
+        )
+        SELECT ${input.replacement.id}, ${input.replacement.workspaceId}, ${input.replacement.kind},
+          ${input.replacement.status}, ${input.replacement.amountMinor}, ${input.replacement.currency},
+          ${input.replacement.occurredAt}, ${input.replacement.accountId}, ${input.replacement.transferAccountId},
+          ${input.replacement.categoryId}, ${input.replacement.merchantId}, ${input.replacement.createdByUserId},
+          ${input.replacement.paidByUserId}, ${input.replacement.transferGroupId},
+          ${input.replacement.refundedTransactionId}, ${input.replacement.reversalOfTransactionId},
+          ${JSON.stringify(input.replacement.source)}::jsonb, ${input.replacement.deduplicationFingerprint},
+          ${input.replacement.note}
+        WHERE EXISTS (SELECT 1 FROM reversal)
+        RETURNING id
+      ),
+      correction AS (
+        INSERT INTO ledger_transaction_correction (
+          id, workspace_id, original_transaction_id, reversal_transaction_id,
+          replacement_transaction_id, actor_user_id, idempotency_key,
+          command_fingerprint, reason
+        )
+        SELECT ${input.correction.id}, ${input.correction.workspaceId}, candidate.id,
+          reversal.id, replacement.id, ${input.correction.actorUserId},
+          ${input.correction.idempotencyKey}, ${input.correction.commandFingerprint},
+          ${input.correction.reason}
+        FROM candidate
+        CROSS JOIN reversal
+        CROSS JOIN replacement
+        RETURNING id
+      ),
+      original_audit AS (
+        INSERT INTO ledger_transaction_audit (id, workspace_id, transaction_id, actor_user_id, action, metadata)
+        SELECT ${originalAudit.id}, ${originalAudit.workspaceId}, ${originalAudit.transactionId},
+          ${originalAudit.actorUserId}, ${originalAudit.action}, ${JSON.stringify(originalAudit.metadata)}::jsonb
+        WHERE EXISTS (SELECT 1 FROM correction)
+      ),
+      reversal_audit AS (
+        INSERT INTO ledger_transaction_audit (id, workspace_id, transaction_id, actor_user_id, action, metadata)
+        SELECT ${reversalAudit.id}, ${reversalAudit.workspaceId}, ${reversalAudit.transactionId},
+          ${reversalAudit.actorUserId}, ${reversalAudit.action}, ${JSON.stringify(reversalAudit.metadata)}::jsonb
+        WHERE EXISTS (SELECT 1 FROM correction)
+      ),
+      replacement_audit AS (
+        INSERT INTO ledger_transaction_audit (id, workspace_id, transaction_id, actor_user_id, action, metadata)
+        SELECT ${replacementAudit.id}, ${replacementAudit.workspaceId}, ${replacementAudit.transactionId},
+          ${replacementAudit.actorUserId}, ${replacementAudit.action}, ${JSON.stringify(replacementAudit.metadata)}::jsonb
+        WHERE EXISTS (SELECT 1 FROM correction)
+      )
+      SELECT id FROM correction;
+    ` as unknown as readonly { id: string }[];
+    if (!rows[0]) return null;
+    return this.findTransactionCorrectionByOriginal(input.workspaceId, input.originalTransactionId);
   }
 
   async listTransactions(

@@ -25,6 +25,8 @@ type TransactionFinancialAction = "edit" | "refund" | "reverse" | "delete";
 
 export type TransactionCapabilities = {
   readonly canEdit: boolean;
+  /** Financial correction is distinct from safe metadata editing. */
+  readonly canCorrectFinancials: boolean;
   readonly canRefund: boolean;
   readonly canReverse: boolean;
   readonly canDelete: boolean;
@@ -40,6 +42,8 @@ export type TransactionActionPolicyInput = {
   readonly workspaceRole: WorkspaceRole;
   /** Includes every existing refund, matching the ledger service's refund limit. */
   readonly refundedAmountMinor: bigint;
+  /** A historical original or reversal may never start another correction. */
+  readonly isCurrentEffective?: boolean;
 };
 
 
@@ -47,6 +51,7 @@ export function getTransactionCapabilities({
   transaction,
   workspaceRole,
   refundedAmountMinor,
+  isCurrentEffective = true,
 }: TransactionActionPolicyInput): TransactionCapabilities {
   const canManageLedger = canPerformWorkspaceAction(workspaceRole, "manage_ledger");
   const canViewTechnicalDetails = canPerformWorkspaceAction(workspaceRole, "read");
@@ -54,6 +59,7 @@ export function getTransactionCapabilities({
   if (!canManageLedger) {
     return {
       canEdit: false,
+      canCorrectFinancials: false,
       canRefund: false,
       canReverse: false,
       canDelete: false,
@@ -69,12 +75,12 @@ export function getTransactionCapabilities({
 
   const editReason = getEditReason(transaction);
   const refundReason = getRefundReason(transaction, refundedAmountMinor);
+  const canCorrectFinancials = isCorrectionAllowed(transaction, isCurrentEffective);
 
   return {
     canEdit: editReason === null,
+    canCorrectFinancials,
     canRefund: refundReason === null,
-    // Ledger transactions are append-only. The current model does not yet have
-    // a reversal representation that can preserve the original transaction.
     canReverse: false,
     // Transactions have no draft/delete/archive lifecycle in the ledger.
     canDelete: false,
@@ -86,6 +92,14 @@ export function getTransactionCapabilities({
       delete: "DELETE_NOT_SUPPORTED",
     },
   };
+}
+
+function isCorrectionAllowed(
+  transaction: TransactionActionPolicyInput["transaction"],
+  isCurrentEffective: boolean,
+): boolean {
+  if (!isCurrentEffective || transaction.status !== "POSTED" || isImportedTransaction(transaction)) return false;
+  return transaction.kind === "EXPENSE" || transaction.kind === "INCOME" || transaction.kind === "TRANSFER";
 }
 
 function getEditReason(transaction: TransactionActionPolicyInput["transaction"]): TransactionActionReason | null {

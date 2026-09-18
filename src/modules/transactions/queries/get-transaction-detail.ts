@@ -10,6 +10,7 @@ import type {
   LedgerTransactionRecord,
 } from "@/modules/ledger/domain";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
+import { currentFinancialTransactions, isCurrentFinancialTransaction } from "@/modules/ledger/correction-chain";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 import type {
@@ -76,6 +77,7 @@ export async function getTransactionDetail(
       transaction,
       workspaceRole: membership.role,
       refundedAmountMinor: refundedAmountFor(transaction, workspaceTransactions),
+      isCurrentEffective: isCurrentFinancialTransaction(transaction, workspaceTransactions),
     }),
     context: {
       accountImpacts: [account, transferAccount]
@@ -170,7 +172,7 @@ function mapMonthlyCategoryContext(
   if (selected.kind !== "EXPENSE" && selected.kind !== "INCOME") return null;
 
   const period = calendarMonth(selected.occurredAt, timeZone);
-  const total = transactions.reduce((sum, transaction) => {
+  const total = currentFinancialTransactions(transactions).reduce((sum, transaction) => {
     if (
       transaction.status !== "POSTED"
       || transaction.kind !== selected.kind
@@ -196,10 +198,12 @@ function accountEffect(transaction: LedgerTransactionRecord, accountId: string):
   if (transaction.status !== "POSTED") return 0n;
 
   if (transaction.kind === "INCOME" || transaction.kind === "REFUND") {
-    return transaction.accountId === accountId ? transaction.amountMinor : 0n;
+    const amount = transaction.reversalOfTransactionId == null ? transaction.amountMinor : -transaction.amountMinor;
+    return transaction.accountId === accountId ? amount : 0n;
   }
   if (transaction.kind === "EXPENSE") {
-    return transaction.accountId === accountId ? -transaction.amountMinor : 0n;
+    const amount = transaction.reversalOfTransactionId == null ? -transaction.amountMinor : transaction.amountMinor;
+    return transaction.accountId === accountId ? amount : 0n;
   }
   if (transaction.kind === "TRANSFER") {
     if (transaction.accountId === accountId) return -transaction.amountMinor;

@@ -157,6 +157,10 @@ export const ledgerTransactions = pgTable(
       (): AnyPgColumn => ledgerTransactions.id,
       { onDelete: "restrict" },
     ),
+    reversalOfTransactionId: text("reversal_of_transaction_id").references(
+      (): AnyPgColumn => ledgerTransactions.id,
+      { onDelete: "restrict" },
+    ),
     source: jsonb("source").$type<Record<string, unknown>>().notNull().default({}),
     deduplicationFingerprint: varchar("deduplication_fingerprint", { length: 128 }),
     note: varchar("note", { length: 1_000 }),
@@ -173,6 +177,7 @@ export const ledgerTransactions = pgTable(
     index("ledger_transaction_workspace_merchant_idx").on(table.workspaceId, table.merchantId),
     index("ledger_transaction_transfer_group_idx").on(table.transferGroupId),
     index("ledger_transaction_refunded_transaction_idx").on(table.refundedTransactionId),
+    index("ledger_transaction_reversal_of_transaction_idx").on(table.reversalOfTransactionId),
     uniqueIndex("ledger_transaction_workspace_fingerprint_unique")
       .on(table.workspaceId, table.deduplicationFingerprint)
       .where(sql`${table.deduplicationFingerprint} IS NOT NULL`),
@@ -210,6 +215,46 @@ export const ledgerTransactions = pgTable(
         AND ${table.transferGroupId} IS NULL
       )`,
     ),
+  ],
+);
+
+
+export const ledgerTransactionCorrections = pgTable(
+  "ledger_transaction_correction",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    originalTransactionId: text("original_transaction_id")
+      .notNull()
+      .references(() => ledgerTransactions.id, { onDelete: "restrict" }),
+    reversalTransactionId: text("reversal_transaction_id")
+      .notNull()
+      .references(() => ledgerTransactions.id, { onDelete: "restrict" }),
+    replacementTransactionId: text("replacement_transaction_id")
+      .notNull()
+      .references(() => ledgerTransactions.id, { onDelete: "restrict" }),
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }).notNull(),
+    commandFingerprint: varchar("command_fingerprint", { length: 128 }).notNull(),
+    reason: varchar("reason", { length: 500 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("ledger_transaction_correction_original_unique").on(table.originalTransactionId),
+    uniqueIndex("ledger_transaction_correction_reversal_unique").on(table.reversalTransactionId),
+    uniqueIndex("ledger_transaction_correction_replacement_unique").on(table.replacementTransactionId),
+    uniqueIndex("ledger_transaction_correction_workspace_actor_key_unique").on(
+      table.workspaceId,
+      table.actorUserId,
+      table.idempotencyKey,
+    ),
+    index("ledger_transaction_correction_workspace_created_idx").on(table.workspaceId, table.createdAt),
   ],
 );
 

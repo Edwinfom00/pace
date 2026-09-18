@@ -3,6 +3,7 @@ import type {
   LedgerCategoryRecord,
   LedgerMerchantRecord,
   LedgerTransactionAuditRecord,
+  LedgerTransactionCorrectionRecord,
   LedgerTransactionListFilters,
   LedgerTransactionListPageInput,
   LedgerTransactionListRow,
@@ -14,6 +15,7 @@ import type {
   CreateLedgerCategoryRecord,
   CreateLedgerMerchantRecord,
   CreateLedgerTransactionAuditRecord,
+  CreateLedgerFinancialCorrectionRecord,
   CreateLedgerTransactionRecord,
   LedgerRepository,
   UpdateLedgerTransactionDetailsRecord,
@@ -31,6 +33,9 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   readonly merchants = new Map<string, LedgerMerchantRecord>();
   readonly transactions = new Map<string, LedgerTransactionRecord>();
   readonly transactionAudits = new Map<string, LedgerTransactionAuditRecord>();
+  readonly transactionCorrections = new Map<string, LedgerTransactionCorrectionRecord>();
+  /** Test-only fault injection proves correction writes commit atomically. */
+  failCorrectionStage: "reversal" | "replacement" | "linkage" | null = null;
 
   constructor() {
     const now = new Date("2026-01-01T00:00:00.000Z");
@@ -234,6 +239,101 @@ export class InMemoryLedgerRepository implements LedgerRepository {
           transaction.workspaceId === workspaceId && transaction.deduplicationFingerprint === fingerprint,
       ) ?? null
     );
+  }
+
+  async findAccountById(accountId: string): Promise<LedgerAccountRecord | null> {
+    return this.accounts.get(accountId) ?? null;
+  }
+
+  async findTransactionCorrectionByOriginal(
+    workspaceId: string,
+    originalTransactionId: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null> {
+    return (
+      [...this.transactionCorrections.values()].find(
+        (correction) =>
+          correction.workspaceId === workspaceId && correction.originalTransactionId === originalTransactionId,
+      ) ?? null
+    );
+  }
+
+  async findTransactionCorrectionByTransactionId(
+    workspaceId: string,
+    transactionId: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null> {
+    return (
+      [...this.transactionCorrections.values()].find(
+        (correction) =>
+          correction.workspaceId === workspaceId
+          && (
+            correction.originalTransactionId === transactionId
+            || correction.reversalTransactionId === transactionId
+            || correction.replacementTransactionId === transactionId
+          ),
+      ) ?? null
+    );
+  }
+
+  async findTransactionCorrectionByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<LedgerTransactionCorrectionRecord | null> {
+    return (
+      [...this.transactionCorrections.values()].find(
+        (correction) =>
+          correction.workspaceId === workspaceId
+          && correction.actorUserId === actorUserId
+          && correction.idempotencyKey === idempotencyKey,
+      ) ?? null
+    );
+  }
+
+  async createFinancialCorrection(
+    input: CreateLedgerFinancialCorrectionRecord,
+  ): Promise<LedgerTransactionCorrectionRecord | null> {
+    // Keep this preflight synchronous: async test callers can race exactly as
+    // HTTP callers do, while one atomic in-memory commit still has one winner.
+    const candidate = this.transactions.get(input.originalTransactionId);
+    const original = candidate?.workspaceId === input.workspaceId ? candidate : null;
+    if (
+      !original
+      || (input.expectedOriginalUpdatedAt
+        && original.updatedAt.getTime() !== input.expectedOriginalUpdatedAt.getTime())
+      || [...this.transactionCorrections.values()].some(
+        (correction) =>
+          correction.workspaceId === input.workspaceId
+          && correction.originalTransactionId === input.originalTransactionId,
+      )
+    ) {
+      return null;
+    }
+    if ([...this.transactionCorrections.values()].some(
+      (correction) =>
+        correction.workspaceId === input.workspaceId
+        && correction.actorUserId === input.correction.actorUserId
+        && correction.idempotencyKey === input.correction.idempotencyKey,
+    )) {
+      throw new Error("Correction idempotency key already exists.");
+    }
+    if (this.failCorrectionStage === "reversal") throw new Error("Reversal write failed.");
+    if (this.failCorrectionStage === "replacement") throw new Error("Replacement write failed.");
+    if (this.failCorrectionStage === "linkage") throw new Error("Correction linkage failed.");
+
+    // Nothing reaches the backing maps until every candidate has been checked.
+    // This mirrors the production CTE transaction's all-or-nothing commit.
+    const now = new Date();
+    const reversal: LedgerTransactionRecord = { ...input.reversal, createdAt: now, updatedAt: now };
+    const replacement: LedgerTransactionRecord = { ...input.replacement, createdAt: now, updatedAt: now };
+    const correction: LedgerTransactionCorrectionRecord = { ...input.correction, createdAt: now };
+    if (this.transactions.has(reversal.id) || this.transactions.has(replacement.id)) {
+      throw new Error("Correction transaction ID already exists.");
+    }
+    this.transactions.set(reversal.id, reversal);
+    this.transactions.set(replacement.id, replacement);
+    this.transactionCorrections.set(correction.id, correction);
+    for (const audit of input.audits) this.createTransactionAudit(audit, now);
+    return correction;
   }
 
   async listTransactions(

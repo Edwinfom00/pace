@@ -170,6 +170,7 @@ test("deduplication skips exact records while retaining likely matches for revie
     paidByUserId: null,
     transferGroupId: null,
     refundedTransactionId: null,
+    reversalOfTransactionId: null,
     source: { importDescription: "Netflix subscription" },
     deduplicationFingerprint: "existing-fingerprint",
     note: "Netflix subscription",

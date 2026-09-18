@@ -124,6 +124,7 @@ function recurringTransaction(id: string, occurredAt: string, amountMinor: bigin
     paidByUserId: "owner",
     transferGroupId: null,
     refundedTransactionId: null,
+    reversalOfTransactionId: null,
     source: {},
     deduplicationFingerprint: id,
     note: null,

@@ -40,6 +40,7 @@ function ledgerTransaction(
     paidByUserId: null,
     transferGroupId: null,
     refundedTransactionId: null,
+    reversalOfTransactionId: null,
     source: { provider: "manual" },
     deduplicationFingerprint: null,
     note: null,
