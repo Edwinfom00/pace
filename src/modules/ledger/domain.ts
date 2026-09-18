@@ -91,6 +91,8 @@ export const LEDGER_TRANSACTION_AUDIT_ACTIONS = [
   "CORRECT",
   "CORRECTION_REVERSAL",
   "CORRECTION_REPLACEMENT",
+  "REFUND_ISSUED",
+  "REFUND_CREATED",
 ] as const;
 export type LedgerTransactionAuditAction = (typeof LEDGER_TRANSACTION_AUDIT_ACTIONS)[number];
 

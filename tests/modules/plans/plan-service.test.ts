@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { AuthorizationError, NotFoundError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
+import { toCurrencyCode } from "@/money/currency";
 import { CurrencyMismatchError } from "@/money/money";
 import { LedgerService } from "@/modules/ledger/ledger-service";
 import { PlansService } from "@/modules/plans/plan-service";
@@ -69,13 +70,14 @@ test("budget summaries use only posted ledger transactions, exclude transfers, a
     accountId: cash.id,
     categoryId: SYSTEM_GROCERIES_ID,
   });
-  await ledger.createTransaction(owner, workspaceOne, {
-    kind: "REFUND",
-    amountMinor: "100",
-    currency: "XAF",
-    occurredAt: "2026-06-12T12:00:00.000Z",
+  await ledger.createRefund(owner, {
+    workspaceId: workspaceOne,
+    expenseTransactionId: expense.id,
+    amountMinor: 100n,
+    currency: toCurrencyCode("XAF"),
+    occurredAt: new Date("2026-06-12T12:00:00.000Z"),
     accountId: cash.id,
-    refundedTransactionId: expense.id,
+    idempotencyKey: "10000000-0000-4000-8000-000000000001",
   });
   await ledger.createTransaction(owner, workspaceOne, {
     kind: "TRANSFER",

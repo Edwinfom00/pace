@@ -16,6 +16,7 @@ import type {
   CreateLedgerMerchantRecord,
   CreateLedgerTransactionAuditRecord,
   CreateLedgerFinancialCorrectionRecord,
+  CreateLedgerFinancialRefundRecord,
   CreateLedgerTransactionRecord,
   LedgerRepository,
   UpdateLedgerTransactionDetailsRecord,
@@ -36,6 +37,8 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   readonly transactionCorrections = new Map<string, LedgerTransactionCorrectionRecord>();
   /** Test-only fault injection proves correction writes commit atomically. */
   failCorrectionStage: "reversal" | "replacement" | "linkage" | null = null;
+  /** Test-only fault injection proves refund writes commit atomically. */
+  failRefundStage: "refund" | "audit" | null = null;
 
   constructor() {
     const now = new Date("2026-01-01T00:00:00.000Z");
@@ -356,6 +359,73 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     return correction;
   }
 
+  async createFinancialRefund(
+    input: CreateLedgerFinancialRefundRecord,
+  ): Promise<LedgerTransactionRecord | null> {
+    // Do not await before this check-and-commit. Parallel test callers must
+    // observe the same all-or-nothing critical section as the serializable
+    // production transaction rather than interleave between sum and insert.
+    const candidate = this.transactions.get(input.sourceExpenseId);
+    const source = candidate?.workspaceId === input.workspaceId ? candidate : null;
+    const outgoing = [...this.transactionCorrections.values()].find(
+      (correction) =>
+        correction.workspaceId === input.workspaceId
+        && correction.originalTransactionId === input.sourceExpenseId,
+    ) ?? null;
+    const enclosing = [...this.transactionCorrections.values()].find(
+      (correction) =>
+        correction.workspaceId === input.workspaceId
+        && (
+          correction.originalTransactionId === input.sourceExpenseId
+          || correction.reversalTransactionId === input.sourceExpenseId
+          || correction.replacementTransactionId === input.sourceExpenseId
+        ),
+    ) ?? null;
+    if (
+      !source
+      || source.kind !== "EXPENSE"
+      || source.status !== "POSTED"
+      || outgoing
+      || enclosing?.reversalTransactionId === source.id
+    ) {
+      return null;
+    }
+
+    const lineage = new Set<string>([source.id]);
+    let cursor = source.id;
+    while (true) {
+      const correction = [...this.transactionCorrections.values()].find(
+        (candidateCorrection) =>
+          candidateCorrection.workspaceId === input.workspaceId
+          && candidateCorrection.replacementTransactionId === cursor,
+      );
+      if (!correction || lineage.has(correction.originalTransactionId)) break;
+      lineage.add(correction.originalTransactionId);
+      cursor = correction.originalTransactionId;
+    }
+    const existingRefunds = [...this.transactions.values()].filter(
+      (transaction) =>
+        transaction.workspaceId === input.workspaceId
+        && transaction.kind === "REFUND"
+        && transaction.status === "POSTED"
+        && transaction.refundedTransactionId !== null
+        && lineage.has(transaction.refundedTransactionId),
+    );
+    const refundedMinor = existingRefunds.reduce((total, refund) => total + refund.amountMinor, 0n);
+    if (refundedMinor + input.refund.amountMinor > source.amountMinor) return null;
+    this.assertTransactionFingerprintAvailable(input.refund);
+    if (this.failRefundStage === "refund") throw new Error("Refund write failed.");
+    if (this.failRefundStage === "audit") throw new Error("Refund audit write failed.");
+
+    // All validation and injected failures happen before this one commit,
+    // mirroring the production serializable CTE transaction.
+    const now = new Date();
+    const refund: LedgerTransactionRecord = { ...input.refund, createdAt: now, updatedAt: now };
+    this.transactions.set(refund.id, refund);
+    for (const audit of input.audits) this.createTransactionAudit(audit, now);
+    return refund;
+  }
+
   async listTransactions(
     workspaceId: string,
     filters: LedgerTransactionFilters = {},
@@ -420,8 +490,33 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       (transaction) =>
         transaction.workspaceId === workspaceId &&
         transaction.kind === "REFUND" &&
+        transaction.status === "POSTED" &&
         transaction.refundedTransactionId === transactionId,
     );
+  }
+
+  async listRefundsForEffectiveExpense(
+    workspaceId: string,
+    effectiveExpenseTransactionId: string,
+  ): Promise<LedgerTransactionRecord[]> {
+    const lineage = new Set<string>([effectiveExpenseTransactionId]);
+    let cursor = effectiveExpenseTransactionId;
+    while (true) {
+      const correction = await this.findTransactionCorrectionByReplacement(workspaceId, cursor);
+      if (!correction || lineage.has(correction.originalTransactionId)) break;
+      lineage.add(correction.originalTransactionId);
+      cursor = correction.originalTransactionId;
+    }
+    return [...this.transactions.values()]
+      .filter(
+        (transaction) =>
+          transaction.workspaceId === workspaceId
+          && transaction.kind === "REFUND"
+          && transaction.status === "POSTED"
+          && transaction.refundedTransactionId !== null
+          && lineage.has(transaction.refundedTransactionId),
+      )
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
   }
 
   async listTransactionAudit(

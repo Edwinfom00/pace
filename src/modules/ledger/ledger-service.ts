@@ -6,6 +6,7 @@ import {
   DomainConflictError,
   NotFoundError,
 } from "@/authorization/errors";
+import { add, money, subtract, sum } from "@/money/money";
 import {
   assertWorkspacePermission,
   type WorkspaceAction,
@@ -29,11 +30,13 @@ import type {
   CreateLedgerTransactionRecord,
   CreateLedgerTransactionAuditRecord,
   CreateLedgerTransactionCorrectionRecord,
+  CreateLedgerFinancialRefundRecord,
   LedgerRepository,
 } from "./repositories/ledger-repository";
 import type {
   CorrectTransactionCommand,
 } from "./correct-transaction-contract";
+import type { CreateRefundCommand, RefundStatus } from "./create-refund-contract";
 import { resolveManualOccurredAt } from "./manual-transaction";
 import {
   parseTransactionDetailsPatch,
@@ -144,6 +147,7 @@ export class LedgerService {
     workspaceId: string,
     input: unknown,
   ): Promise<LedgerTransactionRecord> {
+    this.assertGenericTransactionIsNotRefund(input);
     const parsed = createLedgerTransactionSchema.parse(input);
     await this.requireWorkspacePermission(actor.userId, workspaceId, "manage_ledger");
 
@@ -167,6 +171,7 @@ export class LedgerService {
     workspaceId: string,
     input: unknown,
   ): Promise<LedgerTransactionRecord> {
+    this.assertGenericTransactionIsNotRefund(input);
     const parsed = createLedgerTransactionSchema.parse(input);
     const fingerprint = parsed.deduplicationFingerprint;
     if (!fingerprint) {
@@ -263,33 +268,10 @@ export class LedgerService {
     this.assertCurrencyMatchesAccount(common.currency, account);
 
     if (parsed.kind === "REFUND") {
-      const original = await this.requireTransaction(workspaceId, parsed.refundedTransactionId);
-      if (original.kind !== "EXPENSE" || !original.categoryId) {
-        throw new ConflictError("A refund must reference an expense transaction in this workspace.");
-      }
-      if (original.currency !== common.currency) {
-        throw new ConflictError("A refund must use the currency of the original expense.");
-      }
-
-      const refundedMinor = (await this.repository.listRefundsForTransaction(workspaceId, original.id)).reduce(
-        (total, refund) => total + refund.amountMinor,
-        0n,
+      throw new DomainConflictError(
+        "REFUND_CANONICAL_OPERATION_REQUIRED",
+        "Refunds must be created through the canonical refund operation.",
       );
-      if (refundedMinor + common.amountMinor > original.amountMinor) {
-        throw new ConflictError("Refunds cannot exceed the amount of the original expense.");
-      }
-
-      return { transaction: {
-        ...common,
-        kind: "REFUND",
-        accountId: account.id,
-        transferAccountId: null,
-        categoryId: original.categoryId,
-        merchantId: original.merchantId,
-        transferGroupId: null,
-        refundedTransactionId: original.id,
-        reversalOfTransactionId: null,
-      }, merchant: null };
     }
 
     const category = parsed.categoryId
@@ -313,7 +295,131 @@ export class LedgerService {
     };
   }
 
- 
+  async createRefund(
+    actor: AuthenticatedActor,
+    command: CreateRefundCommand,
+  ): Promise<LedgerFinancialRefundResult> {
+    const membership = await this.requireWorkspacePermission(actor.userId, command.workspaceId, "manage_ledger");
+    const fingerprint = refundIdempotencyFingerprint(actor.userId, command.idempotencyKey);
+    const commandFingerprint = refundCommandFingerprint(command);
+    const replay = await this.repository.findTransactionByFingerprint(command.workspaceId, fingerprint);
+    if (replay) return this.resolveExistingRefund(command, commandFingerprint, replay);
+
+    const sourceExpense = await this.requireTransaction(command.workspaceId, command.expenseTransactionId);
+    await this.assertRefundSourceIsCurrent(command.workspaceId, sourceExpense);
+    if (sourceExpense.kind !== "EXPENSE") {
+      throw new DomainConflictError("SOURCE_NOT_EXPENSE", "Refunds can only be created for expenses.");
+    }
+    if (!sourceExpense.accountId) {
+      throw new DomainConflictError("REFUND_NOT_ALLOWED", "This expense has no account that can receive a refund.");
+    }
+    if (sourceExpense.currency !== command.currency) {
+      throw new DomainConflictError("INVALID_CURRENCY", "A refund must use the currency of its source expense.");
+    }
+    const destinationAccount = await this.requireRefundAccount(
+      command.workspaceId,
+      command.accountId ?? sourceExpense.accountId,
+    );
+    this.assertCurrencyMatchesAccount(command.currency, destinationAccount);
+
+    const aggregate = await this.getRefundAggregate(command.workspaceId, sourceExpense);
+    const capabilities = getTransactionCapabilities({
+      transaction: sourceExpense,
+      workspaceRole: membership.role,
+      refundedAmountMinor: aggregate.total.minor,
+      isCurrentEffective: true,
+    });
+    if (!capabilities.canRefund) {
+      if (aggregate.total.minor >= money(sourceExpense.currency, sourceExpense.amountMinor).minor) {
+        throw new DomainConflictError(
+          "EXPENSE_ALREADY_FULLY_REFUNDED",
+          "This expense has already been fully refunded.",
+        );
+      }
+      throw new DomainConflictError("REFUND_NOT_ALLOWED", "This expense cannot be refunded.");
+    }
+
+    const refundMoney = money(command.currency, command.amountMinor);
+    if (add(aggregate.total, refundMoney).minor > money(sourceExpense.currency, sourceExpense.amountMinor).minor) {
+      throw new DomainConflictError(
+        "REFUND_EXCEEDS_REMAINING_AMOUNT",
+        "The refund amount exceeds the remaining refundable amount.",
+      );
+    }
+
+    if (!sourceExpense.categoryId) {
+      throw new DomainConflictError("REFUND_NOT_ALLOWED", "This expense has no refundable category attribution.");
+    }
+
+    const refundId = randomUUID();
+    const refund: CreateLedgerFinancialRefundRecord = {
+      workspaceId: command.workspaceId,
+      sourceExpenseId: sourceExpense.id,
+      refund: {
+        id: refundId,
+        workspaceId: command.workspaceId,
+        kind: "REFUND",
+        status: "POSTED",
+        amountMinor: refundMoney.minor,
+        currency: refundMoney.currency,
+        occurredAt: command.occurredAt,
+        accountId: destinationAccount.id,
+        transferAccountId: null,
+        // REFUND already has canonical attribution fields. Reuse the source
+        // attribution; no synthetic "Refund" category or merchant is made.
+        categoryId: sourceExpense.categoryId,
+        merchantId: sourceExpense.merchantId,
+        createdByUserId: actor.userId,
+        paidByUserId: actor.userId,
+        transferGroupId: null,
+        refundedTransactionId: sourceExpense.id,
+        reversalOfTransactionId: null,
+        source: {
+          provider: "manual",
+          origin: "REFUND",
+          commandFingerprint,
+          refund: {
+            sourceExpenseId: sourceExpense.id,
+            reason: command.reason ?? null,
+          },
+        },
+        deduplicationFingerprint: fingerprint,
+        note: command.note ?? null,
+      },
+      audits: refundAudits({
+        actorUserId: actor.userId,
+        sourceExpense,
+        refundTransactionId: refundId,
+        amountMinor: refundMoney.minor,
+        currency: refundMoney.currency,
+        reason: command.reason ?? null,
+      }),
+    };
+
+    let created: LedgerTransactionRecord | null;
+    try {
+      created = await this.repository.createFinancialRefund(refund);
+    } catch (error) {
+      const concurrentReplay = await this.repository.findTransactionByFingerprint(command.workspaceId, fingerprint);
+      if (concurrentReplay) return this.resolveExistingRefund(command, commandFingerprint, concurrentReplay);
+      if (isSerializationFailure(error)) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "The expense changed while the refund was being saved. Retry the refund.",
+        );
+      }
+      throw error;
+    }
+
+    if (!created) {
+      const concurrentReplay = await this.repository.findTransactionByFingerprint(command.workspaceId, fingerprint);
+      if (concurrentReplay) return this.resolveExistingRefund(command, commandFingerprint, concurrentReplay);
+      return this.resolveRefundSaveConflict(command, sourceExpense.id);
+    }
+
+    return this.verifyAndPresentRefund(command.workspaceId, sourceExpense, refund, created);
+  }
+
   async correctTransaction(
     actor: AuthenticatedActor,
     command: CorrectTransactionCommand,
@@ -706,6 +812,165 @@ export class LedgerService {
     return { correction, originalTransaction, reversalTransaction, replacementTransaction };
   }
 
+  private assertGenericTransactionIsNotRefund(input: unknown): void {
+    if (
+      input
+      && typeof input === "object"
+      && !Array.isArray(input)
+      && (input as { kind?: unknown }).kind === "REFUND"
+    ) {
+      throw new DomainConflictError(
+        "REFUND_CANONICAL_OPERATION_REQUIRED",
+        "Refunds must be created through the canonical refund operation.",
+      );
+    }
+  }
+
+  private async assertRefundSourceIsCurrent(
+    workspaceId: string,
+    transaction: LedgerTransactionRecord,
+  ): Promise<void> {
+    const [outgoingCorrection, enclosingCorrection] = await Promise.all([
+      this.repository.findTransactionCorrectionByOriginal(workspaceId, transaction.id),
+      this.repository.findTransactionCorrectionByTransactionId(workspaceId, transaction.id),
+    ]);
+    if (
+      transaction.reversalOfTransactionId !== null
+      || outgoingCorrection !== null
+      || enclosingCorrection?.reversalTransactionId === transaction.id
+    ) {
+      throw new DomainConflictError(
+        "TRANSACTION_NOT_CURRENT",
+        "Refunds must be attached to the current effective expense.",
+      );
+    }
+  }
+
+  private async requireRefundAccount(
+    workspaceId: string,
+    accountId: string,
+  ): Promise<LedgerAccountRecord> {
+    const account = await this.repository.findAccount(workspaceId, accountId);
+    if (account) {
+      if (account.archivedAt) throw new ConflictError("Archived accounts cannot accept new transactions.");
+      return account;
+    }
+    if (await this.repository.findAccountById(accountId)) {
+      throw new DomainConflictError(
+        "ACCOUNT_WORKSPACE_MISMATCH",
+        "Refund account does not belong to this workspace.",
+      );
+    }
+    throw new NotFoundError("Refund account not found in this workspace.");
+  }
+
+  private async getRefundAggregate(
+    workspaceId: string,
+    sourceExpense: LedgerTransactionRecord,
+  ): Promise<{
+    refunds: readonly LedgerTransactionRecord[];
+    total: ReturnType<typeof money>;
+    remaining: ReturnType<typeof money>;
+  }> {
+    const expenseAmount = money(sourceExpense.currency, sourceExpense.amountMinor);
+    const refunds = await this.repository.listRefundsForEffectiveExpense(workspaceId, sourceExpense.id);
+    const total = sum(
+      refunds.map((refund) => money(refund.currency, refund.amountMinor)),
+      { currency: expenseAmount.currency },
+    );
+    return {
+      refunds,
+      total,
+      remaining: subtract(expenseAmount, total),
+    };
+  }
+
+  private async resolveExistingRefund(
+    command: CreateRefundCommand,
+    commandFingerprint: string,
+    refund: LedgerTransactionRecord,
+  ): Promise<LedgerFinancialRefundResult> {
+    if (
+      refund.kind !== "REFUND"
+      || refund.status !== "POSTED"
+      || refund.refundedTransactionId !== command.expenseTransactionId
+      || refund.source.commandFingerprint !== commandFingerprint
+    ) {
+      throw new DomainConflictError(
+        "REFUND_ALREADY_PROCESSED",
+        "This refund idempotency key has already been used for another command.",
+      );
+    }
+    const sourceExpense = await this.requireTransaction(command.workspaceId, refund.refundedTransactionId);
+    return this.verifyAndPresentRefund(
+      command.workspaceId,
+      sourceExpense,
+      {
+        refund,
+        audits: [],
+      },
+      refund,
+    );
+  }
+
+  private async resolveRefundSaveConflict(
+    command: CreateRefundCommand,
+    sourceExpenseId: string,
+  ): Promise<never> {
+    const current = await this.requireTransaction(command.workspaceId, sourceExpenseId);
+    await this.assertRefundSourceIsCurrent(command.workspaceId, current);
+    if (current.kind !== "EXPENSE") {
+      throw new DomainConflictError("SOURCE_NOT_EXPENSE", "Refunds can only be created for expenses.");
+    }
+    const aggregate = await this.getRefundAggregate(command.workspaceId, current);
+    const expenseAmount = money(current.currency, current.amountMinor);
+    if (aggregate.total.minor >= expenseAmount.minor) {
+      throw new DomainConflictError(
+        "EXPENSE_ALREADY_FULLY_REFUNDED",
+        "This expense has already been fully refunded.",
+      );
+    }
+    if (
+      current.currency !== command.currency
+      || add(aggregate.total, money(command.currency, command.amountMinor)).minor > expenseAmount.minor
+    ) {
+      throw new DomainConflictError(
+        "REFUND_EXCEEDS_REMAINING_AMOUNT",
+        "The refund amount exceeds the remaining refundable amount.",
+      );
+    }
+    throw new DomainConflictError(
+      "CONCURRENT_MODIFICATION",
+      "The expense changed while the refund was being saved. Retry the refund.",
+    );
+  }
+
+  private async verifyAndPresentRefund(
+    workspaceId: string,
+    sourceExpense: LedgerTransactionRecord,
+    requested: Pick<CreateLedgerFinancialRefundRecord, "refund"> & {
+      audits: readonly CreateLedgerTransactionAuditRecord[];
+    },
+    refund: LedgerTransactionRecord,
+  ): Promise<LedgerFinancialRefundResult> {
+    const aggregate = await this.getRefundAggregate(workspaceId, sourceExpense);
+    const persistedAudits = requested.audits.length === 0
+      ? null
+      : (await Promise.all([
+          this.repository.listTransactionAudit(workspaceId, sourceExpense.id),
+          this.repository.listTransactionAudit(workspaceId, refund.id),
+        ])).flat();
+    assertVerifiedFinancialRefund({ sourceExpense, requested, refund, aggregate, persistedAudits });
+    return {
+      refundTransaction: refund,
+      sourceExpenseId: sourceExpense.id,
+      effectiveExpenseAmountMinor: sourceExpense.amountMinor,
+      totalRefundedMinor: aggregate.total.minor,
+      remainingRefundableMinor: aggregate.remaining.minor,
+      refundStatus: refundStatusFor(aggregate.total.minor, sourceExpense.amountMinor),
+    };
+  }
+
   private async requireWorkspacePermission(
     userId: string,
     workspaceId: string,
@@ -929,6 +1194,146 @@ export interface LedgerFinancialCorrectionResult {
   originalTransaction: LedgerTransactionRecord;
   reversalTransaction: LedgerTransactionRecord;
   replacementTransaction: LedgerTransactionRecord;
+}
+
+export interface LedgerFinancialRefundResult {
+  refundTransaction: LedgerTransactionRecord;
+  sourceExpenseId: string;
+  effectiveExpenseAmountMinor: bigint;
+  totalRefundedMinor: bigint;
+  remainingRefundableMinor: bigint;
+  refundStatus: RefundStatus;
+}
+
+function refundAudits({
+  actorUserId,
+  sourceExpense,
+  refundTransactionId,
+  amountMinor,
+  currency,
+  reason,
+}: {
+  actorUserId: string;
+  sourceExpense: LedgerTransactionRecord;
+  refundTransactionId: string;
+  amountMinor: bigint;
+  currency: string;
+  reason: string | null;
+}): readonly [CreateLedgerTransactionAuditRecord, CreateLedgerTransactionAuditRecord] {
+  const linkage = {
+    sourceExpenseId: sourceExpense.id,
+    refundTransactionId,
+    amountMinor: amountMinor.toString(),
+    currency,
+    reason,
+  };
+  return [
+    {
+      id: randomUUID(),
+      workspaceId: sourceExpense.workspaceId,
+      transactionId: sourceExpense.id,
+      actorUserId,
+      action: "REFUND_ISSUED",
+      metadata: linkage,
+    },
+    {
+      id: randomUUID(),
+      workspaceId: sourceExpense.workspaceId,
+      transactionId: refundTransactionId,
+      actorUserId,
+      action: "REFUND_CREATED",
+      metadata: linkage,
+    },
+  ];
+}
+
+function refundIdempotencyFingerprint(actorUserId: string, idempotencyKey: string): string {
+  const digest = createHash("sha256")
+    .update(`${actorUserId}:${idempotencyKey}`)
+    .digest("hex");
+  return `refund:${digest}`;
+}
+
+function refundCommandFingerprint(command: CreateRefundCommand): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      expenseTransactionId: command.expenseTransactionId,
+      amountMinor: command.amountMinor.toString(),
+      currency: command.currency,
+      accountId: command.accountId ?? null,
+      occurredAt: command.occurredAt.toISOString(),
+      note: command.note ?? null,
+      reason: command.reason ?? null,
+    }))
+    .digest("hex");
+}
+
+function refundStatusFor(totalRefundedMinor: bigint, expenseAmountMinor: bigint): RefundStatus {
+  if (totalRefundedMinor <= 0n) return "NONE";
+  return totalRefundedMinor === expenseAmountMinor ? "FULL" : "PARTIAL";
+}
+
+function assertVerifiedFinancialRefund({
+  sourceExpense,
+  requested,
+  refund,
+  aggregate,
+  persistedAudits,
+}: {
+  sourceExpense: LedgerTransactionRecord;
+  requested: Pick<CreateLedgerFinancialRefundRecord, "refund"> & {
+    audits: readonly CreateLedgerTransactionAuditRecord[];
+  };
+  refund: LedgerTransactionRecord;
+  aggregate: {
+    refunds: readonly LedgerTransactionRecord[];
+    total: ReturnType<typeof money>;
+    remaining: ReturnType<typeof money>;
+  };
+  persistedAudits: readonly import("./domain").LedgerTransactionAuditRecord[] | null;
+}): void {
+  const requestedRefund = requested.refund;
+  const expectedAuditsPersisted = persistedAudits === null || requested.audits.every((audit) =>
+    persistedAudits.some((persisted) =>
+      persisted.id === audit.id
+      && persisted.transactionId === audit.transactionId
+      && persisted.actorUserId === audit.actorUserId
+      && persisted.action === audit.action
+      && stableJson(persisted.metadata) === stableJson(audit.metadata),
+    ),
+  );
+  const aggregateValid =
+    aggregate.total.currency === sourceExpense.currency
+    && aggregate.remaining.currency === sourceExpense.currency
+    && aggregate.total.minor > 0n
+    && aggregate.total.minor <= sourceExpense.amountMinor
+    && aggregate.remaining.minor === sourceExpense.amountMinor - aggregate.total.minor
+    && aggregate.refunds.some((candidate) => candidate.id === refund.id);
+  const persistedRefundMatches =
+    refund.kind === "REFUND"
+    && refund.status === "POSTED"
+    && refund.workspaceId === sourceExpense.workspaceId
+    && refund.amountMinor === requestedRefund.amountMinor
+    && refund.currency === requestedRefund.currency
+    && refund.accountId === requestedRefund.accountId
+    && refund.categoryId === sourceExpense.categoryId
+    && refund.merchantId === sourceExpense.merchantId
+    && refund.refundedTransactionId === sourceExpense.id
+    && refund.reversalOfTransactionId === null
+    && refund.note === requestedRefund.note
+    && refund.occurredAt.getTime() === requestedRefund.occurredAt.getTime();
+  if (!persistedRefundMatches || !aggregateValid || !expectedAuditsPersisted) {
+    throw new Error("Financial refund verification failed.");
+  }
+}
+
+function isSerializationFailure(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === "object"
+    && "code" in error
+    && (error as { code?: unknown }).code === "40001",
+  );
 }
 
 function createCorrectionReversal(

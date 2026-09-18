@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
+import { toCurrencyCode } from "@/money/currency";
 import { DEFAULT_TRANSACTION_FILTER_STATE, transactionListHref } from "@/modules/transactions/domain/transaction-list-url";
 import { parsePacePageContext } from "@/modules/pace-assistant/domain/page-context";
 import { getTransactionsPage } from "@/modules/transactions/queries/get-transactions-page";
@@ -56,9 +57,15 @@ async function fixture() {
     kind: "TRANSFER", accountId: checking.id, transferAccountId: savings.id,
     amountMinor: "10000", currency: "USD", occurredAt: "2026-08-31T23:30:00.000Z", note: "Move savings",
   });
-  await service.createTransaction(owner, workspaceId, {
-    kind: "REFUND", accountId: checking.id, refundedTransactionId: expense.id,
-    amountMinor: "500", currency: "USD", occurredAt: "2026-09-04T10:00:00.000Z", note: "Partial refund",
+  await service.createRefund(owner, {
+    workspaceId,
+    expenseTransactionId: expense.id,
+    amountMinor: 500n,
+    currency: toCurrencyCode("USD"),
+    accountId: checking.id,
+    occurredAt: new Date("2026-09-04T10:00:00.000Z"),
+    note: "Partial refund",
+    idempotencyKey: "10000000-0000-4000-8000-000000000002",
   });
   await service.createTransaction(owner, workspaceId, {
     kind: "EXPENSE", accountId: card.id, categoryId: SYSTEM_GROCERIES_ID,

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { AuthorizationError, ConflictError, NotFoundError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
+import { toCurrencyCode } from "@/money/currency";
 import { LedgerService } from "@/modules/ledger/ledger-service";
 
 import { InMemoryWorkspaceRepository } from "../../support/in-memory-workspace-repository";
@@ -121,7 +122,7 @@ test("ledger creation is workspace-scoped, validates members, and persists sourc
   );
 });
 
-test("transfers are grouped and refunds inherit the original expense attribution", async () => {
+test("transfers are grouped and canonical refunds inherit the original expense attribution", async () => {
   const { service } = await createFixture();
   const checking = await service.createAccount(owner, workspaceOne, { name: "Checking", type: "CHECKING", currency: "USD" });
   const savings = await service.createAccount(owner, workspaceOne, { name: "Savings", type: "SAVINGS", currency: "USD" });
@@ -136,14 +137,15 @@ test("transfers are grouped and refunds inherit the original expense attribution
     currency: "USD",
     occurredAt: "2026-02-02T10:00:00.000Z",
   });
-  const refund = await service.createTransaction(owner, workspaceOne, {
-    kind: "REFUND",
-    accountId: checking.id,
-    refundedTransactionId: expense.id,
-    amountMinor: "250",
-    currency: "USD",
-    occurredAt: "2026-02-03T10:00:00.000Z",
+  const refundResult = await service.createRefund(owner, {
+    workspaceId: workspaceOne,
+    expenseTransactionId: expense.id,
+    amountMinor: 250n,
+    currency: toCurrencyCode("USD"),
+    occurredAt: new Date("2026-02-03T10:00:00.000Z"),
+    idempotencyKey: "00000000-0000-4000-8000-000000000011",
   });
+  const refund = refundResult.refundTransaction;
   const transfer = await service.createTransaction(owner, workspaceOne, {
     kind: "TRANSFER",
     accountId: checking.id,
@@ -159,13 +161,13 @@ test("transfers are grouped and refunds inherit the original expense attribution
   assert.equal(transfer.categoryId, null);
 
   await assert.rejects(
-    service.createTransaction(owner, workspaceOne, {
-      kind: "REFUND",
-      accountId: checking.id,
-      refundedTransactionId: expense.id,
-      amountMinor: "751",
-      currency: "USD",
-      occurredAt: "2026-02-04T10:00:00.000Z",
+    service.createRefund(owner, {
+      workspaceId: workspaceOne,
+      expenseTransactionId: expense.id,
+      amountMinor: 751n,
+      currency: toCurrencyCode("USD"),
+      occurredAt: new Date("2026-02-04T10:00:00.000Z"),
+      idempotencyKey: "00000000-0000-4000-8000-000000000012",
     }),
     ConflictError,
   );

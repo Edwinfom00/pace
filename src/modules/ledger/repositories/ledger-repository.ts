@@ -69,11 +69,14 @@ export interface CreateLedgerFinancialCorrectionRecord {
   ];
 }
 
+export interface CreateLedgerFinancialRefundRecord {
+  workspaceId: string;
+  sourceExpenseId: string;
+  refund: CreateLedgerTransactionRecord;
+  audits: readonly [CreateLedgerTransactionAuditRecord, CreateLedgerTransactionAuditRecord];
+}
 
-/**
- * This is intentionally a closed, detail-only persistence shape. It has no
- * amount, currency, account, kind, source, status, or transfer fields.
- */
+
 export interface UpdateLedgerTransactionDetailsRecord {
   workspaceId: string;
   transactionId: string;
@@ -144,6 +147,14 @@ export interface LedgerRepository {
   createFinancialCorrection(
     input: CreateLedgerFinancialCorrectionRecord,
   ): Promise<LedgerTransactionCorrectionRecord | null>;
+  /**
+   * Creates a real REFUND and its audit linkage in one serializable database
+   * transaction. A null result means the source was no longer refundable at
+   * the point of the atomic check.
+   */
+  createFinancialRefund(
+    input: CreateLedgerFinancialRefundRecord,
+  ): Promise<LedgerTransactionRecord | null>;
   listTransactions(
     workspaceId: string,
     filters?: LedgerTransactionFilters,
@@ -160,6 +171,11 @@ export interface LedgerRepository {
   listRefundsForTransaction(
     workspaceId: string,
     transactionId: string,
+  ): Promise<LedgerTransactionRecord[]>;
+  /** Includes refunds attached to prior corrected versions of this expense. */
+  listRefundsForEffectiveExpense(
+    workspaceId: string,
+    effectiveExpenseTransactionId: string,
   ): Promise<LedgerTransactionRecord[]>;
   listTransactionAudit(
     workspaceId: string,
@@ -554,6 +570,105 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return this.findTransactionCorrectionByOriginal(input.workspaceId, input.originalTransactionId);
   }
 
+  async createFinancialRefund(
+    input: CreateLedgerFinancialRefundRecord,
+  ): Promise<LedgerTransactionRecord | null> {
+    const [sourceAudit, refundAudit] = input.audits;
+    const [rows] = await neonSql.transaction(
+      (transaction) => [transaction`
+        WITH RECURSIVE source_expense AS (
+          SELECT id, amount_minor, currency
+          FROM ledger_transaction
+          WHERE workspace_id = ${input.workspaceId}
+            AND id = ${input.sourceExpenseId}
+            AND kind = 'EXPENSE'
+            AND status = 'POSTED'
+            AND NOT EXISTS (
+              SELECT 1
+              FROM ledger_transaction_correction
+              WHERE workspace_id = ${input.workspaceId}
+                AND original_transaction_id = ${input.sourceExpenseId}
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM ledger_transaction_correction
+              WHERE workspace_id = ${input.workspaceId}
+                AND reversal_transaction_id = ${input.sourceExpenseId}
+            )
+          FOR UPDATE
+        ),
+        lineage(id) AS (
+          SELECT id FROM source_expense
+          UNION
+          SELECT correction.original_transaction_id
+          FROM ledger_transaction_correction AS correction
+          INNER JOIN lineage ON lineage.id = correction.replacement_transaction_id
+          WHERE correction.workspace_id = ${input.workspaceId}
+        ),
+        refundable AS (
+          SELECT source_expense.id
+          FROM source_expense
+          CROSS JOIN (
+            SELECT COALESCE(SUM(refund.amount_minor), 0) AS refunded_minor
+            FROM ledger_transaction AS refund
+            INNER JOIN lineage ON lineage.id = refund.refunded_transaction_id
+            WHERE refund.workspace_id = ${input.workspaceId}
+              AND refund.kind = 'REFUND'
+              AND refund.status = 'POSTED'
+          ) AS existing_refunds
+          WHERE existing_refunds.refunded_minor + ${input.refund.amountMinor} <= source_expense.amount_minor
+        ),
+        created_refund AS (
+          INSERT INTO ledger_transaction (
+            id, workspace_id, kind, status, amount_minor, currency, occurred_at,
+            account_id, transfer_account_id, category_id, merchant_id,
+            created_by_user_id, paid_by_user_id, transfer_group_id,
+            refunded_transaction_id, reversal_of_transaction_id, source,
+            deduplication_fingerprint, note
+          )
+          SELECT ${input.refund.id}, ${input.refund.workspaceId}, ${input.refund.kind},
+            ${input.refund.status}, ${input.refund.amountMinor}, ${input.refund.currency},
+            ${input.refund.occurredAt}, ${input.refund.accountId}, ${input.refund.transferAccountId},
+            ${input.refund.categoryId}, ${input.refund.merchantId}, ${input.refund.createdByUserId},
+            ${input.refund.paidByUserId}, ${input.refund.transferGroupId},
+            ${input.refund.refundedTransactionId}, ${input.refund.reversalOfTransactionId},
+            ${JSON.stringify(input.refund.source)}::jsonb, ${input.refund.deduplicationFingerprint},
+            ${input.refund.note}
+          FROM refundable
+          RETURNING id, workspace_id AS "workspaceId", kind, status,
+            amount_minor AS "amountMinor", currency, occurred_at AS "occurredAt",
+            account_id AS "accountId", transfer_account_id AS "transferAccountId",
+            category_id AS "categoryId", merchant_id AS "merchantId",
+            created_by_user_id AS "createdByUserId", paid_by_user_id AS "paidByUserId",
+            transfer_group_id AS "transferGroupId", refunded_transaction_id AS "refundedTransactionId",
+            reversal_of_transaction_id AS "reversalOfTransactionId",
+            source, deduplication_fingerprint AS "deduplicationFingerprint", note,
+            created_at AS "createdAt", updated_at AS "updatedAt"
+        ),
+        source_audit AS (
+          INSERT INTO ledger_transaction_audit (
+            id, workspace_id, transaction_id, actor_user_id, action, metadata
+          )
+          SELECT ${sourceAudit.id}, ${sourceAudit.workspaceId}, ${sourceAudit.transactionId},
+            ${sourceAudit.actorUserId}, ${sourceAudit.action}, ${JSON.stringify(sourceAudit.metadata)}::jsonb
+          FROM created_refund
+        ),
+        refund_audit AS (
+          INSERT INTO ledger_transaction_audit (
+            id, workspace_id, transaction_id, actor_user_id, action, metadata
+          )
+          SELECT ${refundAudit.id}, ${refundAudit.workspaceId}, created_refund.id,
+            ${refundAudit.actorUserId}, ${refundAudit.action}, ${JSON.stringify(refundAudit.metadata)}::jsonb
+          FROM created_refund
+        )
+        SELECT * FROM created_refund;
+      `],
+      { isolationLevel: "Serializable" },
+    );
+    const record = (rows as unknown as readonly RawLedgerTransaction[])[0];
+    return record ? mapLedgerTransaction(record) : null;
+  }
+
   async listTransactions(
     workspaceId: string,
     filters: LedgerTransactionFilters = {},
@@ -643,9 +758,42 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         and(
           eq(ledgerTransactions.workspaceId, workspaceId),
           eq(ledgerTransactions.kind, "REFUND"),
+          eq(ledgerTransactions.status, "POSTED"),
           eq(ledgerTransactions.refundedTransactionId, transactionId),
         ),
       );
+  }
+
+  async listRefundsForEffectiveExpense(
+    workspaceId: string,
+    effectiveExpenseTransactionId: string,
+  ): Promise<LedgerTransactionRecord[]> {
+    const records = await neonSql`
+      WITH RECURSIVE lineage(id) AS (
+        SELECT ${effectiveExpenseTransactionId}::text
+        UNION
+        SELECT correction.original_transaction_id
+        FROM ledger_transaction_correction AS correction
+        INNER JOIN lineage ON lineage.id = correction.replacement_transaction_id
+        WHERE correction.workspace_id = ${workspaceId}
+      )
+      SELECT id, workspace_id AS "workspaceId", kind, status,
+        amount_minor AS "amountMinor", currency, occurred_at AS "occurredAt",
+        account_id AS "accountId", transfer_account_id AS "transferAccountId",
+        category_id AS "categoryId", merchant_id AS "merchantId",
+        created_by_user_id AS "createdByUserId", paid_by_user_id AS "paidByUserId",
+        transfer_group_id AS "transferGroupId", refunded_transaction_id AS "refundedTransactionId",
+        reversal_of_transaction_id AS "reversalOfTransactionId",
+        source, deduplication_fingerprint AS "deduplicationFingerprint", note,
+        created_at AS "createdAt", updated_at AS "updatedAt"
+      FROM ledger_transaction
+      WHERE workspace_id = ${workspaceId}
+        AND kind = 'REFUND'
+        AND status = 'POSTED'
+        AND refunded_transaction_id IN (SELECT id FROM lineage)
+      ORDER BY created_at ASC, id ASC;
+    ` as unknown as readonly RawLedgerTransaction[];
+    return records.map(mapLedgerTransaction);
   }
 
   async listTransactionAudit(
