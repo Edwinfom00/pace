@@ -13,7 +13,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 
-import { TransactionTypeSelector, type TransactionFormKind } from "./transaction-type-selector";
+import { TransactionTypeSelector, type TransactionFormKind, type TransactionTypeSelectorLabels } from "./transaction-type-selector";
 
 export type TransactionDialogView = "transaction" | "create-account";
 
@@ -24,6 +24,7 @@ export function TransactionFormDialog({
   isCreateAccountPending = false,
   isTransactionPending = false,
   kind,
+  transactionHeader,
   onBackToTransaction,
   onKindChange,
   onOpenChange,
@@ -36,6 +37,12 @@ export function TransactionFormDialog({
   readonly isCreateAccountPending?: boolean;
   readonly isTransactionPending?: boolean;
   readonly kind: TransactionFormKind;
+  readonly transactionHeader: {
+    readonly closeLabel: string;
+    readonly description: string;
+    readonly title: string;
+    readonly typeSelector: TransactionTypeSelectorLabels;
+  };
   readonly onBackToTransaction: () => void;
   readonly onKindChange: (kind: TransactionFormKind) => void;
   readonly onOpenChange: (open: boolean) => void;
@@ -50,7 +57,7 @@ export function TransactionFormDialog({
       >
         <ResponsiveDialogClose>
           <Button
-            aria-label="Close add transaction dialog"
+            aria-label={transactionHeader.closeLabel}
             className="absolute top-3 right-3 z-10 size-8 rounded-[7px] text-[#61708a] hover:bg-[#f3f6fa] hover:text-[#263550] focus-visible:ring-[#5e8fe8]/30 sm:top-4 sm:right-4"
             disabled={isCreateAccountPending || isTransactionPending}
             size="icon"
@@ -84,17 +91,17 @@ export function TransactionFormDialog({
           ) : (
             <>
               <ResponsiveDialogTitle className="text-[20px] leading-6 font-semibold tracking-tight text-[#101a35]">
-                Add transaction
+                {transactionHeader.title}
               </ResponsiveDialogTitle>
               <ResponsiveDialogDescription className="text-[13px] leading-5 text-[#71809a]">
-                Record a new movement in your workspace.
+                {transactionHeader.description}
               </ResponsiveDialogDescription>
             </>
           )}
         </ResponsiveDialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 sm:px-7 sm:pb-7">
-          {view === "transaction" ? <TransactionTypeSelector disabled={isTransactionPending} onValueChange={onKindChange} value={kind} /> : null}
+          {view === "transaction" ? <TransactionTypeSelector disabled={isTransactionPending} labels={transactionHeader.typeSelector} onValueChange={onKindChange} value={kind} /> : null}
           <div className={view === "transaction" ? "mt-5 text-[13px] leading-5 text-[#71809a]" : "text-[13px] leading-5 text-[#71809a]"}>
             {children}
           </div>

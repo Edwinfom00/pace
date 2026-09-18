@@ -8,48 +8,54 @@ export const transactionFormKinds = ["EXPENSE", "INCOME", "TRANSFER"] as const;
 
 export type TransactionFormKind = (typeof transactionFormKinds)[number];
 
-export const transactionFormKindLabels: Readonly<Record<TransactionFormKind, string>> = {
-  EXPENSE: "Expense",
-  INCOME: "Income",
-  TRANSFER: "Transfer",
+export type TransactionTypeSelectorLabels = {
+  readonly ariaLabel: string;
+  readonly expense: string;
+  readonly income: string;
+  readonly transfer: string;
 };
 
-const transactionTypeOptions = [
+function getTransactionTypeOptions(labels: TransactionTypeSelectorLabels) {
+  return [
   {
     value: "EXPENSE",
-    label: transactionFormKindLabels.EXPENSE,
+    label: labels.expense,
     icon: FiArrowDown,
     selectedClassName: "bg-[#fff6f7] text-[#b42336] shadow-[inset_0_0_0_1px_#f3b9c0]",
   },
   {
     value: "INCOME",
-    label: transactionFormKindLabels.INCOME,
+    label: labels.income,
     icon: FiArrowUpRight,
     selectedClassName: "bg-[#f2fbf5] text-[#087443] shadow-[inset_0_0_0_1px_#a7dfbd]",
   },
   {
     value: "TRANSFER",
-    label: transactionFormKindLabels.TRANSFER,
+    label: labels.transfer,
     icon: FiRepeat,
     selectedClassName: "bg-[#f3f7ff] text-[#245ecf] shadow-[inset_0_0_0_1px_#b8cdf7]",
   },
-] as const satisfies ReadonlyArray<{
-  value: TransactionFormKind;
-  label: string;
-  icon: typeof FiArrowDown;
-  selectedClassName: string;
-}>;
+  ] as const satisfies ReadonlyArray<{
+    value: TransactionFormKind;
+    label: string;
+    icon: typeof FiArrowDown;
+    selectedClassName: string;
+  }>;
+}
 
 export function TransactionTypeSelector({
   disabled = false,
+  labels,
   value,
   onValueChange,
 }: {
   readonly disabled?: boolean;
+  readonly labels: TransactionTypeSelectorLabels;
   readonly value: TransactionFormKind;
   readonly onValueChange: (value: TransactionFormKind) => void;
 }) {
   const optionRefs = useRef<Partial<Record<TransactionFormKind, HTMLButtonElement | null>>>({});
+  const transactionTypeOptions = getTransactionTypeOptions(labels);
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const currentIndex = transactionFormKinds.indexOf(value);
@@ -75,7 +81,7 @@ export function TransactionTypeSelector({
 
   return (
     <div
-      aria-label="Transaction type"
+      aria-label={labels.ariaLabel}
       aria-orientation="horizontal"
       className="grid grid-cols-3 divide-x divide-[#e4e9f1] overflow-hidden rounded-[10px] border border-[#e1e7f0] bg-[#fbfcfe] p-1"
       onKeyDown={handleKeyDown}

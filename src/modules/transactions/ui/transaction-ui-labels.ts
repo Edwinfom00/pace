@@ -4,6 +4,13 @@ import type { TransactionFormValidationErrorCode } from "../schemas/transaction-
 export type TransactionUiLabels = {
   readonly title: string;
   readonly description: string;
+  readonly createTitle: string;
+  readonly createSubtitle: string;
+  readonly createClose: string;
+  readonly createTypeLabel: string;
+  readonly createTypeExpense: string;
+  readonly createTypeIncome: string;
+  readonly createTypeTransfer: string;
   readonly searchLabel: string;
   readonly searchPlaceholder: string;
   readonly filtersLabel: string;
@@ -162,6 +169,13 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
   return {
     title: labels["transactions.title"],
     description: labels["transactions.description"],
+    createTitle: labels["transactions.create.title"],
+    createSubtitle: labels["transactions.create.subtitle"],
+    createClose: labels["transactions.create.close"],
+    createTypeLabel: labels["transactions.create.typeLabel"],
+    createTypeExpense: labels["transactions.create.type.expense"],
+    createTypeIncome: labels["transactions.create.type.income"],
+    createTypeTransfer: labels["transactions.create.type.transfer"],
     searchLabel: labels["transactions.search.label"],
     searchPlaceholder: labels["transactions.search.placeholder"],
     filtersLabel: labels["transactions.filters.label"],

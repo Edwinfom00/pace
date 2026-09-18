@@ -744,7 +744,7 @@ export function TransactionCreateControl({
         type="button"
       >
         <FiPlus aria-hidden="true" className="size-4" />
-        Add transaction
+        {labels.createTitle}
       </Button>
 
       <TransactionFormDialog
@@ -770,6 +770,17 @@ export function TransactionCreateControl({
         onKindChange={handleKindChange}
         onOpenChange={handleOpenChange}
         open={open}
+        transactionHeader={{
+          closeLabel: labels.createClose,
+          description: labels.createSubtitle,
+          title: labels.createTitle,
+          typeSelector: {
+            ariaLabel: labels.createTypeLabel,
+            expense: labels.createTypeExpense,
+            income: labels.createTypeIncome,
+            transfer: labels.createTypeTransfer,
+          },
+        }}
         view={view}
       >
         {view === "create-account" ? (

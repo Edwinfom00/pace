@@ -25,6 +25,7 @@ import { TransactionTable } from "@/modules/transactions/ui/components/transacti
 import { TransactionTableSkeleton } from "@/modules/transactions/ui/components/transaction-table-skeleton";
 import { formatTransactionFormTime } from "@/modules/transactions/ui/components/transaction-time-field";
 import { TransactionTransferForm } from "@/modules/transactions/ui/components/transaction-transfer-form";
+import { TransactionTypeSelector } from "@/modules/transactions/ui/components/transaction-type-selector";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 
 const labels = getTransactionUiLabels(getDashboardLabels("en"));
@@ -127,6 +128,11 @@ test("transactions labels are complete across English, French, and German", () =
   assert.equal(getTransactionUiLabels(getDashboardLabels("en")).formNotePlaceholder, "Add a note...");
   assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).formTipTitle, "Conseil");
   assert.equal(getTransactionUiLabels(getDashboardLabels("de")).actionAddExpense, "Ausgabe hinzufügen");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("en")).createTitle, "Add transaction");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).createTitle, "Ajouter une transaction");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("de")).createSubtitle, "Erfassen Sie eine neue Bewegung in Ihrem Arbeitsbereich.");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).createTypeExpense, "Dépense");
+  assert.equal(getTransactionUiLabels(getDashboardLabels("de")).createTypeTransfer, "Überweisung");
   assert.equal(getTransactionUiLabels(getDashboardLabels("en")).formSource, "Source");
   assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).formAmountIncomeHelper, "Saisissez le montant total reçu.");
   assert.equal(getTransactionUiLabels(getDashboardLabels("de")).actionAddIncome, "Einnahme hinzufügen");
@@ -139,6 +145,24 @@ test("transactions labels are complete across English, French, and German", () =
   assert.equal(getTransactionUiLabels(getDashboardLabels("en")).actionTransferring, "Transferring…");
   assert.equal(getTransactionUiLabels(getDashboardLabels("fr")).transferCreated, "Virement effectué");
   assert.equal(getTransactionUiLabels(getDashboardLabels("de")).transferCreateErrorGeneric, "Diese Überweisung konnte nicht ausgeführt werden. Bitte versuchen Sie es erneut.");
+});
+
+test("transaction type selector renders the supplied localized labels", () => {
+  const markup = renderToStaticMarkup(createElement(TransactionTypeSelector, {
+    labels: {
+      ariaLabel: "Type de transaction",
+      expense: "Dépense",
+      income: "Revenu",
+      transfer: "Virement",
+    },
+    onValueChange: () => undefined,
+    value: "EXPENSE",
+  }));
+
+  assert.match(markup, /aria-label="Type de transaction"/);
+  assert.match(markup, /Dépense/);
+  assert.match(markup, /Revenu/);
+  assert.match(markup, /Virement/);
 });
 
 test("real category fields expose their selected ledger ID, loading, error, and zero-category states", () => {
