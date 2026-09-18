@@ -6,6 +6,7 @@ import type {
 } from "@/modules/ledger/domain";
 
 import type { SerializedMoney } from "../types/transaction-ui.types";
+import type { TransactionCapabilities } from "./transaction-action-policy";
 
 export type TransactionDetailAccount = {
   readonly id: string;
@@ -58,6 +59,7 @@ export type TransactionDetailData = {
     readonly label: string;
     readonly channel: string | null;
   } | null;
+  readonly capabilities: TransactionCapabilities;
   readonly context: {
     readonly accountImpacts: readonly TransactionAccountImpact[];
     readonly monthlyCategory: TransactionMonthlyCategoryContext | null;

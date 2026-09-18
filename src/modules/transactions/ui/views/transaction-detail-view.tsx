@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import { getDashboardLabels } from "@/i18n/dashboard-messages";
+
 import type { TransactionDetailData } from "../../domain/transaction-detail";
+import { getTransactionDetailActionLabels } from "../transaction-detail-action-labels";
 import { TransactionDetailActions } from "../components/transaction-detail-actions";
 import { TransactionDetailActivity } from "../components/transaction-detail-activity";
 import { TransactionDetailAskPace } from "../components/transaction-detail-ask-pace";
@@ -26,6 +29,8 @@ export function TransactionDetailView({
   readonly locale: string;
   readonly timeZone: string;
 }) {
+  const actionLabels = getTransactionDetailActionLabels(getDashboardLabels(language));
+
   return (
     <main className="mx-auto w-full max-w-360 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <Link className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#637491] transition-colors hover:text-[#2563eb] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563eb]" href={`/w/${workspaceSlug}/transactions`}><ArrowLeft aria-hidden className="size-4" />Transactions</Link>
@@ -35,10 +40,10 @@ export function TransactionDetailView({
           <TransactionDetailCard locale={locale} timeZone={timeZone} transaction={transaction} />
           <TransactionFinancialContext locale={locale} transaction={transaction} />
           <TransactionSourceInformation transaction={transaction} />
-          <TransactionTechnicalDetails locale={locale} timeZone={timeZone} transaction={transaction} />
+          {transaction.capabilities.canViewTechnicalDetails ? <TransactionTechnicalDetails locale={locale} timeZone={timeZone} transaction={transaction} /> : null}
         </div>
         <aside aria-label="Transaction side rail" className="space-y-4 xl:sticky xl:top-6">
-          <TransactionDetailActions />
+          <TransactionDetailActions labels={actionLabels} transaction={transaction} />
           <TransactionDetailActivity locale={locale} timeZone={timeZone} transaction={transaction} />
           <TransactionDetailAskPace language={language} locale={locale} timeZone={timeZone} transaction={transaction} workspaceId={workspaceId} />
         </aside>

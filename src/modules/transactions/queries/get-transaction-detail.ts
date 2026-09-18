@@ -19,6 +19,7 @@ import type {
   TransactionDetailMerchant,
   TransactionMonthlyCategoryContext,
 } from "../domain/transaction-detail";
+import { getTransactionCapabilities } from "../domain/transaction-action-policy";
 
 type TransactionDetailLedgerRepository = Pick<
   LedgerRepository,
@@ -70,6 +71,11 @@ export async function getTransactionDetail(
     account: account ? mapAccount(account) : null,
     transferAccount: transferAccount ? mapAccount(transferAccount) : null,
     source: mapSource(transaction.source),
+    capabilities: getTransactionCapabilities({
+      transaction,
+      workspaceRole: membership.role,
+      refundedAmountMinor: refundedAmountFor(transaction, workspaceTransactions),
+    }),
     context: {
       accountImpacts: [account, transferAccount]
         .filter((candidate): candidate is LedgerAccountRecord => candidate !== null)
@@ -79,6 +85,16 @@ export async function getTransactionDetail(
         : null,
     },
   };
+}
+
+function refundedAmountFor(
+  transaction: LedgerTransactionRecord,
+  workspaceTransactions: readonly LedgerTransactionRecord[],
+): bigint {
+  if (transaction.kind !== "EXPENSE") return 0n;
+  return workspaceTransactions
+    .filter((candidate) => candidate.kind === "REFUND" && candidate.refundedTransactionId === transaction.id)
+    .reduce((total, refund) => total + refund.amountMinor, 0n);
 }
 
 function mapAccount(account: LedgerAccountRecord): TransactionDetailAccount {

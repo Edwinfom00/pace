@@ -14,8 +14,10 @@ import { getTransactionDetail } from "@/modules/transactions/queries/get-transac
 import { TransactionDetailActivity } from "@/modules/transactions/ui/components/transaction-detail-activity";
 import { TransactionDetailCard } from "@/modules/transactions/ui/components/transaction-detail-card";
 import { TransactionFinancialContext } from "@/modules/transactions/ui/components/transaction-financial-context";
+import { TransactionDetailActions } from "@/modules/transactions/ui/components/transaction-detail-actions";
 import { TransactionDetailSkeleton } from "@/modules/transactions/ui/components/transaction-detail-skeleton";
 import { TransactionTechnicalDetails } from "@/modules/transactions/ui/components/transaction-technical-details";
+import { getTransactionDetailActionLabels } from "@/modules/transactions/ui/transaction-detail-action-labels";
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 import { TransactionDetailView } from "@/modules/transactions/ui/views/transaction-detail-view";
@@ -25,6 +27,7 @@ import { InMemoryWorkspaceRepository } from "../../support/in-memory-workspace-r
 
 const owner: AuthenticatedActor = { userId: "detail-owner", email: "owner@pace.test", name: "Owner" };
 const stranger: AuthenticatedActor = { userId: "detail-stranger", email: "stranger@pace.test", name: "Stranger" };
+const viewer: AuthenticatedActor = { userId: "detail-viewer", email: "viewer@pace.test", name: "Viewer" };
 const workspaceId = "detail-workspace";
 const otherWorkspaceId = "detail-other-workspace";
 
@@ -33,6 +36,7 @@ async function fixture() {
   const workspaces = new InMemoryWorkspaceRepository();
   const service = new LedgerService(ledger, workspaces);
   workspaces.addMembership({ workspaceId, userId: owner.userId, role: "OWNER", invitedByUserId: null, joinedAt: new Date() });
+  workspaces.addMembership({ workspaceId, userId: viewer.userId, role: "VIEWER", invitedByUserId: null, joinedAt: new Date() });
   workspaces.addMembership({ workspaceId: otherWorkspaceId, userId: owner.userId, role: "OWNER", invitedByUserId: null, joinedAt: new Date() });
 
   const main = await service.createAccount(owner, workspaceId, { name: "Main account", type: "CHECKING", currency: "USD", openingBalanceMinor: "100000" });
@@ -97,6 +101,41 @@ test("an authorized member sees persisted, workspace-scoped transaction detail a
   });
   assert.equal(transaction.context.accountImpacts[0]?.effect.minor, "24850");
   assert.equal(transaction.context.accountImpacts[0]?.direction, "DECREASE");
+  assert.equal(transaction.capabilities.canEdit, true);
+  assert.equal(transaction.capabilities.canRefund, true);
+});
+
+test("detail evaluates capabilities after workspace authorization and never renders a live mutation affordance", async () => {
+  const { detail, expense, transfer } = await fixture();
+  const [expenseDetail, transferDetail, viewerDetail] = await Promise.all([
+    detail(expense.id),
+    detail(transfer.id),
+    detail(expense.id, viewer),
+  ]);
+  assert.ok(expenseDetail && transferDetail && viewerDetail);
+
+  assert.equal(transferDetail.capabilities.canEdit, false);
+  assert.equal(transferDetail.capabilities.reasons.edit, "TRANSFER_REQUIRES_REVERSAL");
+  assert.equal(transferDetail.capabilities.canRefund, false);
+  assert.equal(viewerDetail.capabilities.canEdit, false);
+  assert.equal(viewerDetail.capabilities.canViewTechnicalDetails, true);
+
+  const labels = getTransactionDetailActionLabels(getDashboardLabels("en"));
+  const expenseMarkup = renderToStaticMarkup(createElement(TransactionDetailActions, {
+    transaction: expenseDetail,
+    labels,
+  }));
+  const transferMarkup = renderToStaticMarkup(createElement(TransactionDetailActions, {
+    transaction: transferDetail,
+    labels,
+  }));
+
+  assert.match(expenseMarkup, /Edit transaction/);
+  assert.match(expenseMarkup, /Create refund/);
+  assert.match(expenseMarkup, /Available in a future update/);
+  assert.match(expenseMarkup, /disabled=""/);
+  assert.match(transferMarkup, /Transfers require a future reversal workflow/);
+  assert.doesNotMatch(transferMarkup, /Create refund|More actions/);
 });
 
 test("detail rejects unauthorized workspaces and hides cross-workspace transaction IDs", async () => {
