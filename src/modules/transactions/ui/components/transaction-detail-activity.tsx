@@ -2,6 +2,7 @@ import { CheckCircle2, Plus, Tag } from "lucide-react";
 
 import type { TransactionDetailData } from "@/modules/transactions/domain/transaction-detail";
 
+import type { TransactionDetailLabels } from "../transaction-detail-labels";
 import { formatDetailTimestamp } from "./transaction-detail-formatters";
 
 type ActivityEvent = {
@@ -15,34 +16,36 @@ type ActivityEvent = {
 
 export function TransactionDetailActivity({
   transaction,
+  labels,
   locale,
   timeZone,
 }: {
   readonly transaction: TransactionDetailData;
+  readonly labels: TransactionDetailLabels;
   readonly locale: string;
   readonly timeZone: string;
 }) {
   const events: ActivityEvent[] = [
     {
       id: "created",
-      title: "Transaction added",
-      description: transaction.source?.label ?? "Recorded in Pace",
+      title: labels.activity.added,
+      description: transaction.source ? labels.source.origin[transaction.source.origin] : labels.activity.recorded,
       occurredAt: transaction.createdAt,
       icon: Plus,
       tone: "neutral",
     },
     ...(transaction.category ? [{
       id: "category",
-      title: `Categorized as ${transaction.category.name}`,
-      description: "Category currently attached to this transaction",
+      title: labels.activity.categorized(labels.systemCategory(transaction.category)),
+      description: labels.activity.categoryAttached,
       occurredAt: transaction.updatedAt,
       icon: Tag,
       tone: "neutral" as const,
     }] : []),
     ...(transaction.status === "POSTED" ? [{
       id: "posted",
-      title: "Verified and posted",
-      description: "Included in your account activity",
+      title: labels.activity.posted,
+      description: labels.activity.included,
       occurredAt: transaction.updatedAt,
       icon: CheckCircle2,
       tone: "success" as const,
@@ -51,7 +54,7 @@ export function TransactionDetailActivity({
 
   return (
     <section aria-labelledby="transaction-activity-heading" className="rounded-[13px] border border-[#e6eaf0] bg-white p-4 sm:p-4.5">
-      <h2 className="text-[17px] font-semibold tracking-tight text-[#101a35]" id="transaction-activity-heading">Activity</h2>
+      <h2 className="text-[17px] font-semibold tracking-tight text-[#101a35]" id="transaction-activity-heading">{labels.activity.title}</h2>
       <ol className="mt-4 space-y-4">
         {events.map((event, index) => {
           const Icon = event.icon;

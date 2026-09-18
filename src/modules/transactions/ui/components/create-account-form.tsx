@@ -93,7 +93,7 @@ export function CreateAccountForm({
   } satisfies Readonly<Record<LedgerAccountType, { readonly label: string; readonly description: string }>>;
   const accountTypeOptions: readonly SelectOption<LedgerAccountType>[] = ACCOUNT_TYPE_METADATA.map(({ icon: Icon, type }) => ({
     value: type,
-    icon: <Icon aria-hidden className="size-[17px] text-[#526987]" />,
+    icon: <Icon aria-hidden className="size-4.25 text-[#526987]" />,
     label: accountTypeCopy[type].label,
     description: accountTypeCopy[type].description,
     searchTerms: [accountTypeCopy[type].label, accountTypeCopy[type].description],

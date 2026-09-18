@@ -27,6 +27,13 @@ export type TransactionDetailMerchant = {
   readonly merchantLogoKey: MerchantLogoKey | null;
 };
 
+
+export const TRANSACTION_DETAIL_ORIGINS = ["MANUAL", "AGENT", "IMPORT", "BANK_SYNC"] as const;
+export type TransactionDetailOrigin = (typeof TRANSACTION_DETAIL_ORIGINS)[number];
+
+export const TRANSACTION_DETAIL_SOURCE_CHANNELS = ["WEB"] as const;
+export type TransactionDetailSourceChannel = (typeof TRANSACTION_DETAIL_SOURCE_CHANNELS)[number];
+
 export type TransactionAccountImpact = {
   readonly account: TransactionDetailAccount;
   readonly direction: "INCREASE" | "DECREASE";
@@ -37,6 +44,7 @@ export type TransactionAccountImpact = {
 
 export type TransactionMonthlyCategoryContext = {
   readonly categoryName: string;
+  readonly categorySystemKey: string | null;
   readonly direction: "SPENDING" | "INCOME";
   readonly period: string;
   readonly total: SerializedMoney;
@@ -56,8 +64,8 @@ export type TransactionDetailData = {
   readonly account: TransactionDetailAccount | null;
   readonly transferAccount: TransactionDetailAccount | null;
   readonly source: {
-    readonly label: string;
-    readonly channel: string | null;
+    readonly origin: TransactionDetailOrigin;
+    readonly channel: TransactionDetailSourceChannel | null;
   } | null;
   readonly capabilities: TransactionCapabilities;
   readonly context: {

@@ -18,6 +18,7 @@ import type {
   TransactionDetailData,
   TransactionDetailMerchant,
   TransactionMonthlyCategoryContext,
+  TransactionDetailOrigin,
 } from "../domain/transaction-detail";
 import { getTransactionCapabilities } from "../domain/transaction-action-policy";
 
@@ -124,13 +125,22 @@ function mapMerchant(
 
 function mapSource(source: Record<string, unknown>): TransactionDetailData["source"] {
   const provider = typeof source.provider === "string" ? source.provider.toLocaleLowerCase("en-US") : null;
-  const origin = typeof source.origin === "string" ? source.origin.toLocaleUpperCase("en-US") : null;
+  const origin = toDetailOrigin(source.origin);
 
-  if (provider === "manual" || origin === "MANUAL") {
-    return { label: "Added manually", channel: "Pace web app" };
-  }
-
+  if (origin) return { origin, channel: origin === "MANUAL" ? "WEB" : null };
+  if (provider === "manual") return { origin: "MANUAL", channel: "WEB" };
+  if (provider === "pace-agent" || provider === "agent") return { origin: "AGENT", channel: null };
+  if (provider === "pace-import" || provider === "import") return { origin: "IMPORT", channel: null };
+  if (provider === "bank-sync") return { origin: "BANK_SYNC", channel: null };
   return null;
+}
+
+function toDetailOrigin(value: unknown): TransactionDetailOrigin | null {
+  if (typeof value !== "string") return null;
+  const origin = value.toLocaleUpperCase("en-US");
+  return origin === "MANUAL" || origin === "AGENT" || origin === "IMPORT" || origin === "BANK_SYNC"
+    ? origin
+    : null;
 }
 
 function mapAccountImpact(
@@ -175,6 +185,7 @@ function mapMonthlyCategoryContext(
 
   return {
     categoryName: category.name,
+    categorySystemKey: category.systemKey,
     direction: selected.kind === "EXPENSE" ? "SPENDING" : "INCOME",
     period,
     total: { currency: selected.currency, minor: total.toString() },

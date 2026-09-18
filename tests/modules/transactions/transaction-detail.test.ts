@@ -7,7 +7,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
-import TransactionDetailNotFound from "@/app/w/[workspaceSlug]/transactions/[transactionId]/not-found";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import { LedgerService } from "@/modules/ledger/ledger-service";
 import { getTransactionDetail } from "@/modules/transactions/queries/get-transaction-detail";
@@ -18,10 +17,12 @@ import { TransactionDetailActions } from "@/modules/transactions/ui/components/t
 import { TransactionDetailSkeleton } from "@/modules/transactions/ui/components/transaction-detail-skeleton";
 import { TransactionTechnicalDetails } from "@/modules/transactions/ui/components/transaction-technical-details";
 import { getTransactionDetailActionLabels } from "@/modules/transactions/ui/transaction-detail-action-labels";
+import { getTransactionDetailLabels } from "@/modules/transactions/ui/transaction-detail-labels";
 import { getTransactionEditLabels } from "@/modules/transactions/ui/transaction-edit-labels";
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 import { TransactionDetailView } from "@/modules/transactions/ui/views/transaction-detail-view";
+import { formatDetailDate } from "@/modules/transactions/ui/components/transaction-detail-formatters";
 
 import { InMemoryLedgerRepository, SYSTEM_GROCERIES_ID, SYSTEM_SALARY_ID } from "../../support/in-memory-ledger-repository";
 import { InMemoryWorkspaceRepository } from "../../support/in-memory-workspace-repository";
@@ -35,6 +36,10 @@ const editCategories = [
   { id: SYSTEM_GROCERIES_ID, name: "Groceries", kind: "EXPENSE", systemKey: "expense:groceries" },
   { id: SYSTEM_SALARY_ID, name: "Salary", kind: "INCOME", systemKey: "income:salary" },
 ] as const;
+
+function detailLabels(language: "en" | "fr" | "de") {
+  return getTransactionDetailLabels(getDashboardLabels(language));
+}
 
 async function fixture() {
   const ledger = new InMemoryLedgerRepository();
@@ -97,9 +102,10 @@ test("an authorized member sees persisted, workspace-scoped transaction detail a
   assert.equal(transaction.id, expense.id);
   assert.equal(transaction.merchant?.name, "Carrefour Market");
   assert.equal(transaction.amount.minor, "24850");
-  assert.equal(transaction.source?.label, "Added manually");
+  assert.deepEqual(transaction.source, { origin: "MANUAL", channel: "WEB" });
   assert.deepEqual(transaction.context.monthlyCategory, {
     categoryName: "Groceries",
+    categorySystemKey: "expense:groceries",
     direction: "SPENDING",
     period: "2026-09",
     total: { currency: "USD", minor: "28350" },
@@ -153,9 +159,10 @@ test("expense, income, and transfer render their real type-specific fields", asy
   const [expenseDetail, incomeDetail, transferDetail] = await Promise.all([detail(expense.id), detail(income.id), detail(transfer.id)]);
   assert.ok(expenseDetail && incomeDetail && transferDetail);
 
-  const expenseMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, { transaction: expenseDetail, locale: "en-US", timeZone: "Africa/Douala" }));
-  const incomeMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, { transaction: incomeDetail, locale: "en-US", timeZone: "Africa/Douala" }));
-  const transferMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, { transaction: transferDetail, locale: "en-US", timeZone: "Africa/Douala" }));
+  const labels = detailLabels("en");
+  const expenseMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, { transaction: expenseDetail, labels, locale: "en-US", timeZone: "Africa/Douala" }));
+  const incomeMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, { transaction: incomeDetail, labels, locale: "en-US", timeZone: "Africa/Douala" }));
+  const transferMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, { transaction: transferDetail, labels, locale: "en-US", timeZone: "Africa/Douala" }));
 
   assert.match(expenseMarkup, /Merchant/);
   assert.match(expenseMarkup, /Category/);
@@ -174,7 +181,7 @@ test("missing optional transaction fields leave a clean detail layout", async ()
   assert.equal(transaction.category, null);
   assert.equal(transaction.note, null);
 
-  const markup = renderToStaticMarkup(createElement(TransactionDetailCard, { transaction, locale: "en-US", timeZone: "Africa/Douala" }));
+  const markup = renderToStaticMarkup(createElement(TransactionDetailCard, { transaction, labels: detailLabels("en"), locale: "en-US", timeZone: "Africa/Douala" }));
   assert.doesNotMatch(markup, /Merchant|Category|Note/);
   assert.match(markup, /Account/);
   assert.match(markup, /Status/);
@@ -185,8 +192,9 @@ test("financial context and activity only present available ledger facts", async
   const transaction = await detail(expense.id);
   assert.ok(transaction);
 
-  const financialMarkup = renderToStaticMarkup(createElement(TransactionFinancialContext, { transaction, locale: "en-US" }));
-  const activityMarkup = renderToStaticMarkup(createElement(TransactionDetailActivity, { transaction, locale: "en-US", timeZone: "Africa/Douala" }));
+  const labels = detailLabels("en");
+  const financialMarkup = renderToStaticMarkup(createElement(TransactionFinancialContext, { transaction, labels, locale: "en-US" }));
+  const activityMarkup = renderToStaticMarkup(createElement(TransactionDetailActivity, { transaction, labels, locale: "en-US", timeZone: "Africa/Douala" }));
   assert.match(financialMarkup, /Groceries this month/);
   assert.match(financialMarkup, /\$283\.50/);
   assert.doesNotMatch(financialMarkup, /budget|%|goal/i);
@@ -195,12 +203,171 @@ test("financial context and activity only present available ledger facts", async
   assert.match(activityMarkup, /Verified and posted/);
 });
 
+test("the complete English detail view uses the shared transaction-detail labels", async () => {
+  const { detail, expense } = await fixture();
+  const transaction = await detail(expense.id);
+  assert.ok(transaction);
+
+  const markup = renderToStaticMarkup(createElement(TransactionDetailView, {
+    categories: editCategories,
+    language: "en",
+    locale: "en-US",
+    timeZone: "Africa/Douala",
+    transaction: { ...transaction, capabilities: { ...transaction.capabilities, canEdit: false } },
+    workspaceId,
+    workspaceSlug: "house",
+  }));
+
+  assert.match(markup, /Transaction details/);
+  assert.match(markup, /Financial context/);
+  assert.match(markup, /Technical details/);
+  assert.match(markup, /Ask Pace/);
+  assert.match(markup, /Carrefour Market/);
+  assert.match(markup, /Main account/);
+  assert.match(markup, /Weekly groceries/);
+});
+
+test("the French detail view translates chrome, status, source, activity, and system categories", async () => {
+  const { detail, expense } = await fixture();
+  const transaction = await detail(expense.id);
+  assert.ok(transaction);
+
+  const labels = detailLabels("fr");
+  const detailMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, {
+    transaction,
+    labels,
+    locale: "fr-FR",
+    timeZone: "Africa/Douala",
+  }));
+  const financialMarkup = renderToStaticMarkup(createElement(TransactionFinancialContext, {
+    transaction,
+    labels,
+    locale: "fr-FR",
+  }));
+  const activityMarkup = renderToStaticMarkup(createElement(TransactionDetailActivity, {
+    transaction,
+    labels,
+    locale: "fr-FR",
+    timeZone: "Africa/Douala",
+  }));
+  const technicalMarkup = renderToStaticMarkup(createElement(TransactionTechnicalDetails, {
+    transaction,
+    labels,
+    locale: "fr-FR",
+    timeZone: "Africa/Douala",
+  }));
+
+  assert.match(detailMarkup, /Détails de la transaction/);
+  assert.match(detailMarkup, /Marchand/);
+  assert.match(detailMarkup, /Catégorie/);
+  assert.match(detailMarkup, /Comptabilisée/);
+  assert.match(financialMarkup, /Courses ce mois-ci/);
+  assert.match(activityMarkup, /Transaction ajoutée/);
+  assert.match(activityMarkup, /Catégorisée comme Courses/);
+  assert.match(technicalMarkup, /Identifiant de la transaction/);
+  assert.match(detailMarkup, /Carrefour Market/);
+  assert.match(detailMarkup, /Main account/);
+  assert.match(detailMarkup, /Weekly groceries/);
+  assert.equal(labels.source.origin.MANUAL, "Manuel");
+});
+
+test("the German detail view keeps the essential layout resilient to longer labels", async () => {
+  const { detail, expense, income, transfer } = await fixture();
+  const [expenseDetail, incomeDetail, transferDetail] = await Promise.all([
+    detail(expense.id),
+    detail(income.id),
+    detail(transfer.id),
+  ]);
+  assert.ok(expenseDetail && incomeDetail && transferDetail);
+
+  const labels = detailLabels("de");
+  const expenseMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, {
+    transaction: expenseDetail,
+    labels,
+    locale: "de-DE",
+    timeZone: "Africa/Douala",
+  }));
+  const incomeMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, {
+    transaction: incomeDetail,
+    labels,
+    locale: "de-DE",
+    timeZone: "Africa/Douala",
+  }));
+  const transferMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, {
+    transaction: transferDetail,
+    labels,
+    locale: "de-DE",
+    timeZone: "Africa/Douala",
+  }));
+  const viewMarkup = renderToStaticMarkup(createElement(TransactionDetailView, {
+    categories: editCategories,
+    language: "de",
+    locale: "de-DE",
+    timeZone: "Africa/Douala",
+    transaction: { ...expenseDetail, capabilities: { ...expenseDetail.capabilities, canEdit: false } },
+    workspaceId,
+    workspaceSlug: "house",
+  }));
+
+  assert.match(expenseMarkup, /Transaktionsdetails/);
+  assert.match(expenseMarkup, /Händler/);
+  assert.match(expenseMarkup, /Lebensmittel/);
+  assert.match(incomeMarkup, /Quelle/);
+  assert.match(transferMarkup, /Von Konto/);
+  assert.match(transferMarkup, /Auf Konto/);
+  assert.match(expenseMarkup, /sm:grid-cols-\[minmax\(10.5rem,13.25rem\)_minmax\(0,1fr\)\]/);
+  assert.match(viewMarkup, /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(290px,320px\)\]/);
+  assert.equal(labels.source.origin.MANUAL, "Manuell");
+});
+
+test("detail actions and machine-readable capability reasons use localized dashboard copy", () => {
+  const english = getTransactionDetailActionLabels(getDashboardLabels("en"));
+  const french = getTransactionDetailActionLabels(getDashboardLabels("fr"));
+  const german = getTransactionDetailActionLabels(getDashboardLabels("de"));
+
+  assert.notEqual(french.edit, english.edit);
+  assert.notEqual(german.edit, english.edit);
+  assert.notEqual(french.createRefund, english.createRefund);
+  assert.notEqual(german.createRefund, english.createRefund);
+  assert.notEqual(french.unavailable.READ_ONLY_ROLE, english.unavailable.READ_ONLY_ROLE);
+  assert.notEqual(german.unavailable.IMPORTED_TRANSACTION_RESTRICTED, english.unavailable.IMPORTED_TRANSACTION_RESTRICTED);
+});
+
+test("Ask Pace receives serializable translated templates across the server-client boundary", () => {
+  for (const language of ["en", "fr", "de"] as const) {
+    const askPace = detailLabels(language).askPace;
+    assert.ok(Object.values(askPace).every((value) => typeof value === "string"), language);
+  }
+});
+
+test("detail date and system-category presentation follow locale without changing user data", async () => {
+  const { detail, expense } = await fixture();
+  const transaction = await detail(expense.id);
+  assert.ok(transaction);
+
+  assert.match(formatDetailDate(transaction.occurredAt, "en-US", "Africa/Douala"), /September/);
+  assert.match(formatDetailDate(transaction.occurredAt, "fr-FR", "Africa/Douala"), /septembre/);
+  assert.match(formatDetailDate(transaction.occurredAt, "de-DE", "Africa/Douala"), /September/);
+  assert.equal(detailLabels("fr").systemCategory(transaction.category!), "Courses");
+
+  const customCategoryMarkup = renderToStaticMarkup(createElement(TransactionDetailCard, {
+    transaction: {
+      ...transaction,
+      category: { id: "workspace-category", name: "Custom household", systemKey: null },
+    },
+    labels: detailLabels("fr"),
+    locale: "fr-FR",
+    timeZone: "Africa/Douala",
+  }));
+  assert.match(customCategoryMarkup, /Custom household/);
+});
+
 test("technical details start collapsed and keep operational metadata secondary", async () => {
   const { detail, expense } = await fixture();
   const transaction = await detail(expense.id);
   assert.ok(transaction);
 
-  const markup = renderToStaticMarkup(createElement(TransactionTechnicalDetails, { transaction, locale: "en-US", timeZone: "Africa/Douala" }));
+  const markup = renderToStaticMarkup(createElement(TransactionTechnicalDetails, { transaction, labels: detailLabels("en"), locale: "en-US", timeZone: "Africa/Douala" }));
   assert.match(markup, /<details/);
   assert.doesNotMatch(markup, /<details[^>]*\sopen(?:=|\s|>)/);
   assert.match(markup, /Transaction ID/);
@@ -255,10 +422,10 @@ test("a real list record exposes the canonical workspace-safe detail link", asyn
 });
 
 test("the route-level not-found and loading states are Pace-aligned", () => {
-  const notFoundMarkup = renderToStaticMarkup(createElement(TransactionDetailNotFound));
-  const loadingMarkup = renderToStaticMarkup(createElement(TransactionDetailSkeleton));
-  assert.match(notFoundMarkup, /Transaction unavailable/);
-  assert.match(notFoundMarkup, /Back to transactions/);
+  const notFoundLabels = detailLabels("en").notFound;
+  const loadingMarkup = renderToStaticMarkup(createElement(TransactionDetailSkeleton, { loadingLabel: detailLabels("en").loading }));
+  assert.equal(notFoundLabels.eyebrow, "Transaction unavailable");
+  assert.equal(notFoundLabels.back, "Back to transactions");
   assert.match(loadingMarkup, /aria-busy="true"/);
   assert.match(loadingMarkup, /Loading transaction/);
 });
@@ -272,5 +439,24 @@ test("production detail code has no fixture or mock transaction rendering path",
   for (const file of files) {
     const source = await readFile(file, "utf8");
     assert.doesNotMatch(source, /\b(?:fixture|mock|demo|sample)\b/i, file);
+  }
+});
+
+test("production detail components contain no accidental hardcoded English UI copy", async () => {
+  const files = [
+    "src/modules/transactions/ui/views/transaction-detail-view.tsx",
+    "src/modules/transactions/ui/components/transaction-detail-activity.tsx",
+    "src/modules/transactions/ui/components/transaction-detail-ask-pace.tsx",
+    "src/modules/transactions/ui/components/transaction-detail-card.tsx",
+    "src/modules/transactions/ui/components/transaction-detail-hero.tsx",
+    "src/modules/transactions/ui/components/transaction-financial-context.tsx",
+    "src/modules/transactions/ui/components/transaction-source-information.tsx",
+    "src/modules/transactions/ui/components/transaction-technical-details.tsx",
+  ];
+  const accidentalUiCopy = /["`](?:Transactions|Transaction details|Financial context|Activity|Technical details|Merchant|Source|Category|Account|From account|To account|Date|Time|Note|Status|Manual|Recorded in Pace|Transaction added|Verified and posted|Ask Pace|Loading transaction)["`]/;
+
+  for (const file of files) {
+    const source = await readFile(file, "utf8");
+    assert.doesNotMatch(source, accidentalUiCopy, file);
   }
 });

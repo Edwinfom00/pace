@@ -6,6 +6,7 @@ import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import type { TransactionDetailData } from "../../domain/transaction-detail";
 import type { TransactionCategoryOption } from "../../domain/transaction-category-options";
 import { getTransactionDetailActionLabels } from "../transaction-detail-action-labels";
+import { getTransactionDetailLabels } from "../transaction-detail-labels";
 import { getTransactionEditLabels } from "../transaction-edit-labels";
 import { TransactionDetailActions } from "../components/transaction-detail-actions";
 import { TransactionDetailActivity } from "../components/transaction-detail-activity";
@@ -33,21 +34,24 @@ export function TransactionDetailView({
   readonly locale: string;
   readonly timeZone: string;
 }) {
-  const actionLabels = getTransactionDetailActionLabels(getDashboardLabels(language));
-  const editLabels = getTransactionEditLabels(getDashboardLabels(language));
+  const dashboardLabels = getDashboardLabels(language);
+  const actionLabels = getTransactionDetailActionLabels(dashboardLabels);
+  const editLabels = getTransactionEditLabels(dashboardLabels);
+  const labels = getTransactionDetailLabels(dashboardLabels);
+  const askPaceCategory = transaction.category ? labels.systemCategory(transaction.category) : null;
 
   return (
     <main className="mx-auto w-full max-w-360 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <Link className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#637491] transition-colors hover:text-[#2563eb] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563eb]" href={`/w/${workspaceSlug}/transactions`}><ArrowLeft aria-hidden className="size-4" />Transactions</Link>
-      <div className="mt-6"><TransactionDetailHero locale={locale} timeZone={timeZone} transaction={transaction} /></div>
+      <Link className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#637491] transition-colors hover:text-[#2563eb] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563eb]" href={`/w/${workspaceSlug}/transactions`}><ArrowLeft aria-hidden className="size-4" />{labels.back}</Link>
+      <div className="mt-6"><TransactionDetailHero labels={labels} locale={locale} timeZone={timeZone} transaction={transaction} /></div>
       <div className="mt-6 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(290px,320px)] xl:gap-7">
         <div className="min-w-0 space-y-4">
-          <TransactionDetailCard locale={locale} timeZone={timeZone} transaction={transaction} />
-          <TransactionFinancialContext locale={locale} transaction={transaction} />
-          <TransactionSourceInformation transaction={transaction} />
-          {transaction.capabilities.canViewTechnicalDetails ? <TransactionTechnicalDetails locale={locale} timeZone={timeZone} transaction={transaction} /> : null}
+          <TransactionDetailCard labels={labels} locale={locale} timeZone={timeZone} transaction={transaction} />
+          <TransactionFinancialContext labels={labels} locale={locale} transaction={transaction} />
+          <TransactionSourceInformation labels={labels} transaction={transaction} />
+          {transaction.capabilities.canViewTechnicalDetails ? <TransactionTechnicalDetails labels={labels} locale={locale} timeZone={timeZone} transaction={transaction} /> : null}
         </div>
-        <aside aria-label="Transaction side rail" className="space-y-4 xl:sticky xl:top-6">
+        <aside aria-label={labels.sideRail} className="space-y-4 xl:sticky xl:top-6">
           <TransactionDetailActions
             categories={categories}
             editLabels={editLabels}
@@ -57,8 +61,8 @@ export function TransactionDetailView({
             transaction={transaction}
             workspaceId={workspaceId}
           />
-          <TransactionDetailActivity locale={locale} timeZone={timeZone} transaction={transaction} />
-          <TransactionDetailAskPace language={language} locale={locale} timeZone={timeZone} transaction={transaction} workspaceId={workspaceId} />
+          <TransactionDetailActivity labels={labels} locale={locale} timeZone={timeZone} transaction={transaction} />
+          <TransactionDetailAskPace categoryLabel={askPaceCategory} labels={labels.askPace} language={language} locale={locale} timeZone={timeZone} transaction={transaction} workspaceId={workspaceId} />
         </aside>
       </div>
     </main>

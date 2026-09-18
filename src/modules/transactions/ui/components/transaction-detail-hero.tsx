@@ -3,20 +3,23 @@ import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight } from "lucide-react";
 import { TransactionIcon } from "@/components/pace/transaction-visuals/transaction-icon";
 import type { TransactionDetailData } from "@/modules/transactions/domain/transaction-detail";
 
-import { formatDetailDate, formatDetailTime, formatTransactionDetailAmount, transactionKindLabel } from "./transaction-detail-formatters";
+import type { TransactionDetailLabels } from "../transaction-detail-labels";
+import { formatDetailDate, formatDetailTime, formatTransactionDetailAmount } from "./transaction-detail-formatters";
 
 export function TransactionDetailHero({
   transaction,
+  labels,
   locale,
   timeZone,
 }: {
   readonly transaction: TransactionDetailData;
+  readonly labels: TransactionDetailLabels;
   readonly locale: string;
   readonly timeZone: string;
 }) {
-  const title = transaction.merchant?.name ?? (transaction.kind === "TRANSFER" ? "Transfer" : transactionKindLabel(transaction.kind));
+  const title = transaction.merchant?.name ?? labels.kind[transaction.kind];
   const subtitle = transaction.kind === "TRANSFER"
-    ? [transaction.account?.name, transaction.transferAccount?.name].filter(Boolean).join(" to ")
+    ? [transaction.account?.name, transaction.transferAccount?.name].filter(Boolean).join(" → ")
     : transaction.note ?? null;
   const TypeIcon = transaction.kind === "EXPENSE" ? ArrowDownLeft : transaction.kind === "INCOME" ? ArrowUpRight : ArrowRightLeft;
   const amountTone = transaction.kind === "INCOME" || transaction.kind === "REFUND" ? "text-[#078652]" : "text-[#101a35]";
@@ -40,10 +43,10 @@ export function TransactionDetailHero({
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <span className="inline-flex items-center gap-1 rounded-full bg-[#eef3ff] px-2.5 py-1 text-[11px] font-medium text-[#365fba]">
               <TypeIcon aria-hidden className="size-3" />
-              {transactionKindLabel(transaction.kind)}
+              {labels.kind[transaction.kind]}
             </span>
-            {transaction.category ? <span className="rounded-full bg-[#f2f4f7] px-2.5 py-1 text-[11px] font-medium text-[#596780]">{transaction.category.name}</span> : null}
-            {transaction.source?.label ? <span className="rounded-full bg-[#f2f4f7] px-2.5 py-1 text-[11px] font-medium text-[#596780]">Manual</span> : null}
+            {transaction.category ? <span className="rounded-full bg-[#f2f4f7] px-2.5 py-1 text-[11px] font-medium text-[#596780]">{labels.systemCategory(transaction.category)}</span> : null}
+            {transaction.source ? <span className="rounded-full bg-[#f2f4f7] px-2.5 py-1 text-[11px] font-medium text-[#596780]">{labels.source.origin[transaction.source.origin]}</span> : null}
           </div>
         </div>
       </div>
@@ -52,7 +55,7 @@ export function TransactionDetailHero({
           {formatTransactionDetailAmount(transaction.amount, transaction.kind, locale)}
         </p>
         <p className="mt-1 text-[13px] text-[#71809a]">
-          {transaction.kind === "TRANSFER" ? "Transfer" : transaction.account?.name ?? "Account"}
+          {transaction.kind === "TRANSFER" ? labels.kind.TRANSFER : transaction.account?.name ?? labels.field.account}
           <span aria-hidden className="px-1.5 text-[#c0c8d5]">·</span>
           <time dateTime={transaction.occurredAt}>{formatDetailDate(transaction.occurredAt, locale, timeZone)}, {formatDetailTime(transaction.occurredAt, locale, timeZone)}</time>
         </p>

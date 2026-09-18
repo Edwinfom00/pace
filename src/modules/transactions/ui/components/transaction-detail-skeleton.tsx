@@ -1,6 +1,6 @@
-export function TransactionDetailSkeleton() {
+export function TransactionDetailSkeleton({ loadingLabel }: { readonly loadingLabel: string }) {
   return (
-    <main aria-busy="true" aria-label="Loading transaction" className="mx-auto w-full max-w-360 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <main aria-busy="true" aria-label={loadingLabel} className="mx-auto w-full max-w-360 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <div className="h-4 w-28 animate-pulse rounded bg-[#eef1f5] motion-reduce:animate-none" />
       <section className="mt-7 flex items-center justify-between gap-6 border-b border-[#edf0f4] pb-6">
         <div className="flex items-center gap-4">

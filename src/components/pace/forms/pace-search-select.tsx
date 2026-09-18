@@ -117,7 +117,7 @@ export function PaceSearchSelect<T extends string>({
       <Popover.Portal>
         <Popover.Content
           align="start"
-          className="z-50 mt-1 w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-xl border border-[#d9e2ef] bg-white p-1.5 shadow-[0_18px_45px_rgba(31,62,119,0.14)]"
+          className="z-50 mt-1 w-(--radix-popover-trigger-width) overflow-hidden rounded-xl border border-[#d9e2ef] bg-white p-1.5 shadow-[0_18px_45px_rgba(31,62,119,0.14)]"
           sideOffset={6}
         >
           <Command shouldFilter={false}>

@@ -103,7 +103,7 @@ export function TransactionTypeSelector({
             tabIndex={selected ? 0 : -1}
             type="button"
           >
-            <Icon aria-hidden="true" className="size-4 shrink-0 sm:size-[18px]" />
+            <Icon aria-hidden="true" className="size-4 shrink-0 sm:size-4.5" />
             <span className="truncate">{option.label}</span>
           </button>
         );

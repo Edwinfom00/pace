@@ -1,0 +1,194 @@
+import type { DashboardLabels } from "@/i18n/dashboard-messages";
+import { formatDashboardLabel } from "@/i18n/dashboard-messages";
+import type {
+  LedgerTransactionKind,
+  LedgerTransactionStatus,
+} from "@/modules/ledger/domain";
+
+import type {
+  TransactionDetailCategory,
+  TransactionDetailOrigin,
+  TransactionDetailSourceChannel,
+} from "../domain/transaction-detail";
+
+const systemCategoryMessageKeys = {
+  "expense:groceries": "categories.system.expense.groceries",
+  "expense:dining": "categories.system.expense.dining",
+  "expense:transport": "categories.system.expense.transport",
+  "expense:housing": "categories.system.expense.housing",
+  "expense:utilities": "categories.system.expense.utilities",
+  "expense:health": "categories.system.expense.health",
+  "expense:shopping": "categories.system.expense.shopping",
+  "expense:entertainment": "categories.system.expense.entertainment",
+  "expense:other": "categories.system.expense.other",
+  "income:salary": "categories.system.income.salary",
+  "income:freelance": "categories.system.income.freelance",
+  "income:gift": "categories.system.income.gift",
+  "income:other": "categories.system.income.other",
+} as const;
+
+export type TransactionDetailLabels = {
+  readonly back: string;
+  readonly title: string;
+  readonly sideRail: string;
+  readonly kind: Readonly<Record<LedgerTransactionKind, string>>;
+  readonly status: Readonly<Record<LedgerTransactionStatus, string>>;
+  readonly field: {
+    readonly merchant: string;
+    readonly source: string;
+    readonly category: string;
+    readonly account: string;
+    readonly fromAccount: string;
+    readonly toAccount: string;
+    readonly date: string;
+    readonly time: string;
+    readonly note: string;
+    readonly status: string;
+    readonly addedVia: string;
+    readonly reference: string;
+  };
+  readonly source: {
+    readonly title: string;
+    readonly added: string;
+    readonly noReference: string;
+    readonly none: string;
+    readonly origin: Readonly<Record<TransactionDetailOrigin, string>>;
+    readonly channel: Readonly<Record<TransactionDetailSourceChannel, string>>;
+  };
+  readonly financial: {
+    readonly title: string;
+    readonly categoryThisMonth: (category: string) => string;
+    readonly recordedSpending: (month: string) => string;
+    readonly recordedIncome: (month: string) => string;
+    readonly accountImpact: string;
+    readonly balanceAfter: string;
+    readonly empty: string;
+  };
+  readonly activity: {
+    readonly title: string;
+    readonly added: string;
+    readonly recorded: string;
+    readonly categorized: (category: string) => string;
+    readonly categoryAttached: string;
+    readonly posted: string;
+    readonly included: string;
+    readonly empty: string;
+  };
+  readonly technical: {
+    readonly title: string;
+    readonly transactionId: string;
+    readonly created: string;
+    readonly updated: string;
+  };
+  readonly askPace: {
+    readonly title: string;
+    readonly beta: string;
+    readonly transactionSubject: string;
+    readonly context: string;
+    readonly spendingPrompt: string;
+    readonly understandPrompt: string;
+    readonly categoryPrompt: string;
+    readonly transferPrompt: string;
+  };
+  readonly notFound: {
+    readonly eyebrow: string;
+    readonly title: string;
+    readonly description: string;
+    readonly back: string;
+  };
+  readonly loading: string;
+  readonly errorTitle: string;
+  readonly systemCategory: (category: Pick<TransactionDetailCategory, "name" | "systemKey">) => string;
+};
+
+export function getTransactionDetailLabels(labels: DashboardLabels): TransactionDetailLabels {
+  return {
+    back: labels["transactions.detail.back"],
+    title: labels["transactions.detail.title"],
+    sideRail: labels["transactions.detail.sideRail"],
+    kind: {
+      EXPENSE: labels["transactions.detail.kind.expense"],
+      INCOME: labels["transactions.detail.kind.income"],
+      TRANSFER: labels["transactions.detail.kind.transfer"],
+      REFUND: labels["transactions.detail.kind.refund"],
+    },
+    status: {
+      PENDING: labels["transactions.status.pending"],
+      POSTED: labels["transactions.status.posted"],
+    },
+    field: {
+      merchant: labels["transactions.detail.field.merchant"],
+      source: labels["transactions.detail.field.source"],
+      category: labels["transactions.detail.field.category"],
+      account: labels["transactions.detail.field.account"],
+      fromAccount: labels["transactions.detail.field.fromAccount"],
+      toAccount: labels["transactions.detail.field.toAccount"],
+      date: labels["transactions.detail.field.date"],
+      time: labels["transactions.detail.field.time"],
+      note: labels["transactions.detail.field.note"],
+      status: labels["transactions.detail.field.status"],
+      addedVia: labels["transactions.detail.field.addedVia"],
+      reference: labels["transactions.detail.field.reference"],
+    },
+    source: {
+      title: labels["transactions.detail.source.title"],
+      added: labels["transactions.detail.source.added"],
+      noReference: labels["transactions.detail.source.noReference"],
+      none: labels["transactions.detail.source.none"],
+      origin: {
+        MANUAL: labels["transactions.detail.origin.manual"],
+        AGENT: labels["transactions.detail.origin.agent"],
+        IMPORT: labels["transactions.detail.origin.import"],
+        BANK_SYNC: labels["transactions.detail.origin.bankSync"],
+      },
+      channel: { WEB: labels["transactions.detail.channel.web"] },
+    },
+    financial: {
+      title: labels["transactions.detail.financial.title"],
+      categoryThisMonth: (category) => formatDashboardLabel(labels, "transactions.detail.financial.categoryThisMonth", { category }),
+      recordedSpending: (month) => formatDashboardLabel(labels, "transactions.detail.financial.recordedSpending", { month }),
+      recordedIncome: (month) => formatDashboardLabel(labels, "transactions.detail.financial.recordedIncome", { month }),
+      accountImpact: labels["transactions.detail.financial.accountImpact"],
+      balanceAfter: labels["transactions.detail.financial.balanceAfter"],
+      empty: labels["transactions.detail.financial.empty"],
+    },
+    activity: {
+      title: labels["transactions.detail.activity.title"],
+      added: labels["transactions.detail.activity.added"],
+      recorded: labels["transactions.detail.activity.recorded"],
+      categorized: (category) => formatDashboardLabel(labels, "transactions.detail.activity.categorized", { category }),
+      categoryAttached: labels["transactions.detail.activity.categoryAttached"],
+      posted: labels["transactions.detail.activity.posted"],
+      included: labels["transactions.detail.activity.included"],
+      empty: labels["transactions.detail.activity.empty"],
+    },
+    technical: {
+      title: labels["transactions.detail.technical.title"],
+      transactionId: labels["transactions.detail.technical.transactionId"],
+      created: labels["transactions.detail.technical.created"],
+      updated: labels["transactions.detail.technical.updated"],
+    },
+    askPace: {
+      title: labels["transactions.detail.askPace.title"],
+      beta: labels["transactions.detail.askPace.beta"],
+      transactionSubject: labels["transactions.detail.askPace.transactionSubject"],
+      context: labels["transactions.detail.askPace.context"],
+      spendingPrompt: labels["transactions.detail.askPace.spendingPrompt"],
+      understandPrompt: labels["transactions.detail.askPace.understandPrompt"],
+      categoryPrompt: labels["transactions.detail.askPace.categoryPrompt"],
+      transferPrompt: labels["transactions.detail.askPace.transferPrompt"],
+    },
+    notFound: {
+      eyebrow: labels["transactions.detail.notFound.eyebrow"],
+      title: labels["transactions.detail.notFound.title"],
+      description: labels["transactions.detail.notFound.description"],
+      back: labels["transactions.detail.notFound.back"],
+    },
+    loading: labels["transactions.detail.loading"],
+    errorTitle: labels["transactions.detail.error.title"],
+    systemCategory: (category) => {
+      const key = category.systemKey ? systemCategoryMessageKeys[category.systemKey as keyof typeof systemCategoryMessageKeys] : undefined;
+      return key ? labels[key] : category.name;
+    },
+  };
+}

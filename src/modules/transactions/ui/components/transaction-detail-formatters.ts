@@ -47,15 +47,3 @@ export function formatDetailMonth(value: string, locale: string): string {
     .format(new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, 1)));
 }
 
-export function transactionKindLabel(kind: TransactionDetailData["kind"]): string {
-  switch (kind) {
-    case "EXPENSE": return "Expense";
-    case "INCOME": return "Income";
-    case "TRANSFER": return "Transfer";
-    case "REFUND": return "Refund";
-  }
-}
-
-export function transactionStatusLabel(status: TransactionDetailData["status"]): string {
-  return status === "POSTED" ? "Posted" : "Pending";
-}

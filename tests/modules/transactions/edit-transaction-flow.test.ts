@@ -36,7 +36,7 @@ function transaction(overrides: Partial<TransactionDetailData> = {}): Transactio
     category: { id: "expense-groceries", name: "Groceries", systemKey: "expense:groceries" },
     account: { id: "account-1", name: "Main account", currency: "XAF" },
     transferAccount: null,
-    source: { label: "Added manually", channel: "Pace web app" },
+    source: { origin: "MANUAL", channel: "WEB" },
     capabilities: {
       canEdit: true,
       canRefund: true,
