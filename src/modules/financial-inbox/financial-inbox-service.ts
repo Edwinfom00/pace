@@ -4,6 +4,7 @@ import { AuthorizationError, ConflictError, NotFoundError } from "@/authorizatio
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
 import type { AuthenticatedActor } from "@/authorization/session";
 import type { LedgerCategoryRecord, LedgerTransactionRecord } from "@/modules/ledger/domain";
+import { currentFinancialTransactions } from "@/modules/ledger/correction-chain";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
@@ -385,7 +386,9 @@ export class FinancialInboxService {
     workspaceId: string,
     newTransaction: LedgerTransactionRecord,
   ): Promise<RecurringPaymentRecord | null> {
-    const transactions = await this.ledger.listTransactions(workspaceId, { statuses: ["POSTED"] });
+    const transactions = currentFinancialTransactions(
+      await this.ledger.listTransactions(workspaceId, { statuses: ["POSTED"] }),
+    );
     const merchantPairs = await Promise.all(
       transactions.map(async (transaction) => ({
         transaction,

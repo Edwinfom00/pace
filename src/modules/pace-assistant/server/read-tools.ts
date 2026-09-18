@@ -5,6 +5,7 @@ import { resolveMerchantLogo } from "@/lib/transaction-visuals/merchant-logo-mat
 import { resolveTransactionIcon } from "@/lib/transaction-visuals/transaction-icon-matcher";
 import { getFinancialInboxService } from "@/modules/financial-inbox/server";
 import type { LedgerTransactionRecord } from "@/modules/ledger/domain";
+import { currentFinancialTransactions } from "@/modules/ledger/correction-chain";
 import { getLedgerService } from "@/modules/ledger/server";
 import { buildOverviewFinancialSummary } from "@/modules/overview/domain/overview-financial-summary";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
@@ -58,7 +59,9 @@ export async function getAssistantRecentTransactions(scope: AssistantReadScope, 
   const context = await requireAssistantWorkspaceContext(scope);
   const safeLimit = clampLimit(limit, 1, 20);
   const ledger = getLedgerService();
-  const transactions = await ledger.listTransactions(scope.actor, scope.workspaceId, { limit: safeLimit });
+  const transactions = currentFinancialTransactions(
+    await ledger.listTransactions(scope.actor, scope.workspaceId),
+  ).slice(0, safeLimit);
   return {
     currency: context.currency,
     transactions: await presentAssistantTransactions(scope, transactions),
@@ -77,7 +80,7 @@ export async function getAssistantExpenses(
     occurredFrom: selectedPeriod.start,
     occurredTo: new Date(selectedPeriod.end.getTime() - 1),
   });
-  const expenses = transactions
+  const expenses = currentFinancialTransactions(transactions)
     .filter((transaction) => transaction.kind === "EXPENSE")
     .sort((left, right) => (left.amountMinor === right.amountMinor ? 0 : left.amountMinor > right.amountMinor ? -1 : 1))
     .slice(0, clampLimit(input.limit ?? 5, 1, 20));

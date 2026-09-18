@@ -10,6 +10,7 @@ import {
   isNull,
   lt,
   lte,
+  notExists,
   or,
 } from "drizzle-orm";
 
@@ -646,7 +647,25 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     workspaceId: string,
     filters: LedgerTransactionListFilters,
   ) {
-    const predicates = [eq(ledgerTransactions.workspaceId, workspaceId)];
+    const predicates = [
+      eq(ledgerTransactions.workspaceId, workspaceId),
+      // The correction table, not presentational fields, identifies obsolete
+      // originals and bookkeeping reversals in the append-only chain.
+      notExists(
+        db
+          .select({ id: ledgerTransactionCorrections.id })
+          .from(ledgerTransactionCorrections)
+          .where(
+            and(
+              eq(ledgerTransactionCorrections.workspaceId, workspaceId),
+              or(
+                eq(ledgerTransactionCorrections.originalTransactionId, ledgerTransactions.id),
+                eq(ledgerTransactionCorrections.reversalTransactionId, ledgerTransactions.id),
+              ),
+            ),
+          ),
+      ),
+    ];
     if (filters.kind) predicates.push(eq(ledgerTransactions.kind, filters.kind));
     if (filters.accountId) predicates.push(eq(ledgerTransactions.accountId, filters.accountId));
     if (filters.categoryId) predicates.push(eq(ledgerTransactions.categoryId, filters.categoryId));

@@ -2,6 +2,7 @@ import type { AuthenticatedActor } from "@/authorization/session";
 import { resolveMerchantLogo } from "@/lib/transaction-visuals/merchant-logo-matcher";
 import { resolveTransactionIcon } from "@/lib/transaction-visuals/transaction-icon-matcher";
 import { DatabaseLedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
+import { currentFinancialTransactions } from "@/modules/ledger/correction-chain";
 import { getLedgerService } from "@/modules/ledger/server";
 
 import type { OverviewRecentTransaction } from "../domain/overview-activity.types";
@@ -18,9 +19,9 @@ export async function getOverviewRecentTransactions({
   limit = 4,
 }: GetOverviewRecentTransactionsInput): Promise<readonly OverviewRecentTransaction[]> {
   const previewLimit = Math.min(Math.max(Math.floor(limit), 1), 12);
-  const transactions = await getLedgerService().listTransactions(actor, workspaceId, {
-    limit: previewLimit,
-  });
+  const transactions = currentFinancialTransactions(
+    await getLedgerService().listTransactions(actor, workspaceId),
+  ).slice(0, previewLimit);
   const repository = new DatabaseLedgerRepository();
   const details = await Promise.all(
     transactions.map(async (transaction) => {

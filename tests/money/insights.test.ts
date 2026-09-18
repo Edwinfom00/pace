@@ -97,6 +97,23 @@ test("spending pace and budgets use BigInt thresholds without floating point ari
   assert.ok(exceeded.includes("BUDGET_EXCEEDED"));
 });
 
+test("insights ignore original and reversal entries from a correction chain", () => {
+  const result = types(input({
+    transactions: [
+      transaction({ id: "original", kind: "EXPENSE", amountMinor: 10_000n }),
+      transaction({ id: "reversal", kind: "EXPENSE", amountMinor: 10_000n, reversalOfTransactionId: "original" }),
+      transaction({ id: "replacement", kind: "EXPENSE", amountMinor: 9_000n }),
+    ],
+    budgets: [{
+      id: "overall", scope: "OVERALL", categoryId: null, amountMinor: 10_000n, currency: "USD", status: "ACTIVE",
+      startsOn: new Date("2026-03-01T00:00:00Z"), endsOn: null,
+    }],
+  }));
+
+  assert.ok(result.includes("BUDGET_AT_RISK"));
+  assert.equal(result.includes("BUDGET_EXCEEDED"), false);
+});
+
 test("recurring pricing, candidate recurring payments, goals, and unusual transactions are deterministic", () => {
   const result = types(input({
     transactions: [

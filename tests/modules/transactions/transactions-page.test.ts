@@ -9,6 +9,8 @@ import { getTransactionsPage } from "@/modules/transactions/queries/get-transact
 import { parseTransactionSearchParams } from "@/modules/transactions/queries/transaction-search-params";
 import { startOfWorkspaceDay } from "@/modules/transactions/queries/workspace-date-range";
 import { LedgerService } from "@/modules/ledger/ledger-service";
+import { correctTransactionForActor } from "@/modules/ledger/correct-transaction";
+import { calculateIncomeAndSpendingTotals } from "@/modules/ledger/totals";
 
 import {
   InMemoryLedgerRepository,
@@ -75,7 +77,7 @@ async function fixture() {
     unknownMerchantName: "Transaction",
   }, { ledger, workspaces });
 
-  return { page, checking, card, ledger, workspaces };
+  return { page, checking, card, ledger, service, workspaces };
 }
 
 test("transaction search params are typed, bounded, and independently fall back safely", () => {
@@ -157,6 +159,103 @@ test("transaction list applies server-side search, type, category, account, date
   assert.equal((await page({ accountId: checking.id })).totalCount, 5);
   assert.equal((await page({ from: "2026-09-03", to: "2026-09-03" })).items[0]?.merchant.name, "Carrefour Market");
   assert.equal((await page({ accountId: checking.id, categoryId: SYSTEM_GROCERIES_ID, kind: "EXPENSE" })).totalCount, 1);
+});
+
+test("the transaction list exposes only the terminal replacement from an expense correction chain", async () => {
+  const { checking, ledger, page, service, workspaces } = await fixture();
+  const now = new Date("2026-09-01T00:00:00.000Z");
+  workspaces.workspaces.set(workspaceId, {
+    id: workspaceId,
+    name: "Workspace one",
+    slug: "workspace-one",
+    type: "CUSTOM",
+    createdByUserId: owner.userId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  workspaces.preferences.set(workspaceId, {
+    workspaceId,
+    currency: "USD",
+    locale: "en-US",
+    timezone: "Africa/Douala",
+    weekStartsOn: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const santaLucia = await service.createMerchant(owner, workspaceId, { name: "Santa Lucia" });
+  const original = await service.createTransaction(owner, workspaceId, {
+    kind: "EXPENSE",
+    accountId: checking.id,
+    categoryId: SYSTEM_GROCERIES_ID,
+    merchantId: santaLucia.id,
+    amountMinor: "10000",
+    currency: "USD",
+    occurredAt: "2026-09-06T10:00:00.000Z",
+  });
+
+  const first = await correctTransactionForActor(owner, {
+    workspaceId,
+    transactionId: original.id,
+    kind: "EXPENSE",
+    financialChanges: { amountMinor: "9000" },
+    idempotencyKey: "b0000000-0000-4000-8000-000000000611",
+  }, { ledger: service });
+  assert.equal(first.ok, true);
+  if (!first.ok) return;
+
+  const firstChain = first.correction;
+  assert.equal(ledger.transactions.get(original.id)?.amountMinor, 10000n);
+  assert.equal(ledger.transactions.get(firstChain.reversalTransaction.id)?.reversalOfTransactionId, original.id);
+  assert.equal(ledger.transactions.get(firstChain.replacementTransaction.id)?.amountMinor, 9000n);
+  assert.equal(ledger.transactionCorrections.size, 1);
+  assert.deepEqual(
+    (await page({ search: "Santa Lucia" })).items.map((item) => [item.id, item.amount.minor, item.kind]),
+    [[firstChain.replacementTransaction.id, "9000", "EXPENSE"]],
+  );
+  assert.deepEqual(
+    calculateIncomeAndSpendingTotals(
+      [original, firstChain.reversalTransaction, firstChain.replacementTransaction].map(
+        ({ id }) => ledger.transactions.get(id)!,
+      ),
+      "USD",
+    ),
+    { incomeMinor: 0n, spendingMinor: 9000n },
+  );
+
+  const second = await correctTransactionForActor(owner, {
+    workspaceId,
+    transactionId: firstChain.replacementTransaction.id,
+    kind: "EXPENSE",
+    financialChanges: { amountMinor: "8000" },
+    idempotencyKey: "b0000000-0000-4000-8000-000000000612",
+  }, { ledger: service });
+  assert.equal(second.ok, true);
+  if (!second.ok) return;
+
+  const secondChain = second.correction;
+  assert.equal(ledger.transactionCorrections.size, 2);
+  assert.equal(
+    [...ledger.transactions.values()].filter((transaction) => transaction.workspaceId === workspaceId).length,
+    11,
+    "the original, both reversals, and both replacements remain persisted",
+  );
+  assert.deepEqual(
+    (await page({ search: "Santa Lucia" })).items.map((item) => [item.id, item.amount.minor, item.kind]),
+    [[secondChain.replacementTransaction.id, "8000", "EXPENSE"]],
+  );
+  assert.deepEqual(
+    calculateIncomeAndSpendingTotals(
+      [
+        original,
+        firstChain.reversalTransaction,
+        firstChain.replacementTransaction,
+        secondChain.reversalTransaction,
+        secondChain.replacementTransaction,
+      ].map(({ id }) => ledger.transactions.get(id)!),
+      "USD",
+    ),
+    { incomeMinor: 0n, spendingMinor: 8000n },
+  );
 });
 
 test("stale filters fall back, workspace timezone date boundaries are respected, and amount sorting is currency-safe", async () => {

@@ -424,8 +424,20 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     workspaceId: string,
     filters: LedgerTransactionListFilters,
   ): LedgerTransactionListRow[] {
+    // Keep correction history in the store, while making the default list
+    // mirror the database query: originals and bookkeeping reversals are
+    // obsolete. Replacements remain visible unless corrected again.
+    const nonCurrentCorrectionTransactionIds = new Set(
+      [...this.transactionCorrections.values()]
+        .filter((correction) => correction.workspaceId === workspaceId)
+        .flatMap((correction) => [
+          correction.originalTransactionId,
+          correction.reversalTransactionId,
+        ]),
+    );
     return [...this.transactions.values()].flatMap((transaction) => {
       if (transaction.workspaceId !== workspaceId) return [];
+      if (nonCurrentCorrectionTransactionIds.has(transaction.id)) return [];
       if (filters.kind && transaction.kind !== filters.kind) return [];
       if (filters.accountId && transaction.accountId !== filters.accountId) return [];
       if (filters.categoryId && transaction.categoryId !== filters.categoryId) return [];

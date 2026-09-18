@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   calculateDailyPace,
   comparePeriods,
+  currentMoneyTransactions,
   type MoneyTransaction,
 } from "./engine";
 import { calendarMonthPeriod, type Period } from "./period";
@@ -96,15 +97,14 @@ const RECURRING_INCREASE_BPS = 11_000n;
 const UNUSUAL_MULTIPLIER = 3n;
 const MILLIS_PER_DAY = 86_400_000;
 
-/**
- * Pure M6 Insight Engine. It only accepts trusted domain records and emits
- * JSON-safe facts; it does not know about React, Drizzle, Eve, or an LLM.
- */
+
 export function deriveInsightCandidates(input: FinancialInsightInput): InsightCandidate[] {
   assertValidInput(input);
+  // Exclude append-only correction history from financial observations.
+  const transactions = currentMoneyTransactions(input.transactions);
   const currentPeriod = calendarMonthPeriod(input.now, input.timeZone);
   const previousPeriod = calendarMonthPeriod(input.now, input.timeZone, -1);
-  const comparison = comparePeriods(input.transactions, currentPeriod, previousPeriod, {
+  const comparison = comparePeriods(transactions, currentPeriod, previousPeriod, {
     currency: input.currency,
   });
   const current = comparison.current;
@@ -215,7 +215,7 @@ export function deriveInsightCandidates(input: FinancialInsightInput): InsightCa
 
   const overallBudget = activeBudgets.find((budget) => budget.scope === "OVERALL");
   if (overallBudget) {
-    const pace = calculateDailyPace(input.transactions, currentPeriod, input.timeZone, {
+    const pace = calculateDailyPace(transactions, currentPeriod, input.timeZone, {
       currency: input.currency,
       now: input.now,
     });
@@ -242,7 +242,7 @@ export function deriveInsightCandidates(input: FinancialInsightInput): InsightCa
     }
   }
 
-  const transactionById = new Map(input.transactions.map((transaction) => [transaction.id, transaction]));
+  const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
   for (const recurring of input.recurringPayments) {
     if (recurring.status === "IGNORED") continue;
     assertCurrency(input.currency, recurring.currency, `recurring payment ${recurring.id}`);
@@ -314,7 +314,7 @@ export function deriveInsightCandidates(input: FinancialInsightInput): InsightCa
 
   const unusualStart = new Date(input.now.getTime() - 7 * MILLIS_PER_DAY);
   const baselineStart = new Date(input.now.getTime() - 97 * MILLIS_PER_DAY);
-  const expenses = input.transactions.filter(
+  const expenses = transactions.filter(
     (transaction) => transaction.kind === "EXPENSE" && transaction.status === "POSTED",
   );
   for (const transaction of expenses.filter((entry) => entry.occurredAt >= unusualStart && entry.occurredAt <= input.now)) {
