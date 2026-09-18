@@ -22,10 +22,10 @@ export function TransactionTable({
   return (
     <div className="hidden overflow-hidden rounded-[12px] border border-[#e7ebf1] bg-white md:block">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] border-collapse text-left">
+        <table className="w-full min-w-160 border-collapse text-left">
           <thead>
             <tr className="border-b border-[#e7ebf1] bg-[#fcfdff]">
-              <th className="min-w-[235px] px-4 py-3 text-[11px] font-medium tracking-[-0.01em] text-[#71809a] sm:px-5" scope="col">
+              <th className="min-w-58.75 px-4 py-3 text-[11px] font-medium tracking-[-0.01em] text-[#71809a] sm:px-5" scope="col">
                 {labels.columnTransaction}
               </th>
               <th className="px-3 py-3 text-[11px] font-medium tracking-[-0.01em] text-[#71809a]" scope="col">

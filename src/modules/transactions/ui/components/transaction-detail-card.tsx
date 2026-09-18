@@ -14,7 +14,7 @@ function DetailRow({ icon: Icon, label, children }: DetailRowProps) {
   return (
     <div className="grid grid-cols-[minmax(8.5rem,13rem)_minmax(0,1fr)] items-start gap-3 py-2.5 text-[13px] sm:grid-cols-[13.25rem_minmax(0,1fr)]">
       <dt className="flex items-center gap-2.5 text-[#71809a]"><Icon aria-hidden className="size-4 text-[#637491]" strokeWidth={1.8} />{label}</dt>
-      <dd className="min-w-0 break-words font-medium text-[#34405d]">{children}</dd>
+      <dd className="min-w-0 wrap-break-word font-medium text-[#34405d]">{children}</dd>
     </div>
   );
 }

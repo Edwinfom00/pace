@@ -28,7 +28,7 @@ export function TransactionTableRow({
 }) {
   return (
     <tr className="group border-b border-[#edf0f4] bg-white transition-colors hover:bg-[#fbfcfe] last:border-b-0">
-      <td className="min-w-[235px] px-4 py-3.5 sm:px-5">
+      <td className="min-w-58.75 px-4 py-3.5 sm:px-5">
         {detailHref ? (
           <Link className="block rounded-[7px] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#2563eb]" href={detailHref}>
             <TransactionMerchantCell category={transaction.category} kind={transaction.kind} merchant={transaction.merchant} />

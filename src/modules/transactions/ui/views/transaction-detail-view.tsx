@@ -27,7 +27,7 @@ export function TransactionDetailView({
   readonly timeZone: string;
 }) {
   return (
-    <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <main className="mx-auto w-full max-w-360 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <Link className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#637491] transition-colors hover:text-[#2563eb] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563eb]" href={`/w/${workspaceSlug}/transactions`}><ArrowLeft aria-hidden className="size-4" />Transactions</Link>
       <div className="mt-6"><TransactionDetailHero locale={locale} timeZone={timeZone} transaction={transaction} /></div>
       <div className="mt-6 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(290px,320px)] xl:gap-7">
