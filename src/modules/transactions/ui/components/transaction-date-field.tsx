@@ -109,6 +109,29 @@ export function getTransactionFormToday(timeZone: string, now = new Date()): Dat
   return createCalendarDate(Number(parts.year), Number(parts.month) - 1, Number(parts.day));
 }
 
+
+export function getTransactionFormDateTime(value: string, timeZone: string): {
+  readonly date: Date;
+  readonly time: string;
+} {
+  const date = new Date(value);
+  const values = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).formatToParts(date);
+  const parts = Object.fromEntries(values.map((part) => [part.type, part.value]));
+
+  return {
+    date: createCalendarDate(Number(parts.year), Number(parts.month) - 1, Number(parts.day)),
+    time: `${parts.hour}:${parts.minute}`,
+  };
+}
+
 export function TransactionDateField({ error, label, locale, onValueChange, timeZone, triggerRef, value }: TransactionDateFieldProps) {
   const [open, setOpen] = React.useState(false);
   const [displayedMonth, setDisplayedMonth] = React.useState(() => calendarMonth(value));
@@ -195,6 +218,7 @@ export function TransactionDateField({ error, label, locale, onValueChange, time
             aria-describedby={error ? errorId : undefined}
             aria-expanded={open}
             aria-haspopup="dialog"
+            aria-invalid={error ? true : undefined}
             aria-label={`${label}: ${formatLongDate(value, locale)}`}
             className={cn(
               "flex h-11 w-full items-center gap-2.5 rounded-[8px] border bg-white px-3 text-left text-[13px] text-[#13213f] outline-none transition-[border-color,box-shadow] duration-150 hover:border-[#bac9df] focus-visible:ring-3",

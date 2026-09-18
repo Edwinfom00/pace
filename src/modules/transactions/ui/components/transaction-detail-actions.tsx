@@ -2,15 +2,28 @@ import type { ReactNode } from "react";
 import { Pencil, RefreshCw } from "lucide-react";
 
 import type { TransactionDetailData } from "@/modules/transactions/domain/transaction-detail";
+import type { TransactionCategoryOption } from "@/modules/transactions/domain/transaction-category-options";
 
 import type { TransactionDetailActionLabels } from "../transaction-detail-action-labels";
+import type { TransactionEditLabels } from "../transaction-edit-labels";
+import { EditTransactionDialog } from "./edit-transaction-dialog";
 
 export function TransactionDetailActions({
+  categories,
+  editLabels,
+  locale,
+  timeZone,
   transaction,
   labels,
+  workspaceId,
 }: {
+  readonly categories: readonly TransactionCategoryOption[];
+  readonly editLabels: TransactionEditLabels;
+  readonly locale: string;
+  readonly timeZone: string;
   readonly transaction: TransactionDetailData;
   readonly labels: TransactionDetailActionLabels;
+  readonly workspaceId: string;
 }) {
   const editReason = transaction.capabilities.reasons.edit;
   const refundReason = transaction.capabilities.reasons.refund;
@@ -19,11 +32,22 @@ export function TransactionDetailActions({
     <section aria-labelledby="transaction-actions-heading" className="rounded-[13px] border border-[#e6eaf0] bg-white p-4 sm:p-4.5">
       <h2 className="text-[17px] font-semibold tracking-tight text-[#101a35]" id="transaction-actions-heading">{labels.title}</h2>
       <div className="mt-3 space-y-2">
-        <ActionUnavailable
-          icon={<Pencil aria-hidden className="size-4" />}
-          label={labels.edit}
-          reason={editReason ? labels.unavailable[editReason] : labels.comingSoon}
-        />
+        {transaction.capabilities.canEdit ? (
+          <EditTransactionDialog
+            categories={categories}
+            labels={editLabels}
+            locale={locale}
+            timeZone={timeZone}
+            transaction={transaction}
+            workspaceId={workspaceId}
+          />
+        ) : (
+          <ActionUnavailable
+            icon={<Pencil aria-hidden className="size-4" />}
+            label={labels.edit}
+            reason={editReason ? labels.unavailable[editReason] : labels.comingSoon}
+          />
+        )}
         {transaction.kind === "EXPENSE" ? (
           <ActionUnavailable
             icon={<RefreshCw aria-hidden className="size-4" />}

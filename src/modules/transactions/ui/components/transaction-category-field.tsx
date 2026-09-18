@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, type RefObject } from "react";
+import { FiX } from "react-icons/fi";
 
 import { PaceSearchSelect, type SelectOption } from "@/components/pace/forms/pace-search-select";
 import { TransactionIcon } from "@/components/pace/transaction-visuals/transaction-icon";
@@ -17,6 +18,8 @@ export type TransactionCategoryFieldProps = {
   readonly categoryLoadError: string;
   readonly categoryLoadingLabel: string;
   readonly categoryRetryLabel: string;
+  /** Optional explicit uncategorize affordance for detail editing. */
+  readonly clearLabel?: string;
   readonly error?: string;
   readonly helperText: string;
   readonly kind: LedgerCategoryKind;
@@ -37,6 +40,7 @@ export function TransactionCategoryField({
   categoryLoadError,
   categoryLoadingLabel,
   categoryRetryLabel,
+  clearLabel,
   error,
   helperText,
   kind,
@@ -129,6 +133,17 @@ export function TransactionCategoryField({
           value={value}
         />
       )}
+
+      {availability === "ready" && value && clearLabel ? (
+        <button
+          className="-mt-0.5 flex h-7 w-fit items-center gap-1 rounded-[6px] px-1.5 text-[12px] font-medium text-[#526987] outline-none transition-colors hover:bg-[#f3f6fa] hover:text-[#263550] focus-visible:bg-[#edf3ff] focus-visible:ring-2 focus-visible:ring-[#5e8fe8]/30"
+          onClick={() => onValueChange("")}
+          type="button"
+        >
+          <FiX aria-hidden="true" className="size-3.5" />
+          {clearLabel}
+        </button>
+      ) : null}
 
       <p
         className={error ? "min-h-5 text-[12px] leading-5 text-[#c23445]" : "min-h-5 text-[12px] leading-5 text-[#71809a]"}

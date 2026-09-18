@@ -140,9 +140,16 @@ test("detail action reasons have English, French, and German UI mappings", () =>
   }
 });
 
-test("detail actions have no mutation trigger before their server mutations exist", async () => {
+test("detail actions delegate the allowed edit flow while unavailable actions remain disabled", async () => {
   const source = await readFile("src/modules/transactions/ui/components/transaction-detail-actions.tsx", "utf8");
+  const dialog = await readFile("src/modules/transactions/ui/components/edit-transaction-dialog.tsx", "utf8");
+  const flow = await readFile("src/modules/transactions/ui/components/transaction-edit-flow.ts", "utf8");
 
+  assert.match(source, /EditTransactionDialog/);
   assert.match(source, /disabled/);
-  assert.doesNotMatch(source, /onClick|formAction|useActionState/);
+  assert.match(dialog, /ResponsiveDialog/);
+  assert.match(dialog, /max-w-\[650px\]/);
+  assert.match(dialog, /drawerClassName/);
+  assert.match(dialog, /method: "PATCH"/);
+  assert.match(flow, /CONCURRENT_MODIFICATION/);
 });

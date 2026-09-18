@@ -84,6 +84,7 @@ export function PaceSearchSelect<T extends string>({
           aria-expanded={open}
           aria-controls={listboxId}
           aria-haspopup="listbox"
+          aria-invalid={invalid || undefined}
           aria-label={ariaLabel}
           data-invalid={invalid || undefined}
           role="combobox"

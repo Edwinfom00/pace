@@ -18,6 +18,7 @@ import { TransactionDetailActions } from "@/modules/transactions/ui/components/t
 import { TransactionDetailSkeleton } from "@/modules/transactions/ui/components/transaction-detail-skeleton";
 import { TransactionTechnicalDetails } from "@/modules/transactions/ui/components/transaction-technical-details";
 import { getTransactionDetailActionLabels } from "@/modules/transactions/ui/transaction-detail-action-labels";
+import { getTransactionEditLabels } from "@/modules/transactions/ui/transaction-edit-labels";
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 import { TransactionDetailView } from "@/modules/transactions/ui/views/transaction-detail-view";
@@ -30,6 +31,10 @@ const stranger: AuthenticatedActor = { userId: "detail-stranger", email: "strang
 const viewer: AuthenticatedActor = { userId: "detail-viewer", email: "viewer@pace.test", name: "Viewer" };
 const workspaceId = "detail-workspace";
 const otherWorkspaceId = "detail-other-workspace";
+const editCategories = [
+  { id: SYSTEM_GROCERIES_ID, name: "Groceries", kind: "EXPENSE", systemKey: "expense:groceries" },
+  { id: SYSTEM_SALARY_ID, name: "Salary", kind: "INCOME", systemKey: "income:salary" },
+] as const;
 
 async function fixture() {
   const ledger = new InMemoryLedgerRepository();
@@ -105,7 +110,7 @@ test("an authorized member sees persisted, workspace-scoped transaction detail a
   assert.equal(transaction.capabilities.canRefund, true);
 });
 
-test("detail evaluates capabilities after workspace authorization and never renders a live mutation affordance", async () => {
+test("detail evaluates capabilities after workspace authorization and opens an edit flow only when policy permits", async () => {
   const { detail, expense, transfer } = await fixture();
   const [expenseDetail, transferDetail, viewerDetail] = await Promise.all([
     detail(expense.id),
@@ -121,21 +126,20 @@ test("detail evaluates capabilities after workspace authorization and never rend
   assert.equal(viewerDetail.capabilities.canViewTechnicalDetails, true);
 
   const labels = getTransactionDetailActionLabels(getDashboardLabels("en"));
-  const expenseMarkup = renderToStaticMarkup(createElement(TransactionDetailActions, {
-    transaction: expenseDetail,
+  const editLabels = getTransactionEditLabels(getDashboardLabels("en"));
+  const viewerMarkup = renderToStaticMarkup(createElement(TransactionDetailActions, {
+    categories: editCategories,
+    editLabels,
+    locale: "en-US",
+    timeZone: "Africa/Douala",
+    transaction: viewerDetail,
     labels,
-  }));
-  const transferMarkup = renderToStaticMarkup(createElement(TransactionDetailActions, {
-    transaction: transferDetail,
-    labels,
+    workspaceId,
   }));
 
-  assert.match(expenseMarkup, /Edit transaction/);
-  assert.match(expenseMarkup, /Create refund/);
-  assert.match(expenseMarkup, /Available in a future update/);
-  assert.match(expenseMarkup, /disabled=""/);
-  assert.match(transferMarkup, /Available in a future update/);
-  assert.doesNotMatch(transferMarkup, /Create refund|More actions/);
+  assert.match(viewerMarkup, /Edit transaction/);
+  assert.match(viewerMarkup, /You have view-only access/);
+  assert.match(viewerMarkup, /disabled=""/);
 });
 
 test("detail rejects unauthorized workspaces and hides cross-workspace transaction IDs", async () => {
@@ -209,7 +213,11 @@ test("detail view stacks safely below desktop and list-detail affordances remain
   assert.ok(transaction);
 
   const markup = renderToStaticMarkup(createElement(TransactionDetailView, {
-    transaction,
+    categories: editCategories,
+    transaction: {
+      ...transaction,
+      capabilities: { ...transaction.capabilities, canEdit: false },
+    },
     workspaceSlug: "house",
     workspaceId,
     language: "en",

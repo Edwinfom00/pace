@@ -4,7 +4,9 @@ import { ArrowLeft } from "lucide-react";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 
 import type { TransactionDetailData } from "../../domain/transaction-detail";
+import type { TransactionCategoryOption } from "../../domain/transaction-category-options";
 import { getTransactionDetailActionLabels } from "../transaction-detail-action-labels";
+import { getTransactionEditLabels } from "../transaction-edit-labels";
 import { TransactionDetailActions } from "../components/transaction-detail-actions";
 import { TransactionDetailActivity } from "../components/transaction-detail-activity";
 import { TransactionDetailAskPace } from "../components/transaction-detail-ask-pace";
@@ -15,6 +17,7 @@ import { TransactionSourceInformation } from "../components/transaction-source-i
 import { TransactionTechnicalDetails } from "../components/transaction-technical-details";
 
 export function TransactionDetailView({
+  categories,
   transaction,
   workspaceSlug,
   workspaceId,
@@ -22,6 +25,7 @@ export function TransactionDetailView({
   locale,
   timeZone,
 }: {
+  readonly categories: readonly TransactionCategoryOption[];
   readonly transaction: TransactionDetailData;
   readonly workspaceSlug: string;
   readonly workspaceId: string;
@@ -30,6 +34,7 @@ export function TransactionDetailView({
   readonly timeZone: string;
 }) {
   const actionLabels = getTransactionDetailActionLabels(getDashboardLabels(language));
+  const editLabels = getTransactionEditLabels(getDashboardLabels(language));
 
   return (
     <main className="mx-auto w-full max-w-360 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
@@ -43,7 +48,15 @@ export function TransactionDetailView({
           {transaction.capabilities.canViewTechnicalDetails ? <TransactionTechnicalDetails locale={locale} timeZone={timeZone} transaction={transaction} /> : null}
         </div>
         <aside aria-label="Transaction side rail" className="space-y-4 xl:sticky xl:top-6">
-          <TransactionDetailActions labels={actionLabels} transaction={transaction} />
+          <TransactionDetailActions
+            categories={categories}
+            editLabels={editLabels}
+            labels={actionLabels}
+            locale={locale}
+            timeZone={timeZone}
+            transaction={transaction}
+            workspaceId={workspaceId}
+          />
           <TransactionDetailActivity locale={locale} timeZone={timeZone} transaction={transaction} />
           <TransactionDetailAskPace language={language} locale={locale} timeZone={timeZone} transaction={transaction} workspaceId={workspaceId} />
         </aside>

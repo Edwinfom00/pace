@@ -4,6 +4,7 @@ import { getAuthenticatedActor } from "@/authorization/session";
 import { getPersistedDashboardLanguage } from "@/i18n/dashboard-server";
 import { loginPathForReturnTo } from "@/modules/auth/post-auth-resolver";
 import { getServerTransactionDetail } from "@/modules/transactions/server/get-transaction-detail";
+import { getServerTransactionCategoryOptions } from "@/modules/transactions/server/get-transaction-category-options";
 import { TransactionDetailView } from "@/modules/transactions/ui/views/transaction-detail-view";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
@@ -21,7 +22,7 @@ export default async function TransactionDetailPage({ params }: TransactionDetai
   const workspace = await new DatabaseWorkspaceRepository().findMemberContextBySlug(workspaceSlug, actor.userId);
   if (!workspace) notFound();
 
-  const [language, transaction] = await Promise.all([
+  const [language, transaction, categories] = await Promise.all([
     getPersistedDashboardLanguage(actor.userId),
     getServerTransactionDetail({
       actor,
@@ -29,14 +30,15 @@ export default async function TransactionDetailPage({ params }: TransactionDetai
       transactionId,
       timeZone: workspace.preferences.timezone,
     }),
+    getServerTransactionCategoryOptions({ actor, workspaceId: workspace.workspace.id }),
   ]);
 
-  // A transaction ID outside this workspace intentionally resolves as absent.
-  // This avoids disclosing cross-workspace record existence.
+ 
   if (!transaction) notFound();
 
   return (
     <TransactionDetailView
+      categories={categories}
       language={language}
       locale={workspace.preferences.locale}
       timeZone={workspace.preferences.timezone}

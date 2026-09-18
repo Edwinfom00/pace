@@ -87,6 +87,7 @@ export function TransactionTimeField({
               aria-expanded={open}
               aria-haspopup="dialog"
               aria-describedby={error ? errorId : undefined}
+              aria-invalid={error ? true : undefined}
               aria-label={time ? `${label}: ${displayValue}` : `${label}: ${placeholder}`}
               className={cn(
                 "flex min-w-0 flex-1 items-center gap-2.5 px-3 text-left text-[13px] outline-none",
@@ -96,7 +97,7 @@ export function TransactionTimeField({
               ref={triggerRef}
               type="button"
             >
-              <FiClock aria-hidden="true" className="size-[17px] shrink-0 text-[#526987]" />
+              <FiClock aria-hidden="true" className="size-4.25 shrink-0 text-[#526987]" />
               <span className="min-w-0 flex-1 truncate font-medium tabular-nums">{displayValue}</span>
               <FiChevronDown aria-hidden="true" className={cn("size-4 shrink-0 text-[#60769e] transition-transform", open && "rotate-180")} />
             </button>
