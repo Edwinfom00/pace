@@ -31,12 +31,14 @@ import type {
   CreateLedgerTransactionAuditRecord,
   CreateLedgerTransactionCorrectionRecord,
   CreateLedgerFinancialRefundRecord,
+  CreateLedgerFinancialReversalRecord,
   LedgerRepository,
 } from "./repositories/ledger-repository";
 import type {
   CorrectTransactionCommand,
 } from "./correct-transaction-contract";
 import type { CreateRefundCommand, RefundStatus } from "./create-refund-contract";
+import type { ReverseTransactionCommand } from "./reverse-transaction-contract";
 import { resolveManualOccurredAt } from "./manual-transaction";
 import {
   parseTransactionDetailsPatch,
@@ -438,6 +440,12 @@ export class LedgerService {
     if (replay) return this.resolveExistingCorrection(command, commandFingerprint, replay);
 
     const original = await this.requireTransaction(command.workspaceId, command.transactionId);
+    if (original.reversalOfTransactionId !== null) {
+      throw new DomainConflictError(
+        "TRANSACTION_NOT_CURRENT",
+        "A reversal record is a technical ledger entry and cannot be corrected.",
+      );
+    }
     if (
       command.expectedUpdatedAt
       && original.updatedAt.getTime() !== command.expectedUpdatedAt.getTime()
@@ -451,6 +459,12 @@ export class LedgerService {
       throw new DomainConflictError(
         "TRANSACTION_NOT_CURRENT",
         "This transaction has already been corrected. Correct the current replacement instead.",
+      );
+    }
+    if (await this.repository.findTransactionReversalByOriginal(command.workspaceId, original.id)) {
+      throw new DomainConflictError(
+        "TRANSACTION_ALREADY_REVERSED",
+        "This transaction has already been reversed and cannot be corrected.",
       );
     }
 
@@ -480,7 +494,13 @@ export class LedgerService {
     const replacementInput = this.buildCorrectionReplacementInput(original, command, correctionId, details);
     await this.assertCorrectionReplacementAccounts(command.workspaceId, replacementInput);
     const replacement = await this.prepareCanonicalTransaction(actor, command.workspaceId, replacementInput);
-    const reversal = createCorrectionReversal(original, actor.userId, correctionId);
+    const reversal = createTransactionReversal(original, {
+      actorUserId: actor.userId,
+      purpose: "CORRECTION",
+      operationId: correctionId,
+      deduplicationFingerprint: correctionTransactionFingerprint(correctionId, "reversal"),
+      reason: command.reason ?? null,
+    });
     const correction: CreateLedgerTransactionCorrectionRecord = {
       id: correctionId,
       workspaceId: command.workspaceId,
@@ -534,6 +554,12 @@ export class LedgerService {
           "This transaction was corrected by another request. Refresh before correcting again.",
         );
       }
+      if (await this.repository.findTransactionReversalByOriginal(command.workspaceId, original.id)) {
+        throw new DomainConflictError(
+          "TRANSACTION_ALREADY_REVERSED",
+          "This transaction was manually reversed by another request.",
+        );
+      }
       throw new DomainConflictError(
         "CONCURRENT_MODIFICATION",
         "This transaction changed while its correction was being saved.",
@@ -555,6 +581,160 @@ export class LedgerService {
     return result;
   }
 
+  async reverseTransaction(
+    actor: AuthenticatedActor,
+    command: ReverseTransactionCommand,
+  ): Promise<LedgerFinancialReversalResult> {
+    const membership = await this.requireWorkspacePermission(actor.userId, command.workspaceId, "manage_ledger");
+    const idempotencyFingerprint = manualReversalIdempotencyFingerprint(actor.userId, command.idempotencyKey);
+    const commandFingerprint = manualReversalCommandFingerprint(command);
+
+    const replay = await this.repository.findTransactionByFingerprint(command.workspaceId, idempotencyFingerprint);
+    if (replay) return this.resolveExistingManualReversal(command, commandFingerprint, replay);
+
+    const original = await this.requireTransaction(command.workspaceId, command.transactionId);
+    if (original.reversalOfTransactionId !== null) {
+      throw new DomainConflictError(
+        "TRANSACTION_NOT_CURRENT",
+        "A reversal record is a technical ledger entry and cannot be manually reversed.",
+      );
+    }
+    if (
+      command.expectedUpdatedAt
+      && original.updatedAt.getTime() !== command.expectedUpdatedAt.getTime()
+    ) {
+      throw new DomainConflictError(
+        "CONCURRENT_MODIFICATION",
+        "This transaction changed since it was loaded. Refresh it before reversing it.",
+      );
+    }
+
+    const [outgoingCorrection, enclosingCorrection, existingReversal] = await Promise.all([
+      this.repository.findTransactionCorrectionByOriginal(command.workspaceId, original.id),
+      this.repository.findTransactionCorrectionByTransactionId(command.workspaceId, original.id),
+      this.repository.findTransactionReversalByOriginal(command.workspaceId, original.id),
+    ]);
+    if (original.reversalOfTransactionId !== null || enclosingCorrection?.reversalTransactionId === original.id) {
+      throw new DomainConflictError(
+        "TRANSACTION_NOT_CURRENT",
+        "A technical reversal cannot be manually reversed.",
+      );
+    }
+    if (outgoingCorrection) {
+      throw new DomainConflictError(
+        "TRANSACTION_NOT_CURRENT",
+        "This transaction has been corrected. Reverse the current replacement instead.",
+      );
+    }
+    if (existingReversal) {
+      throw new DomainConflictError(
+        "TRANSACTION_ALREADY_REVERSED",
+        "This transaction has already been manually reversed.",
+      );
+    }
+
+    const refundAggregate = original.kind === "EXPENSE"
+      ? await this.getRefundAggregate(command.workspaceId, original)
+      : null;
+    const capabilities = getTransactionCapabilities({
+      transaction: original,
+      workspaceRole: membership.role,
+      refundedAmountMinor: refundAggregate?.total.minor ?? 0n,
+      isCurrentEffective: true,
+    });
+    if (!capabilities.canReverse) {
+      if (refundAggregate && refundAggregate.total.minor > 0n) {
+        throw new DomainConflictError(
+          "TRANSACTION_HAS_ACTIVE_REFUNDS",
+          "An expense with active refunds cannot be manually reversed.",
+        );
+      }
+      throw new DomainConflictError(
+        "TRANSACTION_REVERSAL_NOT_ALLOWED",
+        "This transaction cannot be manually reversed in its current state.",
+      );
+    }
+
+    const reversal = createTransactionReversal(original, {
+      actorUserId: actor.userId,
+      purpose: "MANUAL",
+      operationId: randomUUID(),
+      deduplicationFingerprint: idempotencyFingerprint,
+      reason: command.reason ?? null,
+      commandFingerprint,
+    });
+    const reversalRecord: CreateLedgerFinancialReversalRecord = {
+      workspaceId: command.workspaceId,
+      originalTransactionId: original.id,
+      expectedOriginalUpdatedAt: command.expectedUpdatedAt,
+      reversal,
+      audits: manualReversalAudits({ actorUserId: actor.userId, original, reversal, reason: command.reason ?? null }),
+    };
+
+    let created: LedgerTransactionRecord | null;
+    try {
+      created = await this.repository.createFinancialReversal(reversalRecord);
+    } catch (error) {
+      const concurrentReplay = await this.repository.findTransactionByFingerprint(command.workspaceId, idempotencyFingerprint);
+      if (concurrentReplay) return this.resolveExistingManualReversal(command, commandFingerprint, concurrentReplay);
+      if (isSerializationFailure(error)) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "The transaction changed while its reversal was being saved. Retry the reversal.",
+        );
+      }
+      throw error;
+    }
+
+    if (!created) {
+      const concurrentReplay = await this.repository.findTransactionByFingerprint(command.workspaceId, idempotencyFingerprint);
+      if (concurrentReplay) return this.resolveExistingManualReversal(command, commandFingerprint, concurrentReplay);
+      const current = await this.requireTransaction(command.workspaceId, original.id);
+      if (
+        command.expectedUpdatedAt
+        && current.updatedAt.getTime() !== command.expectedUpdatedAt.getTime()
+      ) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "This transaction changed while its reversal was being saved.",
+        );
+      }
+      if (await this.repository.findTransactionCorrectionByOriginal(command.workspaceId, original.id)) {
+        throw new DomainConflictError(
+          "TRANSACTION_NOT_CURRENT",
+          "This transaction was corrected by another request. Refresh before reversing it.",
+        );
+      }
+      if (await this.repository.findTransactionReversalByOriginal(command.workspaceId, original.id)) {
+        throw new DomainConflictError(
+          "TRANSACTION_ALREADY_REVERSED",
+          "This transaction was already reversed by another request.",
+        );
+      }
+      throw new DomainConflictError(
+        "CONCURRENT_MODIFICATION",
+        "This transaction changed while its reversal was being saved.",
+      );
+    }
+
+    const result: LedgerFinancialReversalResult = {
+      originalTransaction: original,
+      reversalTransaction: created,
+      effectiveState: "REVERSED",
+    };
+    assertVerifiedFinancialReversal(result);
+    const auditIds = new Set(
+      (await Promise.all([
+        this.repository.listTransactionAudit(command.workspaceId, original.id),
+        this.repository.listTransactionAudit(command.workspaceId, created.id),
+      ])).flat().map((audit) => audit.id),
+    );
+    if (reversalRecord.audits.some((audit) => !auditIds.has(audit.id))) {
+      throw new Error("Manual reversal audit verification failed.");
+    }
+    return result;
+  }
+
   /** Resolves the terminal replacement for any record in a correction chain. */
   async getCurrentEffectiveTransaction(
     actor: AuthenticatedActor,
@@ -566,13 +746,26 @@ export class LedgerService {
     const enclosingCorrection = await this.repository.findTransactionCorrectionByTransactionId(workspaceId, current.id);
     if (enclosingCorrection?.reversalTransactionId === current.id) {
       current = await this.requireTransaction(workspaceId, enclosingCorrection.originalTransactionId);
+    } else if (current.reversalOfTransactionId !== null) {
+      throw new DomainConflictError(
+        "TRANSACTION_NOT_CURRENT",
+        "A reversal record is a technical ledger entry and has no effective financial version.",
+      );
     }
     const visited = new Set<string>();
     while (true) {
       if (visited.has(current.id)) throw new Error("Correction chain contains a cycle.");
       visited.add(current.id);
       const correction = await this.repository.findTransactionCorrectionByOriginal(workspaceId, current.id);
-      if (!correction) return current;
+      if (!correction) {
+        if (await this.repository.findTransactionReversalByOriginal(workspaceId, current.id)) {
+          throw new DomainConflictError(
+            "TRANSACTION_ALREADY_REVERSED",
+            "This transaction has no current effective financial version because it was manually reversed.",
+          );
+        }
+        return current;
+      }
       current = await this.requireTransaction(workspaceId, correction.replacementTransactionId);
     }
   }
@@ -596,6 +789,10 @@ export class LedgerService {
   ): Promise<LedgerTransactionRecord> {
     const membership = await this.requireWorkspacePermission(actor.userId, workspaceId, "manage_ledger");
     const transaction = await this.requireTransaction(workspaceId, transactionId);
+    const [outgoingCorrection, existingReversal] = await Promise.all([
+      this.repository.findTransactionCorrectionByOriginal(workspaceId, transaction.id),
+      this.repository.findTransactionReversalByOriginal(workspaceId, transaction.id),
+    ]);
     const refundedAmountMinor = (await this.repository.listRefundsForTransaction(workspaceId, transaction.id)).reduce(
       (total, refund) => total + refund.amountMinor,
       0n,
@@ -604,6 +801,7 @@ export class LedgerService {
       transaction,
       workspaceRole: membership.role,
       refundedAmountMinor,
+      isCurrentEffective: transaction.reversalOfTransactionId === null && !outgoingCorrection && !existingReversal,
     });
     if (!capabilities.canEdit) {
       throw new DomainConflictError(
@@ -801,6 +999,32 @@ export class LedgerService {
     return this.hydrateCorrection(correction);
   }
 
+  private async resolveExistingManualReversal(
+    command: ReverseTransactionCommand,
+    commandFingerprint: string,
+    reversal: LedgerTransactionRecord,
+  ): Promise<LedgerFinancialReversalResult> {
+    if (
+      reversal.kind === "REFUND"
+      || reversal.status !== "POSTED"
+      || reversal.reversalOfTransactionId !== command.transactionId
+      || !isManualReversalMetadata(reversal.source.manualReversal, commandFingerprint)
+    ) {
+      throw new DomainConflictError(
+        "REVERSAL_ALREADY_PROCESSED",
+        "This reversal idempotency key has already been used for another command.",
+      );
+    }
+    const originalTransaction = await this.requireTransaction(command.workspaceId, reversal.reversalOfTransactionId);
+    const result: LedgerFinancialReversalResult = {
+      originalTransaction,
+      reversalTransaction: reversal,
+      effectiveState: "REVERSED",
+    };
+    assertVerifiedFinancialReversal(result);
+    return result;
+  }
+
   private async hydrateCorrection(
     correction: import("./domain").LedgerTransactionCorrectionRecord,
   ): Promise<LedgerFinancialCorrectionResult> {
@@ -830,14 +1054,16 @@ export class LedgerService {
     workspaceId: string,
     transaction: LedgerTransactionRecord,
   ): Promise<void> {
-    const [outgoingCorrection, enclosingCorrection] = await Promise.all([
+    const [outgoingCorrection, enclosingCorrection, reversal] = await Promise.all([
       this.repository.findTransactionCorrectionByOriginal(workspaceId, transaction.id),
       this.repository.findTransactionCorrectionByTransactionId(workspaceId, transaction.id),
+      this.repository.findTransactionReversalByOriginal(workspaceId, transaction.id),
     ]);
     if (
       transaction.reversalOfTransactionId !== null
       || outgoingCorrection !== null
       || enclosingCorrection?.reversalTransactionId === transaction.id
+      || reversal !== null
     ) {
       throw new DomainConflictError(
         "TRANSACTION_NOT_CURRENT",
@@ -1196,6 +1422,12 @@ export interface LedgerFinancialCorrectionResult {
   replacementTransaction: LedgerTransactionRecord;
 }
 
+export interface LedgerFinancialReversalResult {
+  originalTransaction: LedgerTransactionRecord;
+  reversalTransaction: LedgerTransactionRecord;
+  effectiveState: "REVERSED";
+}
+
 export interface LedgerFinancialRefundResult {
   refundTransaction: LedgerTransactionRecord;
   sourceExpenseId: string;
@@ -1336,10 +1568,16 @@ function isSerializationFailure(error: unknown): boolean {
   );
 }
 
-function createCorrectionReversal(
+function createTransactionReversal(
   original: LedgerTransactionRecord,
-  actorUserId: string,
-  correctionId: string,
+  options: {
+    actorUserId: string;
+    purpose: "CORRECTION" | "MANUAL";
+    operationId: string;
+    deduplicationFingerprint: string;
+    reason: string | null;
+    commandFingerprint?: string;
+  },
 ): CreateLedgerTransactionRecord {
   if (original.kind === "REFUND" || !original.accountId) throw invalidCorrection();
   const common = {
@@ -1352,12 +1590,12 @@ function createCorrectionReversal(
     occurredAt: original.occurredAt,
     categoryId: original.categoryId,
     merchantId: original.merchantId,
-    createdByUserId: actorUserId,
+    createdByUserId: options.actorUserId,
     paidByUserId: original.paidByUserId,
     refundedTransactionId: null,
     reversalOfTransactionId: original.id,
-    source: correctionSource(original.source, "REVERSAL", correctionId, original.id),
-    deduplicationFingerprint: correctionTransactionFingerprint(correctionId, "reversal"),
+    source: reversalSource(original.source, original.id, options),
+    deduplicationFingerprint: options.deduplicationFingerprint,
     note: original.note,
   };
 
@@ -1379,6 +1617,68 @@ function createCorrectionReversal(
     transferAccountId: null,
     transferGroupId: null,
   };
+}
+
+function reversalSource(
+  source: Record<string, unknown>,
+  originalTransactionId: string,
+  options: {
+    purpose: "CORRECTION" | "MANUAL";
+    operationId: string;
+    reason: string | null;
+    commandFingerprint?: string;
+  },
+): Record<string, unknown> {
+  if (options.purpose === "CORRECTION") {
+    return correctionSource(source, "REVERSAL", options.operationId, originalTransactionId);
+  }
+  return {
+    ...source,
+    manualReversal: {
+      purpose: "MANUAL",
+      reversalId: options.operationId,
+      originalTransactionId,
+      reason: options.reason,
+      commandFingerprint: options.commandFingerprint,
+    },
+  };
+}
+
+function manualReversalAudits({
+  actorUserId,
+  original,
+  reversal,
+  reason,
+}: {
+  actorUserId: string;
+  original: LedgerTransactionRecord;
+  reversal: CreateLedgerTransactionRecord;
+  reason: string | null;
+}): readonly [CreateLedgerTransactionAuditRecord, CreateLedgerTransactionAuditRecord] {
+  const linkage = {
+    purpose: "MANUAL",
+    originalTransactionId: original.id,
+    reversalTransactionId: reversal.id,
+    reason,
+  };
+  return [
+    {
+      id: randomUUID(),
+      workspaceId: original.workspaceId,
+      transactionId: original.id,
+      actorUserId,
+      action: "MANUAL_REVERSAL",
+      metadata: linkage,
+    },
+    {
+      id: randomUUID(),
+      workspaceId: original.workspaceId,
+      transactionId: reversal.id,
+      actorUserId,
+      action: "MANUAL_REVERSAL_ENTRY",
+      metadata: linkage,
+    },
+  ];
 }
 
 function correctionAudits({
@@ -1487,6 +1787,10 @@ function correctionIdempotencyKey(actorUserId: string, idempotencyKey: string): 
   return `correction:${createHash("sha256").update(`${actorUserId}:${idempotencyKey}`).digest("hex")}`;
 }
 
+function manualReversalIdempotencyFingerprint(actorUserId: string, idempotencyKey: string): string {
+  return `reversal:${createHash("sha256").update(`${actorUserId}:${idempotencyKey}`).digest("hex")}`;
+}
+
 function correctionTransactionFingerprint(correctionId: string, role: "reversal" | "replacement"): string {
   return `correction:${createHash("sha256").update(`${correctionId}:${role}`).digest("hex")}`;
 }
@@ -1506,6 +1810,16 @@ function correctionCommandFingerprint(command: CorrectTransactionCommand): strin
       details: command.details ?? null,
       reason: command.reason ?? null,
       expectedVersion,
+    }))
+    .digest("hex");
+}
+
+function manualReversalCommandFingerprint(command: ReverseTransactionCommand): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      transactionId: command.transactionId,
+      expectedVersion: command.expectedUpdatedAt?.toISOString() ?? null,
+      reason: command.reason ?? null,
     }))
     .digest("hex");
 }
@@ -1552,6 +1866,39 @@ function assertVerifiedFinancialCorrection(
   if (!commonLinkageValid || !replacementMatches || !reversalMatches) {
     throw new Error("Financial correction verification failed.");
   }
+}
+
+function assertVerifiedFinancialReversal(result: LedgerFinancialReversalResult): void {
+  const { originalTransaction: original, reversalTransaction: reversal } = result;
+  const transferMatches = original.kind === "TRANSFER"
+    && reversal.accountId === original.transferAccountId
+    && reversal.transferAccountId === original.accountId;
+  const singleAccountMatches = original.kind !== "TRANSFER"
+    && reversal.accountId === original.accountId
+    && reversal.transferAccountId === null;
+  if (
+    original.kind === "REFUND"
+    || reversal.kind !== original.kind
+    || reversal.status !== "POSTED"
+    || reversal.amountMinor !== original.amountMinor
+    || reversal.currency !== original.currency
+    || reversal.reversalOfTransactionId !== original.id
+    || (!transferMatches && !singleAccountMatches)
+  ) {
+    throw new Error("Financial reversal verification failed.");
+  }
+}
+
+function isManualReversalMetadata(
+  value: unknown,
+  commandFingerprint: string,
+): value is { purpose: "MANUAL"; commandFingerprint: string } {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && (value as { purpose?: unknown }).purpose === "MANUAL"
+    && (value as { commandFingerprint?: unknown }).commandFingerprint === commandFingerprint,
+  );
 }
 
 function transactionDetailAuditChanges(

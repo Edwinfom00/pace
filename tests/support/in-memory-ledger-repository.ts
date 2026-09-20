@@ -16,6 +16,7 @@ import type {
   CreateLedgerMerchantRecord,
   CreateLedgerTransactionAuditRecord,
   CreateLedgerFinancialCorrectionRecord,
+  CreateLedgerFinancialReversalRecord,
   CreateLedgerFinancialRefundRecord,
   CreateLedgerTransactionRecord,
   LedgerRepository,
@@ -37,6 +38,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   readonly transactionCorrections = new Map<string, LedgerTransactionCorrectionRecord>();
   /** Test-only fault injection proves correction writes commit atomically. */
   failCorrectionStage: "reversal" | "replacement" | "linkage" | null = null;
+  failManualReversalStage: "reversal" | "audit" | null = null;
   /** Test-only fault injection proves refund writes commit atomically. */
   failRefundStage: "refund" | "audit" | null = null;
 
@@ -244,6 +246,22 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     );
   }
 
+  async findTransactionReversalByOriginal(
+    workspaceId: string,
+    originalTransactionId: string,
+  ): Promise<LedgerTransactionRecord | null> {
+    return (
+      [...this.transactions.values()]
+        .filter(
+          (transaction) =>
+            transaction.workspaceId === workspaceId
+            && transaction.reversalOfTransactionId === originalTransactionId,
+        )
+        .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id))[0]
+      ?? null
+    );
+  }
+
   async findAccountById(accountId: string): Promise<LedgerAccountRecord | null> {
     return this.accounts.get(accountId) ?? null;
   }
@@ -314,12 +332,18 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     const original = candidate?.workspaceId === input.workspaceId ? candidate : null;
     if (
       !original
+      || original.reversalOfTransactionId !== null
       || (input.expectedOriginalUpdatedAt
         && original.updatedAt.getTime() !== input.expectedOriginalUpdatedAt.getTime())
       || [...this.transactionCorrections.values()].some(
         (correction) =>
           correction.workspaceId === input.workspaceId
           && correction.originalTransactionId === input.originalTransactionId,
+      )
+      || [...this.transactions.values()].some(
+        (transaction) =>
+          transaction.workspaceId === input.workspaceId
+          && transaction.reversalOfTransactionId === input.originalTransactionId,
       )
     ) {
       return null;
@@ -359,6 +383,64 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     return correction;
   }
 
+  async createFinancialReversal(
+    input: CreateLedgerFinancialReversalRecord,
+  ): Promise<LedgerTransactionRecord | null> {
+    // This synchronous preflight makes parallel calls observe one winner,
+    // matching the production candidate row lock.
+    const candidate = this.transactions.get(input.originalTransactionId);
+    const original = candidate?.workspaceId === input.workspaceId ? candidate : null;
+    const lineage = new Set<string>([input.originalTransactionId]);
+    let cursor = input.originalTransactionId;
+    while (true) {
+      const correction = [...this.transactionCorrections.values()].find(
+        (candidateCorrection) =>
+          candidateCorrection.workspaceId === input.workspaceId
+          && candidateCorrection.replacementTransactionId === cursor,
+      );
+      if (!correction || lineage.has(correction.originalTransactionId)) break;
+      lineage.add(correction.originalTransactionId);
+      cursor = correction.originalTransactionId;
+    }
+    const hasActiveRefunds = [...this.transactions.values()].some(
+      (transaction) =>
+        transaction.workspaceId === input.workspaceId
+        && transaction.kind === "REFUND"
+        && transaction.status === "POSTED"
+        && transaction.refundedTransactionId !== null
+        && lineage.has(transaction.refundedTransactionId),
+    );
+    if (
+      !original
+      || original.reversalOfTransactionId !== null
+      || (input.expectedOriginalUpdatedAt
+        && original.updatedAt.getTime() !== input.expectedOriginalUpdatedAt.getTime())
+      || [...this.transactionCorrections.values()].some(
+        (correction) =>
+          correction.workspaceId === input.workspaceId
+          && correction.originalTransactionId === input.originalTransactionId,
+      )
+      || [...this.transactions.values()].some(
+        (transaction) =>
+          transaction.workspaceId === input.workspaceId
+          && transaction.reversalOfTransactionId === input.originalTransactionId,
+      )
+      || hasActiveRefunds
+    ) {
+      return null;
+    }
+    this.assertTransactionFingerprintAvailable(input.reversal);
+    if (this.failManualReversalStage === "reversal") throw new Error("Reversal write failed.");
+    if (this.failManualReversalStage === "audit") throw new Error("Reversal audit write failed.");
+
+    const now = new Date();
+    const reversal: LedgerTransactionRecord = { ...input.reversal, createdAt: now, updatedAt: now };
+    if (this.transactions.has(reversal.id)) throw new Error("Reversal transaction ID already exists.");
+    this.transactions.set(reversal.id, reversal);
+    for (const audit of input.audits) this.createTransactionAudit(audit, now);
+    return reversal;
+  }
+
   async createFinancialRefund(
     input: CreateLedgerFinancialRefundRecord,
   ): Promise<LedgerTransactionRecord | null> {
@@ -371,6 +453,11 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       (correction) =>
         correction.workspaceId === input.workspaceId
         && correction.originalTransactionId === input.sourceExpenseId,
+    ) ?? null;
+    const reversal = [...this.transactions.values()].find(
+      (transaction) =>
+        transaction.workspaceId === input.workspaceId
+        && transaction.reversalOfTransactionId === input.sourceExpenseId,
     ) ?? null;
     const enclosing = [...this.transactionCorrections.values()].find(
       (correction) =>
@@ -386,6 +473,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       || source.kind !== "EXPENSE"
       || source.status !== "POSTED"
       || outgoing
+      || reversal
       || enclosing?.reversalTransactionId === source.id
     ) {
       return null;
@@ -543,9 +631,15 @@ export class InMemoryLedgerRepository implements LedgerRepository {
           correction.reversalTransactionId,
         ]),
     );
+    const reversedTransactionIds = new Set(
+      [...this.transactions.values()].flatMap((transaction) =>
+        transaction.reversalOfTransactionId === null ? [] : [transaction.reversalOfTransactionId],
+      ),
+    );
     return [...this.transactions.values()].flatMap((transaction) => {
       if (transaction.workspaceId !== workspaceId) return [];
       if (nonCurrentCorrectionTransactionIds.has(transaction.id)) return [];
+      if (transaction.reversalOfTransactionId !== null || reversedTransactionIds.has(transaction.id)) return [];
       if (filters.kind && transaction.kind !== filters.kind) return [];
       if (filters.accountId && transaction.accountId !== filters.accountId) return [];
       if (filters.categoryId && transaction.categoryId !== filters.categoryId) return [];

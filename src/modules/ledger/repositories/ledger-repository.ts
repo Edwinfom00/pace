@@ -13,6 +13,7 @@ import {
   notExists,
   or,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { db, neonSql } from "@/db/client";
 import {
@@ -76,6 +77,14 @@ export interface CreateLedgerFinancialRefundRecord {
   audits: readonly [CreateLedgerTransactionAuditRecord, CreateLedgerTransactionAuditRecord];
 }
 
+export interface CreateLedgerFinancialReversalRecord {
+  workspaceId: string;
+  originalTransactionId: string;
+  expectedOriginalUpdatedAt: Date | undefined;
+  reversal: CreateLedgerTransactionRecord;
+  audits: readonly [CreateLedgerTransactionAuditRecord, CreateLedgerTransactionAuditRecord];
+}
+
 
 export interface UpdateLedgerTransactionDetailsRecord {
   workspaceId: string;
@@ -125,6 +134,11 @@ export interface LedgerRepository {
     workspaceId: string,
     fingerprint: string,
   ): Promise<LedgerTransactionRecord | null>;
+  /** Finds any canonical bookkeeping reversal of the specified original. */
+  findTransactionReversalByOriginal(
+    workspaceId: string,
+    originalTransactionId: string,
+  ): Promise<LedgerTransactionRecord | null>;
   findTransactionCorrectionByOriginal(
     workspaceId: string,
     originalTransactionId: string,
@@ -147,6 +161,13 @@ export interface LedgerRepository {
   createFinancialCorrection(
     input: CreateLedgerFinancialCorrectionRecord,
   ): Promise<LedgerTransactionCorrectionRecord | null>;
+  /**
+   * Writes a standalone reversal and both audit rows atomically. A null result
+   * means the original stopped being the current effective transaction.
+   */
+  createFinancialReversal(
+    input: CreateLedgerFinancialReversalRecord,
+  ): Promise<LedgerTransactionRecord | null>;
   /**
    * Creates a real REFUND and its audit linkage in one serializable database
    * transaction. A null result means the source was no longer refundable at
@@ -388,6 +409,24 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return record ?? null;
   }
 
+  async findTransactionReversalByOriginal(
+    workspaceId: string,
+    originalTransactionId: string,
+  ): Promise<LedgerTransactionRecord | null> {
+    const [record] = await db
+      .select()
+      .from(ledgerTransactions)
+      .where(
+        and(
+          eq(ledgerTransactions.workspaceId, workspaceId),
+          eq(ledgerTransactions.reversalOfTransactionId, originalTransactionId),
+        ),
+      )
+      .orderBy(asc(ledgerTransactions.createdAt), asc(ledgerTransactions.id))
+      .limit(1);
+    return record ?? null;
+  }
+
   async findTransactionCorrectionByOriginal(
     workspaceId: string,
     originalTransactionId: string,
@@ -473,6 +512,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         FROM ledger_transaction
         WHERE workspace_id = ${input.workspaceId}
           AND id = ${input.originalTransactionId}
+          AND reversal_of_transaction_id IS NULL
           AND (
             ${input.expectedOriginalUpdatedAt ?? null}::timestamptz IS NULL
             OR date_trunc('milliseconds', updated_at) = ${input.expectedOriginalUpdatedAt ?? null}
@@ -481,6 +521,12 @@ export class DatabaseLedgerRepository implements LedgerRepository {
             SELECT 1
             FROM ledger_transaction_correction
             WHERE original_transaction_id = ${input.originalTransactionId}
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ledger_transaction
+            WHERE workspace_id = ${input.workspaceId}
+              AND reversal_of_transaction_id = ${input.originalTransactionId}
           )
         FOR UPDATE
       ),
@@ -570,6 +616,98 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return this.findTransactionCorrectionByOriginal(input.workspaceId, input.originalTransactionId);
   }
 
+  async createFinancialReversal(
+    input: CreateLedgerFinancialReversalRecord,
+  ): Promise<LedgerTransactionRecord | null> {
+    const [originalAudit, reversalAudit] = input.audits;
+    // The candidate lock and both audit inserts live in this one statement, so
+    // no opposite ledger entry can escape without its history linkage.
+    const records = await neonSql`
+      WITH candidate AS (
+        SELECT id
+        FROM ledger_transaction
+        WHERE workspace_id = ${input.workspaceId}
+          AND id = ${input.originalTransactionId}
+          AND reversal_of_transaction_id IS NULL
+          AND (
+            ${input.expectedOriginalUpdatedAt ?? null}::timestamptz IS NULL
+            OR date_trunc('milliseconds', updated_at) = ${input.expectedOriginalUpdatedAt ?? null}
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ledger_transaction_correction
+            WHERE workspace_id = ${input.workspaceId}
+              AND original_transaction_id = ${input.originalTransactionId}
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ledger_transaction
+            WHERE workspace_id = ${input.workspaceId}
+              AND reversal_of_transaction_id = ${input.originalTransactionId}
+          )
+          AND NOT EXISTS (
+            WITH RECURSIVE lineage(id) AS (
+              SELECT ${input.originalTransactionId}::text
+              UNION
+              SELECT correction.original_transaction_id
+              FROM ledger_transaction_correction AS correction
+              INNER JOIN lineage ON lineage.id = correction.replacement_transaction_id
+              WHERE correction.workspace_id = ${input.workspaceId}
+            )
+            SELECT 1
+            FROM ledger_transaction AS refund
+            INNER JOIN lineage ON lineage.id = refund.refunded_transaction_id
+            WHERE refund.workspace_id = ${input.workspaceId}
+              AND refund.kind = 'REFUND'
+              AND refund.status = 'POSTED'
+          )
+        FOR UPDATE
+      ),
+      reversal AS (
+        INSERT INTO ledger_transaction (
+          id, workspace_id, kind, status, amount_minor, currency, occurred_at,
+          account_id, transfer_account_id, category_id, merchant_id,
+          created_by_user_id, paid_by_user_id, transfer_group_id,
+          refunded_transaction_id, reversal_of_transaction_id, source,
+          deduplication_fingerprint, note
+        )
+        SELECT ${input.reversal.id}, ${input.reversal.workspaceId}, ${input.reversal.kind},
+          ${input.reversal.status}, ${input.reversal.amountMinor}, ${input.reversal.currency},
+          ${input.reversal.occurredAt}, ${input.reversal.accountId}, ${input.reversal.transferAccountId},
+          ${input.reversal.categoryId}, ${input.reversal.merchantId}, ${input.reversal.createdByUserId},
+          ${input.reversal.paidByUserId}, ${input.reversal.transferGroupId},
+          ${input.reversal.refundedTransactionId}, ${input.reversal.reversalOfTransactionId},
+          ${JSON.stringify(input.reversal.source)}::jsonb, ${input.reversal.deduplicationFingerprint},
+          ${input.reversal.note}
+        FROM candidate
+        RETURNING id, workspace_id AS "workspaceId", kind, status,
+          amount_minor AS "amountMinor", currency, occurred_at AS "occurredAt",
+          account_id AS "accountId", transfer_account_id AS "transferAccountId",
+          category_id AS "categoryId", merchant_id AS "merchantId",
+          created_by_user_id AS "createdByUserId", paid_by_user_id AS "paidByUserId",
+          transfer_group_id AS "transferGroupId", refunded_transaction_id AS "refundedTransactionId",
+          reversal_of_transaction_id AS "reversalOfTransactionId",
+          source, deduplication_fingerprint AS "deduplicationFingerprint", note,
+          created_at AS "createdAt", updated_at AS "updatedAt"
+      ),
+      original_audit AS (
+        INSERT INTO ledger_transaction_audit (id, workspace_id, transaction_id, actor_user_id, action, metadata)
+        SELECT ${originalAudit.id}, ${originalAudit.workspaceId}, ${originalAudit.transactionId},
+          ${originalAudit.actorUserId}, ${originalAudit.action}, ${JSON.stringify(originalAudit.metadata)}::jsonb
+        FROM reversal
+      ),
+      reversal_audit AS (
+        INSERT INTO ledger_transaction_audit (id, workspace_id, transaction_id, actor_user_id, action, metadata)
+        SELECT ${reversalAudit.id}, ${reversalAudit.workspaceId}, reversal.id,
+          ${reversalAudit.actorUserId}, ${reversalAudit.action}, ${JSON.stringify(reversalAudit.metadata)}::jsonb
+        FROM reversal
+      )
+      SELECT * FROM reversal;
+    ` as unknown as readonly RawLedgerTransaction[];
+    const record = records[0];
+    return record ? mapLedgerTransaction(record) : null;
+  }
+
   async createFinancialRefund(
     input: CreateLedgerFinancialRefundRecord,
   ): Promise<LedgerTransactionRecord | null> {
@@ -594,6 +732,12 @@ export class DatabaseLedgerRepository implements LedgerRepository {
               FROM ledger_transaction_correction
               WHERE workspace_id = ${input.workspaceId}
                 AND reversal_transaction_id = ${input.sourceExpenseId}
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM ledger_transaction
+              WHERE workspace_id = ${input.workspaceId}
+                AND reversal_of_transaction_id = ${input.sourceExpenseId}
             )
           FOR UPDATE
         ),
@@ -817,8 +961,21 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     workspaceId: string,
     filters: LedgerTransactionListFilters,
   ) {
+    const reversal = alias(ledgerTransactions, "ledger_transaction_reversal");
     const predicates = [
       eq(ledgerTransactions.workspaceId, workspaceId),
+      isNull(ledgerTransactions.reversalOfTransactionId),
+      notExists(
+        db
+          .select({ id: reversal.id })
+          .from(reversal)
+          .where(
+            and(
+              eq(reversal.workspaceId, workspaceId),
+              eq(reversal.reversalOfTransactionId, ledgerTransactions.id),
+            ),
+          ),
+      ),
       // The correction table, not presentational fields, identifies obsolete
       // originals and bookkeeping reversals in the append-only chain.
       notExists(

@@ -39,10 +39,10 @@ test("a financial writer can prepare to edit and refund a posted expense", () =>
   assert.equal(result.canEdit, true);
   assert.equal(result.canCorrectFinancials, true);
   assert.equal(result.canRefund, true);
-  assert.equal(result.canReverse, false);
+  assert.equal(result.canReverse, true);
   assert.equal(result.canDelete, false);
   assert.equal(result.canViewTechnicalDetails, true);
-  assert.equal(result.reasons.reverse, "REVERSAL_NOT_SUPPORTED");
+  assert.equal(result.reasons.reverse, undefined);
   assert.equal(result.reasons.delete, "DELETE_NOT_SUPPORTED");
 });
 
@@ -52,6 +52,7 @@ test("a financial writer can prepare to edit posted income, but cannot refund it
   assert.equal(result.canEdit, true);
   assert.equal(result.canCorrectFinancials, true);
   assert.equal(result.canRefund, false);
+  assert.equal(result.canReverse, true);
   assert.equal(result.reasons.refund, "REFUND_NOT_APPLICABLE");
 });
 
@@ -61,7 +62,7 @@ test("transfers permit safe detail edits but never expose refunds", () => {
   assert.equal(result.canEdit, true);
   assert.equal(result.canCorrectFinancials, true);
   assert.equal(result.canRefund, false);
-  assert.equal(result.canReverse, false);
+  assert.equal(result.canReverse, true);
   assert.equal(result.reasons.edit, undefined);
   assert.equal(result.reasons.refund, "REFUND_NOT_APPLICABLE");
 });
@@ -72,6 +73,7 @@ test("refunds are immutable and cannot recursively create refunds", () => {
   assert.equal(result.canEdit, false);
   assert.equal(result.canCorrectFinancials, false);
   assert.equal(result.canRefund, false);
+  assert.equal(result.canReverse, false);
   assert.equal(result.reasons.edit, "REFUND_IMMUTABLE");
   assert.equal(result.reasons.refund, "REFUND_NOT_APPLICABLE");
 });
@@ -107,12 +109,14 @@ test("pending and imported transactions are conservatively restricted", () => {
   assert.equal(pending.canEdit, false);
   assert.equal(pending.canCorrectFinancials, false);
   assert.equal(pending.canRefund, false);
+  assert.equal(pending.canReverse, false);
   assert.equal(pending.reasons.edit, "TRANSACTION_NOT_POSTED");
   assert.equal(pending.reasons.refund, "TRANSACTION_NOT_POSTED");
   assert.equal(imported.canEdit, false);
   assert.equal(imported.canCorrectFinancials, false);
   assert.equal(imported.reasons.edit, "IMPORTED_TRANSACTION_RESTRICTED");
   assert.equal(imported.canRefund, true);
+  assert.equal(imported.canReverse, false);
 });
 
 test("agent origin alone does not make a canonical posted record immutable", () => {
@@ -130,6 +134,8 @@ test("refund capability requires an eligible category and remaining original amo
   assert.equal(uncategorized.reasons.refund, "REFUND_REQUIRES_CATEGORY");
   assert.equal(fullyRefunded.canRefund, false);
   assert.equal(fullyRefunded.reasons.refund, "REFUND_FULLY_ISSUED");
+  assert.equal(fullyRefunded.canReverse, false);
+  assert.equal(fullyRefunded.reasons.reverse, "REVERSAL_NOT_SUPPORTED");
 });
 
 test("the canonical policy has no dependency on UI components", async () => {

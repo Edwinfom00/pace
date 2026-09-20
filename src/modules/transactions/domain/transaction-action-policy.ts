@@ -76,19 +76,20 @@ export function getTransactionCapabilities({
   const editReason = getEditReason(transaction);
   const refundReason = getRefundReason(transaction, refundedAmountMinor, isCurrentEffective);
   const canCorrectFinancials = isCorrectionAllowed(transaction, isCurrentEffective);
+  const reversalReason = getReversalReason(transaction, refundedAmountMinor, isCurrentEffective);
 
   return {
     canEdit: editReason === null,
     canCorrectFinancials,
     canRefund: refundReason === null,
-    canReverse: false,
+    canReverse: reversalReason === null,
     // Transactions have no draft/delete/archive lifecycle in the ledger.
     canDelete: false,
     canViewTechnicalDetails,
     reasons: {
       ...(editReason ? { edit: editReason } : {}),
       ...(refundReason ? { refund: refundReason } : {}),
-      reverse: "REVERSAL_NOT_SUPPORTED",
+      ...(reversalReason ? { reverse: reversalReason } : {}),
       delete: "DELETE_NOT_SUPPORTED",
     },
   };
@@ -100,6 +101,19 @@ function isCorrectionAllowed(
 ): boolean {
   if (!isCurrentEffective || transaction.status !== "POSTED" || isImportedTransaction(transaction)) return false;
   return transaction.kind === "EXPENSE" || transaction.kind === "INCOME" || transaction.kind === "TRANSFER";
+}
+
+function getReversalReason(
+  transaction: TransactionActionPolicyInput["transaction"],
+  refundedAmountMinor: bigint,
+  isCurrentEffective: boolean,
+): TransactionActionReason | null {
+  if (transaction.status !== "POSTED") return "TRANSACTION_NOT_POSTED";
+  if (!isCurrentEffective) return "REVERSAL_NOT_SUPPORTED";
+  if (isImportedTransaction(transaction)) return "IMPORTED_TRANSACTION_RESTRICTED";
+  if (transaction.kind === "REFUND") return "REVERSAL_NOT_SUPPORTED";
+  if (transaction.kind === "EXPENSE" && refundedAmountMinor > 0n) return "REVERSAL_NOT_SUPPORTED";
+  return null;
 }
 
 function getEditReason(transaction: TransactionActionPolicyInput["transaction"]): TransactionActionReason | null {
