@@ -22,7 +22,7 @@ export function TransactionDetailHero({
     ? [transaction.account?.name, transaction.transferAccount?.name].filter(Boolean).join(" → ")
     : transaction.note ?? null;
   const TypeIcon = transaction.kind === "EXPENSE" ? ArrowDownLeft : transaction.kind === "INCOME" ? ArrowUpRight : ArrowRightLeft;
-  const amountTone = transaction.kind === "INCOME" || transaction.kind === "REFUND" ? "text-[#078652]" : "text-[#101a35]";
+  const amountTone = transaction.reversal ? "text-[#71809a]" : transaction.kind === "INCOME" || transaction.kind === "REFUND" ? "text-[#078652]" : "text-[#101a35]";
 
   return (
     <header className="flex flex-col gap-5 border-b border-[#edf0f4] pb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
@@ -46,6 +46,7 @@ export function TransactionDetailHero({
               {labels.kind[transaction.kind]}
             </span>
             {transaction.correction?.state === "CURRENT" ? <span className="inline-flex items-center rounded-full bg-[#edf3ff] px-2.5 py-1 text-[11px] font-medium text-[#365fba]">{labels.correction.badge}</span> : null}
+            {transaction.reversal ? <span className="inline-flex items-center rounded-full bg-[#f1f4f8] px-2.5 py-1 text-[11px] font-medium text-[#53627b]">{labels.reversal.badge}</span> : null}
             {transaction.category ? <span className="rounded-full bg-[#f2f4f7] px-2.5 py-1 text-[11px] font-medium text-[#596780]">{labels.systemCategory(transaction.category)}</span> : null}
             {transaction.source ? <span className="rounded-full bg-[#f2f4f7] px-2.5 py-1 text-[11px] font-medium text-[#596780]">{labels.source.origin[transaction.source.origin]}</span> : null}
           </div>

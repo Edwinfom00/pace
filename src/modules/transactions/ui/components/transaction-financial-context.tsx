@@ -16,6 +16,15 @@ export function TransactionFinancialContext({
 }) {
   const { accountImpacts, monthlyCategory } = transaction.context;
 
+  if (transaction.reversal) {
+    return (
+      <section aria-labelledby="financial-context-heading" className="rounded-[13px] border border-[#e6eaf0] bg-white p-4 sm:p-5">
+        <h2 className="text-[17px] font-semibold tracking-tight text-[#101a35]" id="financial-context-heading">{labels.financial.title}</h2>
+        <p className="mt-3 rounded-[10px] bg-[#f7f9fc] px-3.5 py-4 text-[13px] leading-5 text-[#53627b]">{labels.reversal.noFinancialEffect}</p>
+      </section>
+    );
+  }
+
   return (
     <section aria-labelledby="financial-context-heading" className="rounded-[13px] border border-[#e6eaf0] bg-white p-4 sm:p-5">
       <h2 className="text-[17px] font-semibold tracking-tight text-[#101a35]" id="financial-context-heading">{labels.financial.title}</h2>

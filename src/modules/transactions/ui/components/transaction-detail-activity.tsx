@@ -59,6 +59,14 @@ export function TransactionDetailActivity({
       icon: History,
       tone: "success" as const,
     }] : []),
+    ...(transaction.reversal ? [{
+      id: `reversal-${transaction.reversal.reversalTransactionId}`,
+      title: labels.reversal.activity,
+      description: transaction.reversal.reason ?? labels.reversal.activityDetails,
+      occurredAt: transaction.reversal.reversedAt,
+      icon: History,
+      tone: "success" as const,
+    }] : []),
     ...(transaction.refund?.activity.map((refund) => ({
       id: `refund-${refund.id}`,
       title: labels.activity.refundIssued(formatOverviewMoney(refund.amount.minor, refund.amount.currency, locale)),

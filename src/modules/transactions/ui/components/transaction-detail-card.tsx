@@ -54,8 +54,11 @@ export function TransactionDetailCard({
         <DetailRow icon={CalendarDays} label={labels.field.date}><time dateTime={transaction.occurredAt}>{formatDetailDate(transaction.occurredAt, locale, timeZone)}</time></DetailRow>
         <DetailRow icon={Clock3} label={labels.field.time}>{formatDetailTime(transaction.occurredAt, locale, timeZone)}</DetailRow>
         {transaction.note ? <DetailRow icon={FileText} label={labels.field.note}><span className="font-normal text-[#53627b]">{transaction.note}</span></DetailRow> : null}
-        <DetailRow icon={CheckCircle2} label={labels.field.status}><span className={transaction.status === "POSTED" ? "inline-flex rounded-full bg-[#eaf8f1] px-2.5 py-1 text-[11px] font-medium text-[#078652]" : "inline-flex rounded-full bg-[#fff5ec] px-2.5 py-1 text-[11px] font-medium text-[#b6642d]"}>{labels.status[transaction.status]}</span></DetailRow>
+        <DetailRow icon={CheckCircle2} label={labels.field.status}><span className={transaction.reversal ? "inline-flex rounded-full bg-[#f1f4f8] px-2.5 py-1 text-[11px] font-medium text-[#53627b]" : transaction.status === "POSTED" ? "inline-flex rounded-full bg-[#eaf8f1] px-2.5 py-1 text-[11px] font-medium text-[#078652]" : "inline-flex rounded-full bg-[#fff5ec] px-2.5 py-1 text-[11px] font-medium text-[#b6642d]"}>{transaction.reversal ? labels.reversal.badge : labels.status[transaction.status]}</span></DetailRow>
+        {transaction.reversal ? <DetailRow icon={CalendarDays} label={labels.reversal.reversedOn}><time dateTime={transaction.reversal.reversedAt}>{formatDetailDate(transaction.reversal.reversedAt, locale, timeZone)}</time></DetailRow> : null}
+        {transaction.reversal?.reason ? <DetailRow icon={FileText} label={labels.reversal.reason}>{transaction.reversal.reason}</DetailRow> : null}
       </dl>
+      {transaction.reversal ? <p className="mt-3 rounded-[8px] bg-[#f7f9fc] px-3 py-2.5 text-[12px] leading-5 text-[#53627b]">{labels.reversal.preserved}</p> : null}
     </section>
   );
 }

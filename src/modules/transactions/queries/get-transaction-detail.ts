@@ -24,6 +24,7 @@ import type {
   TransactionDetailMerchant,
   TransactionMonthlyCategoryContext,
   TransactionDetailOrigin,
+  TransactionDetailReversal,
   TransactionRefundSummary,
 } from "../domain/transaction-detail";
 import { getTransactionCapabilities } from "../domain/transaction-action-policy";
@@ -39,6 +40,7 @@ type TransactionDetailLedgerRepository = Pick<
   | "findTransactionCorrectionByOriginal"
   | "findTransactionCorrectionByReplacement"
   | "findTransactionCorrectionByTransactionId"
+  | "findTransactionReversalByOriginal"
   | "listTransactionAudit"
 >;
 type TransactionDetailWorkspaceRepository = Pick<WorkspaceRepository, "findMembership">;
@@ -72,12 +74,19 @@ export async function getTransactionDetail(
     transaction.merchantId ? dependencies.ledger.findMerchant(input.workspaceId, transaction.merchantId) : null,
     dependencies.ledger.listTransactions(input.workspaceId),
   ]);
-  const correction = await getDetailCorrection({
+  const [correction, reversal] = await Promise.all([
+    getDetailCorrection({
     ledger: dependencies.ledger,
     transaction,
     transactions: workspaceTransactions,
     workspaceId: input.workspaceId,
-  });
+    }),
+    getDetailReversal({
+      ledger: dependencies.ledger,
+      transaction,
+      workspaceId: input.workspaceId,
+    }),
+  ]);
   const effectiveTransaction = correction
     ? workspaceTransactions.find((candidate) => candidate.id === correction.currentTransactionId) ?? transaction
     : transaction;
@@ -99,7 +108,7 @@ export async function getTransactionDetail(
         : null,
   ]);
 
-  const isCurrentEffectiveExpense = transaction.kind === "EXPENSE" && effectiveTransaction.id === transaction.id;
+  const isCurrentEffectiveExpense = !reversal && transaction.kind === "EXPENSE" && effectiveTransaction.id === transaction.id;
   const refunds = isCurrentEffectiveExpense
     ? await dependencies.ledger.listRefundsForEffectiveExpense(input.workspaceId, effectiveTransaction.id)
     : [];
@@ -129,6 +138,7 @@ export async function getTransactionDetail(
       isCurrentEffective: isCurrentFinancialTransaction(transaction, workspaceTransactions),
     }),
     correction,
+    reversal,
     refund: isCurrentEffectiveExpense
       ? refundSummary({
         expense: effectiveTransaction,
@@ -138,14 +148,44 @@ export async function getTransactionDetail(
       })
       : null,
     context: {
-      accountImpacts: [effectiveAccount, effectiveTransferAccount]
+      accountImpacts: reversal ? [] : [effectiveAccount, effectiveTransferAccount]
         .filter((candidate): candidate is LedgerAccountRecord => candidate !== null)
         .map((candidate) => mapAccountImpact(candidate, effectiveTransaction, workspaceTransactions)),
-      monthlyCategory: effectiveCategory
+      monthlyCategory: !reversal && effectiveCategory
         ? mapMonthlyCategoryContext(effectiveTransaction, effectiveCategory, workspaceTransactions, input.timeZone)
         : null,
       effectiveTransactionId: effectiveTransaction.id,
     },
+  };
+}
+
+async function getDetailReversal({
+  ledger,
+  transaction,
+  workspaceId,
+}: {
+  readonly ledger: TransactionDetailLedgerRepository;
+  readonly transaction: LedgerTransactionRecord;
+  readonly workspaceId: string;
+}): Promise<TransactionDetailReversal | null> {
+  const [reversal, audits] = await Promise.all([
+    ledger.findTransactionReversalByOriginal(workspaceId, transaction.id),
+    ledger.listTransactionAudit(workspaceId, transaction.id),
+  ]);
+  if (!reversal) return null;
+
+  const audit = audits.find(
+    (candidate) => candidate.action === "MANUAL_REVERSAL"
+      && candidate.metadata.reversalTransactionId === reversal.id,
+  );
+  // Financial corrections also create linked technical inverse entries. Only
+  // the explicit canonical manual-reversal audit makes the original record
+  // a user-visible reversed transaction.
+  if (!audit) return null;
+  return {
+    reversalTransactionId: reversal.id,
+    reversedAt: audit.createdAt.toISOString(),
+    reason: typeof audit.metadata.reason === "string" ? audit.metadata.reason : null,
   };
 }
 

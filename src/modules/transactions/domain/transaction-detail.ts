@@ -98,6 +98,13 @@ export type TransactionDetailCorrection = {
   readonly activity: { readonly occurredAt: string } | null;
 };
 
+/** Canonical manual reversal state for the original transaction, never a user-list row. */
+export type TransactionDetailReversal = {
+  readonly reversalTransactionId: string;
+  readonly reversedAt: string;
+  readonly reason: string | null;
+};
+
 export type TransactionDetailData = {
   readonly id: string;
   readonly kind: LedgerTransactionKind;
@@ -117,6 +124,7 @@ export type TransactionDetailData = {
   } | null;
   readonly capabilities: TransactionCapabilities;
   readonly correction?: TransactionDetailCorrection | null;
+  readonly reversal?: TransactionDetailReversal | null;
   readonly refund?: TransactionRefundSummary | null;
   readonly context: {
     readonly accountImpacts: readonly TransactionAccountImpact[];

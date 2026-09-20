@@ -110,6 +110,15 @@ export type TransactionDetailLabels = {
     readonly technicalDescription: string;
     readonly technicalCurrent: string;
   };
+  readonly reversal: {
+    readonly badge: string;
+    readonly reversedOn: string;
+    readonly reason: string;
+    readonly preserved: string;
+    readonly noFinancialEffect: string;
+    readonly activity: string;
+    readonly activityDetails: string;
+  };
   readonly refund: {
     readonly returnedItem: string;
     readonly cancelledService: string;
@@ -242,6 +251,15 @@ export function getTransactionDetailLabels(labels: DashboardLabels): Transaction
       technicalTitle: labels["transactions.correction.technicalTitle"],
       technicalDescription: labels["transactions.correction.technicalDescription"],
       technicalCurrent: labels["transactions.correction.technicalCurrent"],
+    },
+    reversal: {
+      badge: labels["transactions.reversal.reversed"],
+      reversedOn: labels["transactions.reversal.reversedOn"],
+      reason: labels["transactions.reversal.reason"],
+      preserved: labels["transactions.reversal.originalPreserved"],
+      noFinancialEffect: labels["transactions.reversal.noFinancialEffect"],
+      activity: labels["transactions.reversal.activity"],
+      activityDetails: labels["transactions.reversal.activityDetails"],
     },
     refund: {
       returnedItem: labels["transactions.refund.reason.returnedItem"],

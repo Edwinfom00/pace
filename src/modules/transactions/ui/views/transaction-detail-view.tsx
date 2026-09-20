@@ -10,6 +10,7 @@ import { getTransactionDetailActionLabels } from "../transaction-detail-action-l
 import { getTransactionDetailLabels } from "../transaction-detail-labels";
 import { getTransactionEditLabels } from "../transaction-edit-labels";
 import { getTransactionRefundLabels } from "../transaction-refund-labels";
+import { getTransactionReversalLabels } from "../transaction-reversal-labels";
 import { TransactionDetailActions } from "../components/transaction-detail-actions";
 import { TransactionDetailActivity } from "../components/transaction-detail-activity";
 import { TransactionDetailAskPace } from "../components/transaction-detail-ask-pace";
@@ -45,6 +46,7 @@ export function TransactionDetailView({
   const actionLabels = getTransactionDetailActionLabels(dashboardLabels);
   const editLabels = getTransactionEditLabels(dashboardLabels);
   const refundLabels = getTransactionRefundLabels(dashboardLabels);
+  const reversalLabels = getTransactionReversalLabels(dashboardLabels);
   const labels = getTransactionDetailLabels(dashboardLabels);
   const askPaceCategory = transaction.category ? labels.systemCategory(transaction.category) : null;
 
@@ -72,6 +74,7 @@ export function TransactionDetailView({
             editLabels={editLabels}
             labels={actionLabels}
             refundLabels={refundLabels}
+            reversalLabels={reversalLabels}
             language={language}
             locale={locale}
             timeZone={timeZone}

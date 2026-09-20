@@ -11,6 +11,7 @@ import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import { toCurrencyCode } from "@/money/currency";
 import { correctTransactionForActor } from "@/modules/ledger/correct-transaction";
 import { LedgerService } from "@/modules/ledger/ledger-service";
+import { reverseTransactionForActor } from "@/modules/ledger/reverse-transaction";
 import { getTransactionDetail } from "@/modules/transactions/queries/get-transaction-detail";
 import { TransactionDetailActivity } from "@/modules/transactions/ui/components/transaction-detail-activity";
 import { TransactionDetailCard } from "@/modules/transactions/ui/components/transaction-detail-card";
@@ -230,6 +231,73 @@ test("financial context and activity only present available ledger facts", async
   assert.match(activityMarkup, /Transaction added/);
   assert.match(activityMarkup, /Categorized as Groceries/);
   assert.match(activityMarkup, /Verified and posted/);
+});
+
+test("manual reversal refreshes the original detail from canonical state without presenting technical entries", async () => {
+  const { detail, expense, income, service, transfer } = await fixture();
+  const commands = [
+    { id: expense.id, key: "70000000-0000-4000-8000-000000000101", reason: "Duplicate transaction" },
+    { id: income.id, key: "70000000-0000-4000-8000-000000000102", reason: "Entered by mistake" },
+    { id: transfer.id, key: "70000000-0000-4000-8000-000000000103", reason: "Wrong transaction" },
+  ];
+  const results = await Promise.all(commands.map(({ id, key, reason }) => reverseTransactionForActor(owner, {
+    workspaceId,
+    transactionId: id,
+    idempotencyKey: key,
+    reason,
+  }, { ledger: service })));
+  assert.ok(results.every((result) => result.ok));
+
+  const [reversedExpense, reversedIncome, reversedTransfer] = await Promise.all([
+    detail(expense.id),
+    detail(income.id),
+    detail(transfer.id),
+  ]);
+  assert.ok(reversedExpense && reversedIncome && reversedTransfer);
+
+  assert.equal(reversedExpense.reversal?.reason, "Duplicate transaction");
+  assert.equal(reversedIncome.reversal?.reason, "Entered by mistake");
+  assert.equal(reversedTransfer.reversal?.reason, "Wrong transaction");
+  for (const transaction of [reversedExpense, reversedIncome, reversedTransfer]) {
+    assert.ok(transaction.reversal?.reversalTransactionId);
+    assert.equal(transaction.capabilities.canReverse, false);
+    assert.equal(transaction.capabilities.canCorrectFinancials, false);
+    assert.deepEqual(transaction.context.accountImpacts, []);
+    assert.equal(transaction.context.monthlyCategory, null);
+  }
+  assert.equal(reversedExpense.refund, null);
+
+  const labels = detailLabels("en");
+  const detailMarkup = renderToStaticMarkup(createElement(TransactionDetailView, {
+    categories: editCategories,
+    language: "en",
+    locale: "en-US",
+    timeZone: "Africa/Douala",
+    transaction: {
+      ...reversedExpense,
+      capabilities: { ...reversedExpense.capabilities, canEdit: false },
+    },
+    workspaceId,
+    workspaceSlug: "house",
+  }));
+  const activityMarkup = renderToStaticMarkup(createElement(TransactionDetailActivity, {
+    transaction: reversedExpense,
+    labels,
+    locale: "en-US",
+    timeZone: "Africa/Douala",
+  }));
+  const financialMarkup = renderToStaticMarkup(createElement(TransactionFinancialContext, {
+    transaction: reversedExpense,
+    labels,
+    locale: "en-US",
+  }));
+  assert.match(detailMarkup, /Reversed/);
+  assert.match(detailMarkup, /Duplicate transaction/);
+  assert.match(detailMarkup, /remain in your history/);
+  assert.doesNotMatch(detailMarkup, /Reverse transaction/);
+  assert.match(activityMarkup, /Transaction reversed/);
+  assert.match(activityMarkup, /Duplicate transaction/);
+  assert.match(financialMarkup, /no longer contributes to your current financial totals/);
 });
 
 test("detail projects canonical partial and full refunds, related refund links, and source audit activity", async () => {

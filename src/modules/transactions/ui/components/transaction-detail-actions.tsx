@@ -9,8 +9,10 @@ import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 import type { TransactionDetailActionLabels } from "../transaction-detail-action-labels";
 import type { TransactionEditLabels } from "../transaction-edit-labels";
 import type { TransactionRefundLabels } from "../transaction-refund-labels";
+import type { TransactionReversalLabels } from "../transaction-reversal-labels";
 import { EditTransactionDialog } from "./edit-transaction-dialog";
 import { TransactionRefundDialog } from "./transaction-refund-dialog";
+import { TransactionReversalDialog } from "./transaction-reversal-dialog";
 
 export function TransactionDetailActions({
   accountOptions = { status: "ready", accounts: [] },
@@ -21,6 +23,7 @@ export function TransactionDetailActions({
   transaction,
   labels,
   refundLabels,
+  reversalLabels,
   language = "en",
   workspaceId,
   workspaceSlug,
@@ -33,6 +36,7 @@ export function TransactionDetailActions({
   readonly transaction: TransactionDetailData;
   readonly labels: TransactionDetailActionLabels;
   readonly refundLabels?: TransactionRefundLabels;
+  readonly reversalLabels?: TransactionReversalLabels;
   readonly language?: OnboardingLanguage;
   readonly workspaceId: string;
   readonly workspaceSlug: string;
@@ -77,6 +81,14 @@ export function TransactionDetailActions({
             icon={<RefreshCw aria-hidden className="size-4" />}
             label={labels.createRefund}
             reason={refundReason ? labels.unavailable[refundReason] : labels.comingSoon}
+          />
+        ) : null}
+        {transaction.capabilities.canReverse && reversalLabels ? (
+          <TransactionReversalDialog
+            labels={reversalLabels}
+            locale={locale}
+            transaction={transaction}
+            workspaceId={workspaceId}
           />
         ) : null}
       </div>
