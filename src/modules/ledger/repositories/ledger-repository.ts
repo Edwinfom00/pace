@@ -507,7 +507,15 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     const merchant = input.merchantToCreate;
     const [originalAudit, reversalAudit, replacementAudit] = input.audits;
     const rows = await neonSql`
-      WITH candidate AS (
+      WITH RECURSIVE lineage(id) AS (
+        SELECT ${input.originalTransactionId}::text
+        UNION
+        SELECT correction.original_transaction_id
+        FROM ledger_transaction_correction AS correction
+        INNER JOIN lineage ON lineage.id = correction.replacement_transaction_id
+        WHERE correction.workspace_id = ${input.workspaceId}
+      ),
+      candidate AS (
         SELECT id
         FROM ledger_transaction
         WHERE workspace_id = ${input.workspaceId}
@@ -527,6 +535,17 @@ export class DatabaseLedgerRepository implements LedgerRepository {
             FROM ledger_transaction
             WHERE workspace_id = ${input.workspaceId}
               AND reversal_of_transaction_id = ${input.originalTransactionId}
+          )
+          AND (
+            ${input.replacement.kind !== "EXPENSE"}
+            OR COALESCE((
+              SELECT SUM(refund.amount_minor)
+              FROM ledger_transaction AS refund
+              WHERE refund.workspace_id = ${input.workspaceId}
+                AND refund.kind = 'REFUND'
+                AND refund.status = 'POSTED'
+                AND refund.refunded_transaction_id IN (SELECT id FROM lineage)
+            ), 0) <= ${input.replacement.amountMinor}
           )
         FOR UPDATE
       ),

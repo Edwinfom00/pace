@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { DomainConflictError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
+import { correctTransactionForActor } from "@/modules/ledger/correct-transaction";
 import { createRefundForActor } from "@/modules/ledger/create-refund";
 import { LedgerService } from "@/modules/ledger/ledger-service";
 import { calculateIncomeAndSpendingTotals } from "@/modules/ledger/totals";
@@ -135,6 +136,32 @@ test("canonical refunds create full and partial real-world events with exact der
   });
 });
 
+test("a correction before a refund retains the corrected net spending", async () => {
+  const { expense, ledger, records, refund } = await fixture();
+  const correction = await ledger.correctTransaction(owner, {
+    workspaceId,
+    transactionId: expense.id,
+    kind: "EXPENSE",
+    financialChanges: { amountMinor: 90n },
+    idempotencyKey: randomUUID(),
+  });
+
+  const issued = await refund({
+    expenseTransactionId: correction.replacementTransaction.id,
+    amountMinor: "20",
+  });
+  assert.equal(issued.ok, true);
+  if (!issued.ok) return;
+
+  assert.equal(issued.refund.effectiveExpenseAmountMinor, "90");
+  assert.equal(issued.refund.totalRefundedMinor, "20");
+  assert.equal(issued.refund.remainingRefundableMinor, "70");
+  assert.deepEqual(calculateIncomeAndSpendingTotals([...records.transactions.values()], "XAF"), {
+    incomeMinor: 100n,
+    spendingMinor: 70n,
+  });
+});
+
 test("refunds reject over-refunds, invalid money, wrong currency, ineligible sources, and foreign accounts", async () => {
   const { euro, expense, foreign, income, ledger, refund, transfer } = await fixture();
   assert.equal((await refund({ amountMinor: "80" })).ok, true);
@@ -184,6 +211,16 @@ test("refunds follow the current effective expense and include prior-version ref
   const { expense, ledger, records, refund } = await fixture();
   const initial = await refund({ amountMinor: "40" });
   assert.equal(initial.ok, true);
+
+  const transactionCountBeforeRejectedCorrection = records.transactions.size;
+  assert.deepEqual(await correctTransactionForActor(owner, {
+    workspaceId,
+    transactionId: expense.id,
+    kind: "EXPENSE",
+    financialChanges: { amountMinor: "39" },
+    idempotencyKey: randomUUID(),
+  }, { ledger }), { ok: false, code: "CORRECTED_AMOUNT_BELOW_REFUNDED_TOTAL" });
+  assert.equal(records.transactions.size, transactionCountBeforeRejectedCorrection);
 
   const correction = await ledger.correctTransaction(owner, {
     workspaceId,

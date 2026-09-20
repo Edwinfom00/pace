@@ -70,6 +70,7 @@ function correctionTransactionStatus(code: string): number {
     || code === "TRANSACTION_ALREADY_REVERSED"
     || code === "TRANSACTION_NOT_CURRENT"
     || code === "CONCURRENT_MODIFICATION"
+    || code === "CORRECTED_AMOUNT_BELOW_REFUNDED_TOTAL"
     || code === "CORRECTION_ALREADY_PROCESSED"
   ) {
     return 409;

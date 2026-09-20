@@ -468,8 +468,10 @@ export class LedgerService {
       );
     }
 
-    const refundedAmountMinor = (await this.repository.listRefundsForTransaction(command.workspaceId, original.id))
-      .reduce((total, refund) => total + refund.amountMinor, 0n);
+    const refundAggregate = original.kind === "EXPENSE"
+      ? await this.getRefundAggregate(command.workspaceId, original)
+      : null;
+    const refundedAmountMinor = refundAggregate?.total.minor ?? 0n;
     const capabilities = getTransactionCapabilities({
       transaction: original,
       workspaceRole: membership.role,
@@ -492,6 +494,16 @@ export class LedgerService {
       workspace.preferences.timezone,
     );
     const replacementInput = this.buildCorrectionReplacementInput(original, command, correctionId, details);
+    if (
+      replacementInput.kind === "EXPENSE"
+      && refundAggregate
+      && replacementInput.amountMinor < refundAggregate.total.minor
+    ) {
+      throw new DomainConflictError(
+        "CORRECTED_AMOUNT_BELOW_REFUNDED_TOTAL",
+        "A corrected expense cannot be less than refunds already issued against it.",
+      );
+    }
     await this.assertCorrectionReplacementAccounts(command.workspaceId, replacementInput);
     const replacement = await this.prepareCanonicalTransaction(actor, command.workspaceId, replacementInput);
     const reversal = createTransactionReversal(original, {
@@ -559,6 +571,15 @@ export class LedgerService {
           "TRANSACTION_ALREADY_REVERSED",
           "This transaction was manually reversed by another request.",
         );
+      }
+      if (replacementInput.kind === "EXPENSE") {
+        const currentRefunds = await this.getRefundAggregate(command.workspaceId, original);
+        if (replacementInput.amountMinor < currentRefunds.total.minor) {
+          throw new DomainConflictError(
+            "CORRECTED_AMOUNT_BELOW_REFUNDED_TOTAL",
+            "A corrected expense cannot be less than refunds already issued against it.",
+          );
+        }
       }
       throw new DomainConflictError(
         "CONCURRENT_MODIFICATION",

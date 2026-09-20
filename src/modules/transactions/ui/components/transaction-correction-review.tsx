@@ -168,6 +168,8 @@ function correctionFeedback(
   switch (error) {
     case "amount":
       return labels.amountInvalid;
+    case "refundLimit":
+      return labels.correction.refundLimit;
     case "account":
       return labels.accountUnavailable;
     case "currency":

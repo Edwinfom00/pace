@@ -218,7 +218,6 @@ export function TransactionDateField({ error, label, locale, onValueChange, time
             aria-describedby={error ? errorId : undefined}
             aria-expanded={open}
             aria-haspopup="dialog"
-            aria-invalid={error ? true : undefined}
             aria-label={`${label}: ${formatLongDate(value, locale)}`}
             className={cn(
               "flex h-11 w-full items-center gap-2.5 rounded-[8px] border bg-white px-3 text-left text-[13px] text-[#13213f] outline-none transition-[border-color,box-shadow] duration-150 hover:border-[#bac9df] focus-visible:ring-3",

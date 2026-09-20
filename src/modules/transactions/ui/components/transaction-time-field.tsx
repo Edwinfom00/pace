@@ -87,7 +87,6 @@ export function TransactionTimeField({
               aria-expanded={open}
               aria-haspopup="dialog"
               aria-describedby={error ? errorId : undefined}
-              aria-invalid={error ? true : undefined}
               aria-label={time ? `${label}: ${displayValue}` : `${label}: ${placeholder}`}
               className={cn(
                 "flex min-w-0 flex-1 items-center gap-2.5 px-3 text-left text-[13px] outline-none",

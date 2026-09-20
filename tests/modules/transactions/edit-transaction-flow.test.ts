@@ -421,6 +421,10 @@ test("server failures map to safe fields or a non-overwriting conflict state", (
   assert.deepEqual(mapTransactionEditFailure("TRANSACTION_EDIT_NOT_ALLOWED"), { fieldErrors: {}, formError: "notAllowed" });
   assert.deepEqual(mapTransactionEditFailure("UNEXPECTED"), { fieldErrors: {}, formError: "failed" });
   assert.deepEqual(mapTransactionCorrectionFailure("INVALID_AMOUNT"), { fieldErrors: { amount: "amount" }, formError: "amount" });
+  assert.deepEqual(
+    mapTransactionCorrectionFailure("CORRECTED_AMOUNT_BELOW_REFUNDED_TOTAL"),
+    { fieldErrors: { amount: "refundLimit" }, formError: "refundLimit" },
+  );
   assert.deepEqual(mapTransactionCorrectionFailure("SAME_TRANSFER_ACCOUNT"), { fieldErrors: { toAccount: "toAccount" }, formError: "transfer" });
   assert.deepEqual(mapTransactionCorrectionFailure("CONCURRENT_MODIFICATION"), { fieldErrors: {}, formError: "conflict" });
   assert.deepEqual(mapTransactionCorrectionFailure("TRANSACTION_CORRECTION_NOT_ALLOWED"), { fieldErrors: {}, formError: "notAllowed" });
@@ -448,5 +452,6 @@ test("Edit and correction labels are complete in English, French, and German", (
     assert.ok(translated.correction.conflict.length > 0, language);
     assert.ok(translated.correction.reloadLatest.length > 0, language);
     assert.ok(translated.correction.notAllowed.length > 0, language);
+    assert.ok(translated.correction.refundLimit.length > 0, language);
   }
 });

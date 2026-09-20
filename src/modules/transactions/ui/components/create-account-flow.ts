@@ -1,4 +1,5 @@
 import { isCurrencyCode } from "@/money/currency";
+import { parseDecimalMoney } from "@/money/money";
 import {
   createAccountSchema,
   type CreateAccountErrorCode,
@@ -30,15 +31,27 @@ export function validateCreateAccountForm(
   draft: CreateAccountFormDraft,
 ): CreateAccountFormErrors {
   const parsed = createAccountSchema.safeParse({ workspaceId, ...draft });
-  if (parsed.success) return {};
-
   const errors: CreateAccountFormErrors = {};
-  for (const issue of parsed.error.issues) {
-    const field = issue.path[0];
-    if (field === "name" || field === "type" || field === "currency" || field === "openingBalance") {
-      errors[field] = true;
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const field = issue.path[0];
+      if (field === "name" || field === "type" || field === "currency" || field === "openingBalance") {
+        errors[field] = true;
+      }
     }
   }
+
+  // Zod does not run the schema's cross-field refinement when another field
+  // already has a type error. Keep the browser feedback complete while using
+  // the same exact, currency-aware decimal parser as the server contract.
+  if (
+    draft.openingBalance.trim().length > 0
+    && isCurrencyCode(draft.currency)
+    && !parseDecimalMoney(draft.openingBalance, draft.currency)
+  ) {
+    errors.openingBalance = true;
+  }
+
   return errors;
 }
 

@@ -68,6 +68,7 @@ export type TransactionCorrectionFormError =
   | "currency"
   | "failed"
   | "notAllowed"
+  | "refundLimit"
   | "transfer"
   | null;
 
@@ -378,6 +379,8 @@ export function mapTransactionCorrectionFailureForKind(
   switch (code) {
     case "INVALID_AMOUNT":
       return { fieldErrors: { amount: "amount" }, formError: "amount" };
+    case "CORRECTED_AMOUNT_BELOW_REFUNDED_TOTAL":
+      return { fieldErrors: { amount: "refundLimit" }, formError: "refundLimit" };
     case "ACCOUNT_NOT_FOUND":
     case "ACCOUNT_UNAVAILABLE":
     case "ACCOUNT_WORKSPACE_MISMATCH":

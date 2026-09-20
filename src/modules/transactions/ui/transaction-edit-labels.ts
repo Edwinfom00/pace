@@ -86,6 +86,7 @@ export type TransactionEditLabels = {
     readonly conflict: string;
     readonly reloadLatest: string;
     readonly notAllowed: string;
+    readonly refundLimit: string;
     readonly applyUnavailable: string;
     readonly incorrectAmount: string;
     readonly wrongAccount: string;
@@ -187,6 +188,7 @@ export function getTransactionEditLabels(labels: DashboardLabels): TransactionEd
       conflict: labels["transactions.correction.conflict"],
       reloadLatest: labels["transactions.correction.reloadLatest"],
       notAllowed: labels["transactions.correction.notAllowed"],
+      refundLimit: labels["transactions.correction.refundLimit"],
       applyUnavailable: labels["transactions.correction.applyUnavailable"],
       incorrectAmount: labels["transactions.correction.incorrectAmount"],
       wrongAccount: labels["transactions.correction.wrongAccount"],

@@ -330,6 +330,31 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     // HTTP callers do, while one atomic in-memory commit still has one winner.
     const candidate = this.transactions.get(input.originalTransactionId);
     const original = candidate?.workspaceId === input.workspaceId ? candidate : null;
+    const lineage = new Set<string>([input.originalTransactionId]);
+    let lineageCursor = input.originalTransactionId;
+    while (true) {
+      const correction = [...this.transactionCorrections.values()].find(
+        (candidateCorrection) =>
+          candidateCorrection.workspaceId === input.workspaceId
+          && candidateCorrection.replacementTransactionId === lineageCursor,
+      );
+      if (!correction || lineage.has(correction.originalTransactionId)) break;
+      lineage.add(correction.originalTransactionId);
+      lineageCursor = correction.originalTransactionId;
+    }
+    const refundedMinor = [...this.transactions.values()].reduce(
+      (total, transaction) =>
+        transaction.workspaceId === input.workspaceId
+        && transaction.kind === "REFUND"
+        && transaction.status === "POSTED"
+        && transaction.refundedTransactionId !== null
+        && lineage.has(transaction.refundedTransactionId)
+          ? total + transaction.amountMinor
+          : total,
+      0n,
+    );
+    const replacementFallsBelowRefunds = input.replacement.kind === "EXPENSE"
+      && input.replacement.amountMinor < refundedMinor;
     if (
       !original
       || original.reversalOfTransactionId !== null
@@ -345,6 +370,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
           transaction.workspaceId === input.workspaceId
           && transaction.reversalOfTransactionId === input.originalTransactionId,
       )
+      || replacementFallsBelowRefunds
     ) {
       return null;
     }
