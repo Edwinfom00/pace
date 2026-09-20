@@ -17,6 +17,7 @@ import type { WorkspaceRepository } from "@/modules/workspaces/repositories/work
 import { getTransactionCapabilities } from "@/modules/transactions/domain/transaction-action-policy";
 
 import type {
+  LedgerAccountBalance,
   LedgerAccountRecord,
   LedgerCategoryKind,
   LedgerCategoryRecord,
@@ -81,6 +82,24 @@ export class LedgerService {
   async listAccounts(actor: AuthenticatedActor, workspaceId: string): Promise<LedgerAccountRecord[]> {
     await this.requireWorkspacePermission(actor.userId, workspaceId, "read");
     return this.repository.listAccounts(workspaceId);
+  }
+
+  async getAccountBalance(
+    actor: AuthenticatedActor,
+    input: { workspaceId: string; accountId: string },
+  ): Promise<LedgerAccountBalance> {
+    await this.requireWorkspacePermission(actor.userId, input.workspaceId, "read");
+    const balance = await this.repository.getAccountBalance(input.workspaceId, input.accountId);
+    if (!balance) throw new NotFoundError("Account not found in this workspace.");
+    return balance;
+  }
+
+  async getWorkspaceAccountBalances(
+    actor: AuthenticatedActor,
+    input: { workspaceId: string },
+  ): Promise<readonly LedgerAccountBalance[]> {
+    await this.requireWorkspacePermission(actor.userId, input.workspaceId, "read");
+    return this.repository.getWorkspaceAccountBalances(input.workspaceId);
   }
 
   async createCategory(

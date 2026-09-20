@@ -1,0 +1,2 @@
+CREATE INDEX "ledger_transaction_workspace_status_account_idx" ON "ledger_transaction" USING btree ("workspace_id","status","account_id");--> statement-breakpoint
+CREATE INDEX "ledger_transaction_workspace_status_transfer_account_idx" ON "ledger_transaction" USING btree ("workspace_id","status","transfer_account_id");

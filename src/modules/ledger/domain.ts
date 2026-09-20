@@ -1,3 +1,5 @@
+import type { CurrencyCode } from "@/money/currency";
+
 export const LEDGER_CATEGORY_KINDS = ["EXPENSE", "INCOME"] as const;
 export type LedgerCategoryKind = (typeof LEDGER_CATEGORY_KINDS)[number];
 
@@ -24,6 +26,13 @@ export interface LedgerAccountRecord {
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** The authoritative, unformatted current balance of one ledger account. */
+export interface LedgerAccountBalance {
+  accountId: string;
+  currency: CurrencyCode;
+  currentBalanceMinor: bigint;
 }
 
 export interface LedgerCategoryRecord {

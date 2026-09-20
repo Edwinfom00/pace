@@ -173,6 +173,16 @@ export const ledgerTransactions = pgTable(
   },
   (table) => [
     index("ledger_transaction_workspace_occurred_at_idx").on(table.workspaceId, table.occurredAt),
+    index("ledger_transaction_workspace_status_account_idx").on(
+      table.workspaceId,
+      table.status,
+      table.accountId,
+    ),
+    index("ledger_transaction_workspace_status_transfer_account_idx").on(
+      table.workspaceId,
+      table.status,
+      table.transferAccountId,
+    ),
     index("ledger_transaction_workspace_category_idx").on(table.workspaceId, table.categoryId),
     index("ledger_transaction_workspace_merchant_idx").on(table.workspaceId, table.merchantId),
     index("ledger_transaction_transfer_group_idx").on(table.transferGroupId),

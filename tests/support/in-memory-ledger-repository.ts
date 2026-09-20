@@ -1,4 +1,5 @@
 import type {
+  LedgerAccountBalance,
   LedgerAccountRecord,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
@@ -10,6 +11,7 @@ import type {
   LedgerTransactionFilters,
   LedgerTransactionRecord,
 } from "@/modules/ledger/domain";
+import { toCurrencyCode } from "@/money/currency";
 import type {
   CreateLedgerAccountRecord,
   CreateLedgerCategoryRecord,
@@ -36,6 +38,8 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   readonly transactions = new Map<string, LedgerTransactionRecord>();
   readonly transactionAudits = new Map<string, LedgerTransactionAuditRecord>();
   readonly transactionCorrections = new Map<string, LedgerTransactionCorrectionRecord>();
+  accountBalanceReadCount = 0;
+  workspaceAccountBalancesReadCount = 0;
   /** Test-only fault injection proves correction writes commit atomically. */
   failCorrectionStage: "reversal" | "replacement" | "linkage" | null = null;
   failManualReversalStage: "reversal" | "audit" | null = null;
@@ -115,6 +119,20 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   async findAccount(workspaceId: string, accountId: string): Promise<LedgerAccountRecord | null> {
     const account = this.accounts.get(accountId);
     return account?.workspaceId === workspaceId ? account : null;
+  }
+
+  async getAccountBalance(
+    workspaceId: string,
+    accountId: string,
+  ): Promise<LedgerAccountBalance | null> {
+    this.accountBalanceReadCount += 1;
+    const [balance] = this.queryAccountBalances(workspaceId, accountId);
+    return balance ?? null;
+  }
+
+  async getWorkspaceAccountBalances(workspaceId: string): Promise<readonly LedgerAccountBalance[]> {
+    this.workspaceAccountBalancesReadCount += 1;
+    return this.queryAccountBalances(workspaceId);
   }
 
   async createCategory(input: CreateLedgerCategoryRecord): Promise<LedgerCategoryRecord> {
@@ -640,6 +658,50 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     return [...this.transactionAudits.values()]
       .filter((audit) => audit.workspaceId === workspaceId && audit.transactionId === transactionId)
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+  }
+
+  /** Mirrors the database repository's one aggregate balance query for tests. */
+  private queryAccountBalances(
+    workspaceId: string,
+    requestedAccountId?: string,
+  ): LedgerAccountBalance[] {
+    const balances = new Map(
+      [...this.accounts.values()]
+        .filter((account) => account.workspaceId === workspaceId)
+        .filter((account) => requestedAccountId === undefined || account.id === requestedAccountId)
+        .map((account) => [account.id, account.openingBalanceMinor]),
+    );
+
+    for (const transaction of this.transactions.values()) {
+      if (transaction.workspaceId !== workspaceId || transaction.status !== "POSTED") continue;
+
+      if (transaction.kind === "TRANSFER") {
+        if (transaction.accountId && balances.has(transaction.accountId)) {
+          balances.set(transaction.accountId, balances.get(transaction.accountId)! - transaction.amountMinor);
+        }
+        if (transaction.transferAccountId && balances.has(transaction.transferAccountId)) {
+          balances.set(
+            transaction.transferAccountId,
+            balances.get(transaction.transferAccountId)! + transaction.amountMinor,
+          );
+        }
+        continue;
+      }
+
+      if (!transaction.accountId || !balances.has(transaction.accountId)) continue;
+      const normalDirection = transaction.kind === "EXPENSE" ? -1n : 1n;
+      const direction = transaction.reversalOfTransactionId === null ? normalDirection : -normalDirection;
+      balances.set(transaction.accountId, balances.get(transaction.accountId)! + direction * transaction.amountMinor);
+    }
+
+    return [...this.accounts.values()]
+      .filter((account) => balances.has(account.id))
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((account) => ({
+        accountId: account.id,
+        currency: toCurrencyCode(account.currency),
+        currentBalanceMinor: balances.get(account.id)!,
+      }));
   }
 
   private transactionListRows(

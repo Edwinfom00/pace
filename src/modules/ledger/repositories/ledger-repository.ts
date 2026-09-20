@@ -16,6 +16,7 @@ import {
 import { alias } from "drizzle-orm/pg-core";
 
 import { db, neonSql } from "@/db/client";
+import { toCurrencyCode } from "@/money/currency";
 import {
   ledgerAccounts,
   ledgerCategories,
@@ -26,6 +27,7 @@ import {
 } from "@/db/schema";
 
 import type {
+  LedgerAccountBalance,
   LedgerAccountRecord,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
@@ -102,6 +104,12 @@ export interface LedgerRepository {
   createAccount(input: CreateLedgerAccountRecord): Promise<LedgerAccountRecord>;
   listAccounts(workspaceId: string): Promise<LedgerAccountRecord[]>;
   findAccount(workspaceId: string, accountId: string): Promise<LedgerAccountRecord | null>;
+  /**
+   * Canonical current-balance reads. Implementations aggregate the complete
+   * posted ledger; callers must never reconstruct balances from list UI state.
+   */
+  getAccountBalance(workspaceId: string, accountId: string): Promise<LedgerAccountBalance | null>;
+  getWorkspaceAccountBalances(workspaceId: string): Promise<readonly LedgerAccountBalance[]>;
   /** Internal correction validation only; never exposed to an untrusted caller. */
   findAccountById(accountId: string): Promise<LedgerAccountRecord | null>;
 
@@ -224,6 +232,18 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return record ?? null;
   }
 
+  async getAccountBalance(
+    workspaceId: string,
+    accountId: string,
+  ): Promise<LedgerAccountBalance | null> {
+    const [balance] = await this.queryAccountBalances(workspaceId, accountId);
+    return balance ?? null;
+  }
+
+  async getWorkspaceAccountBalances(workspaceId: string): Promise<readonly LedgerAccountBalance[]> {
+    return this.queryAccountBalances(workspaceId);
+  }
+
   async findAccountById(accountId: string): Promise<LedgerAccountRecord | null> {
     const [record] = await db
       .select()
@@ -231,6 +251,66 @@ export class DatabaseLedgerRepository implements LedgerRepository {
       .where(eq(ledgerAccounts.id, accountId))
       .limit(1);
     return record ?? null;
+  }
+
+  /**
+   * The production balance calculation sums the full append-only ledger, not
+   * the presentation list. Reversal rows compensate their originals and each
+   * transfer emits one debit and one credit leg.
+   */
+  private async queryAccountBalances(
+    workspaceId: string,
+    requestedAccountId?: string,
+  ): Promise<readonly LedgerAccountBalance[]> {
+    const accountId = requestedAccountId ?? null;
+    const records = await neonSql`
+      WITH scoped_accounts AS (
+        SELECT id, currency, opening_balance_minor
+        FROM ledger_account
+        WHERE workspace_id = ${workspaceId}
+          AND (${accountId}::text IS NULL OR id = ${accountId})
+      ),
+      account_movement_legs AS (
+        SELECT entry.account_id AS account_id,
+          CASE
+            WHEN entry.kind = 'TRANSFER' THEN -entry.amount_minor
+            WHEN entry.kind = 'EXPENSE'
+              AND entry.reversal_of_transaction_id IS NULL THEN -entry.amount_minor
+            WHEN entry.kind = 'EXPENSE' THEN entry.amount_minor
+            WHEN entry.kind IN ('INCOME', 'REFUND')
+              AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
+            WHEN entry.kind IN ('INCOME', 'REFUND') THEN -entry.amount_minor
+            ELSE 0::bigint
+          END AS movement_minor
+        FROM ledger_transaction AS entry
+        INNER JOIN scoped_accounts AS account ON account.id = entry.account_id
+        WHERE entry.workspace_id = ${workspaceId}
+          AND entry.status = 'POSTED'
+
+        UNION ALL
+
+        SELECT entry.transfer_account_id AS account_id,
+          entry.amount_minor AS movement_minor
+        FROM ledger_transaction AS entry
+        INNER JOIN scoped_accounts AS account ON account.id = entry.transfer_account_id
+        WHERE entry.workspace_id = ${workspaceId}
+          AND entry.status = 'POSTED'
+          AND entry.kind = 'TRANSFER'
+      ),
+      account_movement_totals AS (
+        SELECT account_id, SUM(movement_minor) AS movement_minor
+        FROM account_movement_legs
+        GROUP BY account_id
+      )
+      SELECT account.id AS "accountId",
+        account.currency AS currency,
+        account.opening_balance_minor + COALESCE(total.movement_minor, 0) AS "currentBalanceMinor"
+      FROM scoped_accounts AS account
+      LEFT JOIN account_movement_totals AS total ON total.account_id = account.id
+      ORDER BY account.id ASC;
+    ` as unknown as readonly RawLedgerAccountBalance[];
+
+    return records.map(mapLedgerAccountBalance);
   }
 
   async createCategory(input: CreateLedgerCategoryRecord): Promise<LedgerCategoryRecord> {
@@ -1039,6 +1119,22 @@ type RawLedgerTransaction = Omit<
   updatedAt: Date | string;
   source: Record<string, unknown> | string;
 };
+
+type RawLedgerAccountBalance = {
+  accountId: string;
+  currency: string;
+  currentBalanceMinor: bigint | string;
+};
+
+function mapLedgerAccountBalance(record: RawLedgerAccountBalance): LedgerAccountBalance {
+  return {
+    accountId: record.accountId,
+    currency: toCurrencyCode(record.currency),
+    currentBalanceMinor: typeof record.currentBalanceMinor === "bigint"
+      ? record.currentBalanceMinor
+      : BigInt(record.currentBalanceMinor),
+  };
+}
 
 function mapLedgerTransaction(record: RawLedgerTransaction): LedgerTransactionRecord {
   const source = typeof record.source === "string" ? JSON.parse(record.source) : record.source;
