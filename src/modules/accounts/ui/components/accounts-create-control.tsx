@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FiPlus } from "react-icons/fi";
+import { FiPlus, FiX } from "react-icons/fi";
 
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
+  ResponsiveDialogClose,
   ResponsiveDialogDescription,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
@@ -129,12 +130,21 @@ export function AccountsCreateControl({
         <FiPlus aria-hidden className="size-4" />{labels.add}
       </Button>
       <ResponsiveDialog onOpenChange={(nextOpen) => nextOpen ? setOpen(true) : close()} open={open}>
-        <ResponsiveDialogContent className="max-w-[calc(100%-2rem)] gap-0 overflow-hidden rounded-[12px] border border-[#e0e6ef] bg-white p-0 text-[#1c2942] shadow-[0_14px_28px_rgb(16_24_40/0.1)] sm:max-w-2xl" drawerClassName="rounded-t-[16px]">
-          <ResponsiveDialogHeader className="border-b border-[#e9edf3] px-5 pt-5 pb-4">
-            <ResponsiveDialogTitle className="text-[16px] font-semibold tracking-[-0.018em] text-[#18243d]">{labels.createTitle}</ResponsiveDialogTitle>
+        <ResponsiveDialogContent
+          className="flex! max-h-[calc(100dvh-1rem)] min-h-0 w-[calc(100%-1rem)] max-w-120 flex-col gap-0 overflow-hidden rounded-[12px] border border-[#e1e7f0] bg-white p-0 text-[#101a35] shadow-[0_18px_45px_rgb(15_23_42/14%)] sm:max-h-[calc(100dvh-3rem)] sm:w-[calc(100%-3rem)] sm:max-w-120"
+          drawerClassName="w-full max-w-none rounded-none rounded-t-[14px] border-x-0 border-b-0 border-[#e1e7f0] shadow-[0_-12px_32px_rgb(15_23_42/12%)] data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-1rem)] data-[vaul-drawer-direction=bottom]:rounded-t-[14px]"
+          showCloseButton={false}
+        >
+          <ResponsiveDialogClose>
+            <Button aria-label={labels.close} className="absolute top-3 right-3 z-10 size-8 rounded-[7px] text-[#61708a] hover:bg-[#f3f6fa] hover:text-[#15213a] focus-visible:ring-[#5e8fe8]/30 sm:top-4 sm:right-4" disabled={isSubmitting} size="icon" type="button" variant="ghost">
+              <FiX aria-hidden="true" className="size-4.5" />
+            </Button>
+          </ResponsiveDialogClose>
+          <ResponsiveDialogHeader className="gap-1 px-4 pt-5 pb-4 pr-12 sm:px-7 sm:pt-6 sm:pb-5 sm:pr-14">
+            <ResponsiveDialogTitle className="text-[20px] leading-6 font-semibold tracking-tight text-[#101a35]">{labels.createTitle}</ResponsiveDialogTitle>
             <ResponsiveDialogDescription className="text-[13px] leading-5 text-[#71809a]">{labels.createSubtitle}</ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
-          <div className="max-h-[min(66dvh,620px)] overflow-y-auto px-5 py-5">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 sm:px-7 sm:pb-7">
             <CreateAccountForm draft={draft} errors={errors} formError={formError} isSubmitting={isSubmitting} labels={labels.createForm} language={language} onCancel={close} onDraftChange={updateDraft} onSubmit={() => void submit()} />
           </div>
         </ResponsiveDialogContent>

@@ -167,7 +167,7 @@ export function CreateAccountForm({
           />
           <span className="flex items-center border-l border-[#e5eaf1] px-3 text-[12px] font-semibold text-[#526987]">{draft.currency}</span>
         </div>
-        <p className="text-[12px] leading-5 text-[#71809a]" id={openingBalanceHelperId}>{labels.openingBalanceHelper}</p>
+        <p className="max-w-[42ch] text-[12px] leading-[1.45] text-[#71809a]" id={openingBalanceHelperId}>{labels.openingBalanceHelper}</p>
         {openingBalanceError ? <p aria-live="polite" className="text-[12px] leading-5 text-[#c23445]" id={openingBalanceErrorId} role="alert">{openingBalanceError}</p> : null}
       </div>
 

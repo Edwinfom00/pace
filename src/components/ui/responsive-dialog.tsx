@@ -70,10 +70,12 @@ function ResponsiveDialogContent({
   children,
   className,
   drawerClassName,
+  showCloseButton = true,
 }: {
   children: React.ReactNode;
   className?: string;
   drawerClassName?: string;
+  showCloseButton?: boolean;
 }) {
   const isDrawer = useResponsiveDialog();
 
@@ -81,7 +83,7 @@ function ResponsiveDialogContent({
     return <DrawerContent className={cn(className, drawerClassName)}>{children}</DrawerContent>;
   }
 
-  return <DialogContent className={className}>{children}</DialogContent>;
+  return <DialogContent className={className} showCloseButton={showCloseButton}>{children}</DialogContent>;
 }
 
 function ResponsiveDialogHeader({ className, ...props }: React.ComponentProps<"div">) {

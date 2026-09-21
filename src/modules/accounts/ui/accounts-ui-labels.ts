@@ -8,6 +8,7 @@ export type AccountsUiLabels = {
   readonly title: string;
   readonly subtitle: string;
   readonly add: string;
+  readonly close: string;
   readonly summaryTitle: string;
   readonly summaryAccounts: string;
   readonly summaryEmpty: string;
@@ -35,6 +36,7 @@ export function getAccountsUiLabels(labels: DashboardLabels): AccountsUiLabels {
     title: labels["accounts.title"],
     subtitle: labels["accounts.subtitle"],
     add: labels["accounts.add"],
+    close: labels["transactions.create.close"],
     summaryTitle: labels["accounts.summary.title"],
     summaryAccounts: labels["accounts.summary.activeAccounts"],
     summaryEmpty: labels["accounts.summary.empty"],
