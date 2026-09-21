@@ -84,7 +84,7 @@ async function fixture() {
     unknownMerchantName: "Transaction",
   }, { ledger, workspaces });
 
-  return { page, checking, card, ledger, service, workspaces };
+  return { page, checking, card, savings, ledger, service, workspaces };
 }
 
 test("transaction search params are typed, bounded, and independently fall back safely", () => {
@@ -154,7 +154,7 @@ test("transaction list is authorized, workspace scoped, paginated, and mapped to
 });
 
 test("transaction list applies server-side search, type, category, account, date, and combined filters", async () => {
-  const { page, checking } = await fixture();
+  const { page, checking, savings } = await fixture();
   assert.deepEqual((await page({ search: "carrefour" })).items.map((item) => item.merchant.name), ["Carrefour Market", "Carrefour Market"]);
   assert.deepEqual((await page({ search: "airport" })).items.map((item) => item.merchant.name), ["Yango"]);
   assert.equal((await page({ search: "no match" })).totalCount, 0);
@@ -164,6 +164,10 @@ test("transaction list applies server-side search, type, category, account, date
   assert.equal((await page({ kind: "REFUND" })).totalCount, 1);
   assert.equal((await page({ categoryId: SYSTEM_TRANSPORT_ID })).items[0]?.merchant.name, "Yango");
   assert.equal((await page({ accountId: checking.id })).totalCount, 5);
+  assert.deepEqual(
+    (await page({ accountId: savings.id })).items.map((item) => [item.kind, item.amount.minor]),
+    [["TRANSFER", "10000"]],
+  );
   assert.equal((await page({ from: "2026-09-03", to: "2026-09-03" })).items[0]?.merchant.name, "Carrefour Market");
   assert.equal((await page({ accountId: checking.id, categoryId: SYSTEM_GROCERIES_ID, kind: "EXPENSE" })).totalCount, 1);
 });

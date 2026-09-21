@@ -1,4 +1,5 @@
 import { HiOutlineArchiveBox } from "react-icons/hi2";
+import Link from "next/link";
 
 import { formatOverviewMoney } from "@/modules/overview/domain/overview-formatters";
 import { getAccountTypeMetadata } from "@/modules/ledger/ui/components/account-type-metadata";
@@ -18,10 +19,12 @@ export function AccountCard({
   account,
   labels,
   locale,
+  workspaceSlug,
 }: {
   readonly account: AccountOverviewItem;
   readonly labels: AccountsUiLabels;
   readonly locale: string;
+  readonly workspaceSlug: string;
 }) {
   const Icon = getAccountTypeMetadata(account.type).icon;
   const currentBalance = formatOverviewMoney(account.currentBalanceMinor, account.currency, locale);
@@ -29,7 +32,8 @@ export function AccountCard({
   const accessibleName = `${account.name}. ${labels.type[account.type]}. ${labels.balanceCurrent}: ${currentBalance}. ${labels.balanceAvailable}: ${availableBalance}. ${labels.status[account.status]}.`;
 
   return (
-    <article aria-label={accessibleName} className={account.status === "ARCHIVED" 
+    <Link aria-label={accessibleName} className="block rounded-[12px] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#2563eb]" href={`/w/${workspaceSlug}/accounts/${account.id}`}>
+    <article className={account.status === "ARCHIVED" 
     ? "min-h-43 rounded-[12px] border border-dashed border-[#dce2ea] bg-[#fcfdff] p-4 text-[#23314d] sm:p-5"
      : "min-h-43 rounded-[12px] border border-[#e2e7ee] bg-white p-4 text-[#17233d] sm:p-5"}>
       <div className="flex items-start justify-between gap-4">
@@ -50,5 +54,6 @@ export function AccountCard({
         </div>
       </div>
     </article>
+    </Link>
   );
 }

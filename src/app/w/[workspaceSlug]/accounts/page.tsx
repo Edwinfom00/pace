@@ -41,6 +41,7 @@ export default async function AccountsPage({ params, searchParams }: AccountsPag
       overview={overview}
       timeZone={workspace.preferences.timezone}
       workspaceId={workspace.workspace.id}
+      workspaceSlug={workspace.workspace.slug}
     />
   );
 }

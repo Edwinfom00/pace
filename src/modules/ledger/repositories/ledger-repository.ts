@@ -122,6 +122,57 @@ export interface UpdateLedgerTransactionDetailsRecord {
   audit: CreateLedgerTransactionAuditRecord;
 }
 
+export type AccountDetailMovementSummaryInput = {
+  readonly workspaceId: string;
+  readonly accountId: string;
+  readonly periodStart: Date;
+  readonly periodEnd: Date;
+};
+
+export type LedgerAccountDetailMovementSummary = {
+  readonly hasCurrencyMismatch: boolean;
+  readonly inflowsMinor: bigint;
+  readonly outflowsMinor: bigint;
+  readonly netTransfersMinor: bigint;
+  readonly transactionCount: number;
+};
+
+export type AccountDetailBalanceDeltasInput = {
+  readonly workspaceId: string;
+  readonly accountId: string;
+  readonly chartStart: Date;
+  readonly chartEnd: Date;
+  readonly timeZone: string;
+};
+
+export type LedgerAccountDetailBalanceDelta = {
+  readonly date: string | null;
+  readonly movementMinor: bigint;
+};
+
+export type AccountDetailTopExpenseCategoriesInput = {
+  readonly workspaceId: string;
+  readonly accountId: string;
+  readonly periodStart: Date;
+  readonly periodEnd: Date;
+  readonly limit: number;
+};
+
+export type LedgerAccountDetailCategoryTotal = {
+  readonly id: string;
+  readonly name: string;
+  readonly amountMinor: bigint;
+  readonly totalMinor: bigint;
+};
+
+export interface LedgerAccountDetailRecentTransactionRow {
+  readonly transaction: LedgerTransactionRecord;
+  readonly sourceAccount: LedgerAccountRecord | null;
+  readonly destinationAccount: LedgerAccountRecord | null;
+  readonly category: LedgerCategoryRecord | null;
+  readonly merchant: LedgerMerchantRecord | null;
+}
+
 export interface LedgerRepository {
   createAccount(input: CreateLedgerAccountRecord): Promise<LedgerAccountRecord>;
   listAccounts(workspaceId: string): Promise<LedgerAccountRecord[]>;
@@ -270,6 +321,241 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return this.queryAccountBalances(workspaceId);
   }
 
+  
+  async getAccountDetailMovementSummary(
+    input: AccountDetailMovementSummaryInput,
+  ): Promise<LedgerAccountDetailMovementSummary> {
+    const records = await neonSql`
+      WITH account AS (
+        SELECT id, currency
+        FROM ledger_account
+        WHERE workspace_id = ${input.workspaceId}
+          AND id = ${input.accountId}
+      ),
+      current_account_transactions AS (
+        SELECT entry.id, entry.kind, entry.amount_minor, entry.occurred_at,
+          CASE
+            WHEN entry.kind = 'TRANSFER' AND entry.account_id = ${input.accountId} THEN -entry.amount_minor
+            WHEN entry.kind = 'TRANSFER' AND entry.transfer_account_id = ${input.accountId} THEN entry.amount_minor
+            WHEN entry.kind = 'EXPENSE' THEN -entry.amount_minor
+            WHEN entry.kind IN ('INCOME', 'REFUND') THEN entry.amount_minor
+            ELSE 0::bigint
+          END AS movement_minor
+        FROM ledger_transaction AS entry
+        WHERE entry.workspace_id = ${input.workspaceId}
+          AND entry.status = 'POSTED'
+          AND (entry.account_id = ${input.accountId} OR entry.transfer_account_id = ${input.accountId})
+          AND entry.reversal_of_transaction_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ledger_transaction AS reversal
+            WHERE reversal.workspace_id = ${input.workspaceId}
+              AND reversal.reversal_of_transaction_id = entry.id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ledger_transaction_correction AS correction
+            WHERE correction.workspace_id = ${input.workspaceId}
+              AND (
+                correction.original_transaction_id = entry.id
+                OR correction.reversal_transaction_id = entry.id
+              )
+          )
+      )
+      SELECT
+        EXISTS (
+          SELECT 1
+          FROM ledger_transaction AS entry
+          INNER JOIN account ON TRUE
+          WHERE entry.workspace_id = ${input.workspaceId}
+            AND entry.status = 'POSTED'
+            AND (entry.account_id = account.id OR entry.transfer_account_id = account.id)
+            AND entry.currency <> account.currency
+        ) AS "hasCurrencyMismatch",
+        COALESCE(SUM(CASE
+          WHEN occurred_at >= ${input.periodStart} AND occurred_at < ${input.periodEnd} AND movement_minor > 0
+            THEN movement_minor
+          ELSE 0::bigint
+        END), 0::bigint) AS "inflowsMinor",
+        COALESCE(SUM(CASE
+          WHEN occurred_at >= ${input.periodStart} AND occurred_at < ${input.periodEnd} AND movement_minor < 0
+            THEN -movement_minor
+          ELSE 0::bigint
+        END), 0::bigint) AS "outflowsMinor",
+        COALESCE(SUM(CASE
+          WHEN occurred_at >= ${input.periodStart} AND occurred_at < ${input.periodEnd} AND kind = 'TRANSFER'
+            THEN movement_minor
+          ELSE 0::bigint
+        END), 0::bigint) AS "netTransfersMinor",
+        COUNT(*) FILTER (
+          WHERE occurred_at >= ${input.periodStart} AND occurred_at < ${input.periodEnd}
+        ) AS "transactionCount"
+      FROM current_account_transactions;
+    ` as unknown as readonly RawAccountDetailMovementSummary[];
+
+    return mapAccountDetailMovementSummary(records[0]);
+  }
+
+  
+  async getAccountDetailBalanceDeltas(
+    input: AccountDetailBalanceDeltasInput,
+  ): Promise<readonly LedgerAccountDetailBalanceDelta[]> {
+    const records = await neonSql`
+      WITH account_movement_legs AS (
+        SELECT entry.occurred_at,
+          CASE
+            WHEN entry.kind = 'TRANSFER' AND entry.account_id = ${input.accountId} THEN -entry.amount_minor
+            WHEN entry.kind = 'TRANSFER' AND entry.transfer_account_id = ${input.accountId} THEN entry.amount_minor
+            WHEN entry.kind = 'EXPENSE' AND entry.reversal_of_transaction_id IS NULL THEN -entry.amount_minor
+            WHEN entry.kind = 'EXPENSE' THEN entry.amount_minor
+            WHEN entry.kind IN ('INCOME', 'REFUND') AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
+            WHEN entry.kind IN ('INCOME', 'REFUND') THEN -entry.amount_minor
+            ELSE 0::bigint
+          END AS movement_minor
+        FROM ledger_transaction AS entry
+        WHERE entry.workspace_id = ${input.workspaceId}
+          AND entry.status = 'POSTED'
+          AND (entry.account_id = ${input.accountId} OR entry.transfer_account_id = ${input.accountId})
+          AND entry.occurred_at < ${input.chartEnd}
+      ),
+      base_movement AS (
+        SELECT COALESCE(
+          SUM(CASE WHEN occurred_at < ${input.chartStart} THEN movement_minor ELSE 0::bigint END),
+          0::bigint
+        ) AS movement_minor
+        FROM account_movement_legs
+      ),
+      daily_movements AS (
+        SELECT
+          to_char(occurred_at AT TIME ZONE ${input.timeZone}, 'YYYY-MM-DD') AS local_date,
+          SUM(movement_minor) AS movement_minor
+        FROM account_movement_legs
+        WHERE occurred_at >= ${input.chartStart}
+          AND occurred_at < ${input.chartEnd}
+        GROUP BY 1
+      ),
+      balance_deltas AS (
+        SELECT 'BASE'::text AS kind, NULL::text AS date, movement_minor AS "movementMinor"
+        FROM base_movement
+        UNION ALL
+        SELECT 'DAY'::text AS kind, local_date AS date, movement_minor AS "movementMinor"
+        FROM daily_movements
+      )
+      SELECT kind, date, "movementMinor"
+      FROM balance_deltas
+      ORDER BY kind, date;
+    ` as unknown as readonly RawAccountDetailBalanceDelta[];
+
+    return records.map((record) => ({
+      date: record.date,
+      movementMinor: toBigInt(record.movementMinor),
+    }));
+  }
+
+  async getAccountDetailTopExpenseCategories(
+    input: AccountDetailTopExpenseCategoriesInput,
+  ): Promise<readonly LedgerAccountDetailCategoryTotal[]> {
+    const safeLimit = Math.min(Math.max(Math.floor(input.limit), 1), 12);
+    const records = await neonSql`
+      WITH current_expenses AS (
+        SELECT entry.category_id, entry.amount_minor
+        FROM ledger_transaction AS entry
+        WHERE entry.workspace_id = ${input.workspaceId}
+          AND entry.account_id = ${input.accountId}
+          AND entry.kind = 'EXPENSE'
+          AND entry.status = 'POSTED'
+          AND entry.occurred_at >= ${input.periodStart}
+          AND entry.occurred_at < ${input.periodEnd}
+          AND entry.reversal_of_transaction_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ledger_transaction AS reversal
+            WHERE reversal.workspace_id = ${input.workspaceId}
+              AND reversal.reversal_of_transaction_id = entry.id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ledger_transaction_correction AS correction
+            WHERE correction.workspace_id = ${input.workspaceId}
+              AND (
+                correction.original_transaction_id = entry.id
+                OR correction.reversal_transaction_id = entry.id
+              )
+          )
+      )
+      SELECT category.id, category.name,
+        SUM(expense.amount_minor) AS "amountMinor",
+        SUM(SUM(expense.amount_minor)) OVER () AS "totalMinor"
+      FROM current_expenses AS expense
+      INNER JOIN ledger_category AS category ON category.id = expense.category_id
+      GROUP BY category.id, category.name
+      ORDER BY SUM(expense.amount_minor) DESC, category.name ASC
+      LIMIT ${safeLimit};
+    ` as unknown as readonly RawAccountDetailCategoryTotal[];
+
+    return records.map((record) => ({
+      id: record.id,
+      name: record.name,
+      amountMinor: toBigInt(record.amountMinor),
+      totalMinor: toBigInt(record.totalMinor),
+    }));
+  }
+
+  async listAccountDetailRecentTransactions(
+    workspaceId: string,
+    accountId: string,
+    limit = 5,
+  ): Promise<readonly LedgerAccountDetailRecentTransactionRow[]> {
+    const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 24);
+    const reversal = alias(ledgerTransactions, "ledger_account_detail_reversal");
+    const sourceAccount = alias(ledgerAccounts, "ledger_account_detail_source_account");
+    const destinationAccount = alias(ledgerAccounts, "ledger_account_detail_destination_account");
+    const records = await db
+      .select({
+        transaction: ledgerTransactions,
+        sourceAccount,
+        destinationAccount,
+        category: ledgerCategories,
+        merchant: ledgerMerchants,
+      })
+      .from(ledgerTransactions)
+      .leftJoin(sourceAccount, eq(sourceAccount.id, ledgerTransactions.accountId))
+      .leftJoin(destinationAccount, eq(destinationAccount.id, ledgerTransactions.transferAccountId))
+      .leftJoin(ledgerCategories, eq(ledgerCategories.id, ledgerTransactions.categoryId))
+      .leftJoin(ledgerMerchants, eq(ledgerMerchants.id, ledgerTransactions.merchantId))
+      .where(
+        and(
+          eq(ledgerTransactions.workspaceId, workspaceId),
+          or(eq(ledgerTransactions.accountId, accountId), eq(ledgerTransactions.transferAccountId, accountId)),
+          isNull(ledgerTransactions.reversalOfTransactionId),
+          notExists(
+            db
+              .select({ id: reversal.id })
+              .from(reversal)
+              .where(and(eq(reversal.workspaceId, workspaceId), eq(reversal.reversalOfTransactionId, ledgerTransactions.id))),
+          ),
+          notExists(
+            db
+              .select({ id: ledgerTransactionCorrections.id })
+              .from(ledgerTransactionCorrections)
+              .where(
+                and(
+                  eq(ledgerTransactionCorrections.workspaceId, workspaceId),
+                  or(
+                    eq(ledgerTransactionCorrections.originalTransactionId, ledgerTransactions.id),
+                    eq(ledgerTransactionCorrections.reversalTransactionId, ledgerTransactions.id),
+                  ),
+                ),
+              ),
+          ),
+        ),
+      )
+      .orderBy(desc(ledgerTransactions.occurredAt), desc(ledgerTransactions.createdAt), desc(ledgerTransactions.id))
+      .limit(safeLimit);
+
+    return records;
+  }
+
   async findAccountById(accountId: string): Promise<LedgerAccountRecord | null> {
     const [record] = await db
       .select()
@@ -279,11 +565,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return record ?? null;
   }
 
-  /**
-   * The production balance calculation sums the full append-only ledger, not
-   * the presentation list. Reversal rows compensate their originals and each
-   * transfer emits one debit and one credit leg.
-   */
+ 
   private async queryAccountBalances(
     workspaceId: string,
     requestedAccountId?: string,
@@ -1167,7 +1449,14 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     if (filters.statuses?.length) {
       predicates.push(inArray(ledgerTransactions.status, [...filters.statuses]));
     }
-    if (filters.accountId) predicates.push(eq(ledgerTransactions.accountId, filters.accountId));
+    if (filters.accountId) {
+      // An account filter describes the account's activity, so a transfer is
+      // relevant on both its source and destination account histories.
+      predicates.push(or(
+        eq(ledgerTransactions.accountId, filters.accountId),
+        eq(ledgerTransactions.transferAccountId, filters.accountId),
+      )!);
+    }
     if (filters.categoryId) predicates.push(eq(ledgerTransactions.categoryId, filters.categoryId));
     if (filters.merchantId) predicates.push(eq(ledgerTransactions.merchantId, filters.merchantId));
     if (filters.occurredFrom) predicates.push(gte(ledgerTransactions.occurredAt, filters.occurredFrom));
@@ -1391,6 +1680,27 @@ type RawLedgerAccountBalance = {
   currentBalanceMinor: bigint | string;
 };
 
+type RawAccountDetailMovementSummary = {
+  hasCurrencyMismatch: boolean | "true" | "false";
+  inflowsMinor: bigint | string | number;
+  outflowsMinor: bigint | string | number;
+  netTransfersMinor: bigint | string | number;
+  transactionCount: bigint | string | number;
+};
+
+type RawAccountDetailBalanceDelta = {
+  kind: "BASE" | "DAY";
+  date: string | null;
+  movementMinor: bigint | string | number;
+};
+
+type RawAccountDetailCategoryTotal = {
+  id: string;
+  name: string;
+  amountMinor: bigint | string | number;
+  totalMinor: bigint | string | number;
+};
+
 function mapLedgerAccountBalance(record: RawLedgerAccountBalance): LedgerAccountBalance {
   const currency = toCurrencyCode(record.currency);
   const currentBalanceMinor = typeof record.currentBalanceMinor === "bigint"
@@ -1410,6 +1720,23 @@ function mapLedgerAccountBalance(record: RawLedgerAccountBalance): LedgerAccount
     availableBalanceMinor: spendability.availableBalanceMinor,
     spendabilityMode: spendability.mode,
   };
+}
+
+function mapAccountDetailMovementSummary(
+  record: RawAccountDetailMovementSummary | undefined,
+): LedgerAccountDetailMovementSummary {
+  if (!record) throw new Error("Unable to calculate account movement summary.");
+  return {
+    hasCurrencyMismatch: record.hasCurrencyMismatch === true || record.hasCurrencyMismatch === "true",
+    inflowsMinor: toBigInt(record.inflowsMinor),
+    outflowsMinor: toBigInt(record.outflowsMinor),
+    netTransfersMinor: toBigInt(record.netTransfersMinor),
+    transactionCount: Number(record.transactionCount),
+  };
+}
+
+function toBigInt(value: bigint | string | number): bigint {
+  return typeof value === "bigint" ? value : BigInt(value);
 }
 
 function mapLedgerTransaction(record: RawLedgerTransaction): LedgerTransactionRecord {

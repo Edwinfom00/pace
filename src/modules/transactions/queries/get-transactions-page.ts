@@ -66,8 +66,8 @@ export async function getTransactionsPage(
     dependencies.ledger.listCategories(input.workspaceId),
   ]);
   const options: TransactionFilterOptions = {
+    // Historical transactions remain filterable for archived accounts.
     accounts: accounts
-      .filter((account) => account.archivedAt === null)
       .map((account) => ({ id: account.id, label: account.name }))
       .sort((left, right) => left.label.localeCompare(right.label)),
     categories: categories

@@ -816,7 +816,11 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       if (nonCurrentCorrectionTransactionIds.has(transaction.id)) return [];
       if (transaction.reversalOfTransactionId !== null || reversedTransactionIds.has(transaction.id)) return [];
       if (filters.kind && transaction.kind !== filters.kind) return [];
-      if (filters.accountId && transaction.accountId !== filters.accountId) return [];
+      if (
+        filters.accountId
+        && transaction.accountId !== filters.accountId
+        && transaction.transferAccountId !== filters.accountId
+      ) return [];
       if (filters.categoryId && transaction.categoryId !== filters.categoryId) return [];
       if (filters.occurredFrom && transaction.occurredAt < filters.occurredFrom) return [];
       if (filters.occurredToExclusive && transaction.occurredAt >= filters.occurredToExclusive) return [];
