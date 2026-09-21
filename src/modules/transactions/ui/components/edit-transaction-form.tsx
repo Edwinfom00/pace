@@ -23,6 +23,7 @@ import {
   type TransactionEditFormError,
 } from "./transaction-edit-flow";
 import { TransactionTimeField } from "./transaction-time-field";
+import { TransactionBalanceHint } from "./transaction-balance-hint";
 
 export function EditTransactionForm({
   accountOptions,
@@ -79,6 +80,9 @@ export function EditTransactionForm({
   const isTransfer = transaction.kind === "TRANSFER";
   const financialFieldsAvailable = transaction.capabilities.canCorrectFinancials;
   const accountChoices = getEditAccountChoices(resolvedAccountOptions, transaction);
+  const selectedAccount = accountChoices.find((account) => account.id === draft.account);
+  const selectedFromAccount = accountChoices.find((account) => account.id === draft.fromAccount);
+  const selectedToAccount = accountChoices.find((account) => account.id === draft.toAccount);
   const disabledAccountIds = getDisabledAccountIds(accountChoices, resolvedAccountOptions.accounts, transaction.amount.currency);
   const formMessage = formError === "concurrent"
     ? labels.concurrentModification
@@ -134,6 +138,8 @@ export function EditTransactionForm({
               accountLoadError={labels.accountValidationUnavailable}
               accounts={accountChoices}
               availability={resolvedAccountOptions.status}
+              balanceKind={transaction.kind === "EXPENSE" ? "available" : "current"}
+              balanceLabels={labels.balance}
               createAccountLabel={labels.accountsCreate}
               createFirstAccountLabel={labels.accountsCreateFirst}
               disabled={!financialFieldsAvailable}
@@ -143,9 +149,17 @@ export function EditTransactionForm({
               emptyTitle={labels.accountsEmptyTitle}
               error={errors.account}
               helperText={financialFieldsAvailable
-                ? transaction.kind === "EXPENSE" ? labels.accountHelper : labels.accountIncomeHelper
+                ? selectedAccount ? <TransactionBalanceHint
+                  account={selectedAccount}
+                  amount={draft.amount}
+                  balanceKind={transaction.kind === "EXPENSE" ? "available" : "current"}
+                  direction={transaction.kind === "EXPENSE" ? "debit" : "credit"}
+                  labels={labels.balance}
+                  locale={locale}
+                /> : transaction.kind === "EXPENSE" ? labels.accountHelper : labels.accountIncomeHelper
                 : labels.financialCorrectionUnavailable}
               label={labels.account}
+              locale={locale}
               noResultsLabel={labels.accountsNoResults}
               onValueChange={(account) => onDraftChange({ account })}
               placeholder={labels.accountPlaceholder}
@@ -161,6 +175,8 @@ export function EditTransactionForm({
                 accountLoadError={labels.accountValidationUnavailable}
                 accounts={accountChoices}
                 availability={resolvedAccountOptions.status}
+                balanceKind="available"
+                balanceLabels={labels.balance}
                 createAccountLabel={labels.accountsCreate}
                 createFirstAccountLabel={labels.accountsCreateFirst}
                 disabled={!financialFieldsAvailable}
@@ -169,8 +185,16 @@ export function EditTransactionForm({
                 emptyDescription={labels.accountsEmptyDescription}
                 emptyTitle={labels.accountsEmptyTitle}
                 error={errors.fromAccount}
-                helperText={financialFieldsAvailable ? undefined : labels.financialCorrectionUnavailable}
+                helperText={financialFieldsAvailable && selectedFromAccount ? <TransactionBalanceHint
+                  account={selectedFromAccount}
+                  amount={draft.amount}
+                  balanceKind="available"
+                  direction="debit"
+                  labels={labels.balance}
+                  locale={locale}
+                /> : financialFieldsAvailable ? undefined : labels.financialCorrectionUnavailable}
                 label={labels.fromAccount}
+                locale={locale}
                 noResultsLabel={labels.accountsNoResults}
                 onValueChange={(fromAccount) => onDraftChange({ fromAccount })}
                 placeholder={labels.accountPlaceholder}
@@ -182,6 +206,8 @@ export function EditTransactionForm({
                 accountLoadError={labels.accountValidationUnavailable}
                 accounts={accountChoices}
                 availability={resolvedAccountOptions.status}
+                balanceKind="current"
+                balanceLabels={labels.balance}
                 createAccountLabel={labels.accountsCreate}
                 createFirstAccountLabel={labels.accountsCreateFirst}
                 disabled={!financialFieldsAvailable}
@@ -190,8 +216,16 @@ export function EditTransactionForm({
                 emptyDescription={labels.accountsEmptyDescription}
                 emptyTitle={labels.accountsEmptyTitle}
                 error={errors.toAccount}
-                helperText={financialFieldsAvailable ? undefined : labels.financialCorrectionUnavailable}
+                helperText={financialFieldsAvailable && selectedToAccount ? <TransactionBalanceHint
+                  account={selectedToAccount}
+                  amount={draft.amount}
+                  balanceKind="current"
+                  direction="credit"
+                  labels={labels.balance}
+                  locale={locale}
+                /> : financialFieldsAvailable ? undefined : labels.financialCorrectionUnavailable}
                 label={labels.toAccount}
+                locale={locale}
                 noResultsLabel={labels.accountsNoResults}
                 onValueChange={(toAccount) => onDraftChange({ toAccount})}
                 placeholder={labels.accountPlaceholder}

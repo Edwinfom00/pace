@@ -32,17 +32,17 @@ export async function submitCanonicalManualTransaction<Command, Success, Failure
   command: Command,
   transport: ManualTransactionCreationTransport<Command>,
   parseSuccess: (payload: unknown) => Success | null,
-  mapFailure: (code: string | undefined) => Failure,
+  mapFailure: (code: string | undefined, payload: unknown) => Failure,
 ): Promise<CanonicalManualTransactionCreationResponse<Success, Failure>> {
   const response = await transport(command);
   if (!response.ok) {
-    return { ok: false, failure: mapFailure(manualTransactionCreationErrorCode(response.payload)) };
+    return { ok: false, failure: mapFailure(manualTransactionCreationErrorCode(response.payload), response.payload) };
   }
 
   const transaction = parseSuccess(response.payload);
   return transaction
     ? { ok: true, transaction }
-    : { ok: false, failure: mapFailure(undefined) };
+    : { ok: false, failure: mapFailure(undefined, response.payload) };
 }
 
 

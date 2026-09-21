@@ -7,6 +7,7 @@ import type { TransactionCategoryOption } from "@/modules/transactions/domain/tr
 import type { TransactionDetailData } from "@/modules/transactions/domain/transaction-detail";
 
 import type { TransactionEditLabels } from "../transaction-edit-labels";
+import { accountBalanceText } from "./transaction-balance";
 import { formatTransactionFormDate } from "./transaction-date-field";
 import {
   parseTransactionEditAmount,
@@ -27,6 +28,7 @@ export function TransactionCorrectionReview({
   labels,
   locale,
   correctionError,
+  correctionBalanceMessage,
   isApplying,
   onApply,
   onBack,
@@ -45,6 +47,7 @@ export function TransactionCorrectionReview({
   readonly labels: TransactionEditLabels;
   readonly locale: string;
   readonly correctionError: TransactionCorrectionFormError;
+  readonly correctionBalanceMessage?: string | null;
   readonly isApplying: boolean;
   readonly onApply: () => void;
   readonly onBack: () => void;
@@ -58,6 +61,7 @@ export function TransactionCorrectionReview({
   const changes = [...classification.financialFields, ...classification.metadataFields]
     .map((field) => reviewChangeFor(field, baseline, draft, transaction, categories, accounts, labels, locale));
   const feedback = correctionFeedback(correctionError, labels);
+  const balanceAccounts = correctionBalanceAccounts(transaction, draft, accounts);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -81,6 +85,22 @@ export function TransactionCorrectionReview({
               ))}
             </div>
           </section>
+
+          {balanceAccounts.length > 0 ? (
+            <section aria-label={labels.balance.current} className="rounded-[10px] border border-[#e1e7f0] bg-[#fbfdff] px-3.5 py-3 sm:px-4">
+              <p className="text-[12px] font-medium text-[#53627b]">{labels.balance.current}</p>
+              <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+                {balanceAccounts.map((account) => (
+                  <div className="min-w-0" key={account.id}>
+                    <dt className="truncate text-[12px] font-medium text-[#263550]">{account.name}</dt>
+                    <dd className="mt-0.5 truncate text-[12px] tabular-nums text-[#60708a]">
+                      {accountBalanceText(account, locale, labels.balance, "current") ?? labels.balance.unavailable}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ) : null}
 
           <section aria-labelledby="transaction-correction-reason-label" className="grid gap-2">
             <label className="flex items-center justify-between gap-3 text-[13px] font-medium text-[#384862]" htmlFor="transaction-correction-reason">
@@ -125,7 +145,7 @@ export function TransactionCorrectionReview({
           id="transaction-correction-apply-status"
           role={correctionError ? "alert" : "status"}
         >
-          {isApplying ? labels.correction.applying : feedback ?? ""}
+          {isApplying ? labels.correction.applying : correctionBalanceMessage ?? feedback ?? ""}
         </p>
         <Button
           className="h-10 rounded-[8px] border border-[#dfe5ee] bg-white px-4 text-[13px] font-medium text-[#43516a] hover:bg-[#f3f6fa] hover:text-[#263550]"
@@ -159,6 +179,20 @@ export function TransactionCorrectionReview({
       </div>
     </div>
   );
+}
+
+function correctionBalanceAccounts(
+  transaction: TransactionDetailData,
+  draft: TransactionEditDraft,
+  accounts: readonly TransactionAccountOption[],
+): readonly TransactionAccountOption[] {
+  const ids = transaction.kind === "TRANSFER"
+    ? [draft.fromAccount, draft.toAccount]
+    : [draft.account];
+  return ids.flatMap((id) => {
+    const account = accounts.find((candidate) => candidate.id === id);
+    return account ? [account] : [];
+  }).filter((account, index, collection) => collection.findIndex((candidate) => candidate.id === account.id) === index);
 }
 
 function correctionFeedback(

@@ -1,11 +1,15 @@
 import type { CurrencyCode } from "@/money/currency";
 import type { LedgerAccountType } from "@/modules/ledger/domain";
+import type { LedgerSpendabilityMode } from "@/modules/ledger/spendability-policy";
 
 export type TransactionAccountOption = {
   readonly id: string;
   readonly name: string;
   readonly currency: CurrencyCode;
   readonly type?: LedgerAccountType;
+  readonly currentBalanceMinor?: string;
+  readonly availableBalanceMinor?: string;
+  readonly spendabilityMode?: LedgerSpendabilityMode;
 };
 
 export type TransactionAccountOptionsState =

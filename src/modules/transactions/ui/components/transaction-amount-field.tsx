@@ -17,6 +17,7 @@ export type TransactionAmountFieldProps = {
   readonly inputDisabled?: boolean;
   readonly currencyTriggerRef?: RefObject<HTMLButtonElement | null>;
   readonly error?: string;
+  readonly errorDetail?: string;
   readonly helperText?: string;
   readonly label: string;
   readonly language: OnboardingLanguage;
@@ -35,6 +36,7 @@ export function TransactionAmountField({
   currencySearchPlaceholder,
   currencyTriggerRef,
   error,
+  errorDetail,
   helperText,
   label,
   language,
@@ -89,8 +91,14 @@ export function TransactionAmountField({
         />
       </div>
 
-      <p className={`min-h-5 text-[12px] leading-5 ${error ? "text-[#c23445]" : "text-[#71809a]"}`} id={error ? amountErrorId : helperId}>
+      <p
+        aria-live={error ? "assertive" : undefined}
+        className={`min-h-5 text-[12px] leading-5 ${error ? "text-[#c23445]" : "text-[#71809a]"}`}
+        id={error ? amountErrorId : helperId}
+        role={error ? "alert" : undefined}
+      >
         {message}
+        {error && errorDetail ? <span className="mt-0.5 block text-[#9f3543]">{errorDetail}</span> : null}
       </p>
       {currencyError ? <p className="-mt-2 text-[12px] leading-5 text-[#c23445]" id={currencyErrorId}>{currencyError}</p> : null}
     </div>

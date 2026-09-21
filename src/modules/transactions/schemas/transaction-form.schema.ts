@@ -21,6 +21,8 @@ export const TRANSACTION_FORM_VALIDATION_ERROR_CODES = {
   toAccountRequired: "transactions.validation.toAccountRequired",
   sameTransferAccount: "transactions.validation.sameTransferAccount",
   crossCurrencyTransferUnsupported: "transactions.validation.crossCurrencyTransferUnsupported",
+  insufficientFunds: "transactions.validation.insufficientFunds",
+  unableToVerifyBalance: "transactions.validation.unableToVerifyBalance",
 } as const;
 
 export type TransactionFormValidationErrorCode =

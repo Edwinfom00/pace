@@ -421,6 +421,7 @@ test("server failures map to safe fields or a non-overwriting conflict state", (
   assert.deepEqual(mapTransactionEditFailure("TRANSACTION_EDIT_NOT_ALLOWED"), { fieldErrors: {}, formError: "notAllowed" });
   assert.deepEqual(mapTransactionEditFailure("UNEXPECTED"), { fieldErrors: {}, formError: "failed" });
   assert.deepEqual(mapTransactionCorrectionFailure("INVALID_AMOUNT"), { fieldErrors: { amount: "amount" }, formError: "amount" });
+  assert.deepEqual(mapTransactionCorrectionFailure("INSUFFICIENT_FUNDS"), { fieldErrors: { amount: "amount" }, formError: "insufficientFunds" });
   assert.deepEqual(
     mapTransactionCorrectionFailure("CORRECTED_AMOUNT_BELOW_REFUNDED_TOTAL"),
     { fieldErrors: { amount: "refundLimit" }, formError: "refundLimit" },

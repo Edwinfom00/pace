@@ -68,6 +68,14 @@ export type TransactionEditLabels = {
   readonly invalidCategory: string;
   readonly notProvided: string;
   readonly uncategorized: string;
+  readonly balance: {
+    readonly available: string;
+    readonly current: string;
+    readonly afterTransaction: string;
+    readonly unavailable: string;
+    readonly insufficientFunds: string;
+    readonly balanceChanged: string;
+  };
   readonly accountTypes: Readonly<Record<LedgerAccountType, string>>;
   readonly correction: {
     readonly reviewTitle: string;
@@ -163,6 +171,14 @@ export function getTransactionEditLabels(labels: DashboardLabels): TransactionEd
     invalidCategory: labels["transactions.validation.categoryUnavailable"],
     notProvided: labels["transactions.correction.notProvided"],
     uncategorized: labels["transactions.uncategorized"],
+    balance: {
+      available: labels["accounts.balance.available"],
+      current: labels["accounts.balance.current"],
+      afterTransaction: labels["accounts.balance.afterTransaction"],
+      unavailable: labels["accounts.balance.unavailable"],
+      insufficientFunds: labels["transactions.validation.insufficientFunds"],
+      balanceChanged: labels["transactions.validation.balanceChanged"],
+    },
     accountTypes: {
       CASH: labels["accounts.type.cash.label"],
       CHECKING: labels["accounts.type.checking.label"],

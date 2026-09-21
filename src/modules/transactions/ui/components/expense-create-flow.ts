@@ -11,10 +11,15 @@ import {
   submitCanonicalManualTransaction,
   type ManualTransactionCreationTransport,
 } from "./manual-transaction-create-flow";
+import {
+  parseInsufficientFundsDetails,
+  type InsufficientFundsDetails,
+} from "./transaction-balance";
 
 export type ExpenseCreateFailure = {
   readonly field?: TransactionFormField;
   readonly code: string | undefined;
+  readonly insufficientFunds?: InsufficientFundsDetails | null;
 };
 
 
@@ -60,8 +65,10 @@ export async function submitCanonicalExpense(
 }
 
 
-export function mapExpenseCreateFailure(code: string | undefined): ExpenseCreateFailure {
+export function mapExpenseCreateFailure(code: string | undefined, payload?: unknown): ExpenseCreateFailure {
   switch (code) {
+    case "INSUFFICIENT_FUNDS":
+      return { code, field: "amount", insufficientFunds: parseInsufficientFundsDetails(payload) };
     case "INVALID_AMOUNT":
       return { code, field: "amount" };
     case "INVALID_CURRENCY":

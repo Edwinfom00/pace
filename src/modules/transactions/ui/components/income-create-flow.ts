@@ -11,10 +11,12 @@ import {
   submitCanonicalManualTransaction,
   type ManualTransactionCreationTransport,
 } from "./manual-transaction-create-flow";
+import type { InsufficientFundsDetails } from "./transaction-balance";
 
 export type IncomeCreateFailure = {
   readonly field?: TransactionFormField;
   readonly code: string | undefined;
+  readonly insufficientFunds?: InsufficientFundsDetails | null;
 };
 
 

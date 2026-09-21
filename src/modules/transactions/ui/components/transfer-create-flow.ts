@@ -16,11 +16,16 @@ import {
   submitCanonicalManualTransaction,
   type ManualTransactionCreationTransport,
 } from "./manual-transaction-create-flow";
+import {
+  parseInsufficientFundsDetails,
+  type InsufficientFundsDetails,
+} from "./transaction-balance";
 
 export type TransferCreateFailure = {
   readonly field?: TransactionFormField;
   readonly fields?: readonly TransactionFormField[];
   readonly code: string | undefined;
+  readonly insufficientFunds?: InsufficientFundsDetails | null;
 };
 
 export function createTransferCommand(
@@ -62,8 +67,10 @@ export async function submitCanonicalTransfer(
     : { ok: false, failure: result.failure };
 }
 
-export function mapTransferCreateFailure(code: string | undefined): TransferCreateFailure {
+export function mapTransferCreateFailure(code: string | undefined, payload?: unknown): TransferCreateFailure {
   switch (code) {
+    case "INSUFFICIENT_FUNDS":
+      return { code, field: "amount", insufficientFunds: parseInsufficientFundsDetails(payload) };
     case "FROM_ACCOUNT_NOT_FOUND":
       return { code, field: "fromAccount" };
     case "TO_ACCOUNT_NOT_FOUND":

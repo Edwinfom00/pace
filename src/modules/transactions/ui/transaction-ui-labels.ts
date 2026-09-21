@@ -77,6 +77,16 @@ export type TransactionUiLabels = {
   readonly formCurrencySearch: string;
   readonly formCurrencyEmpty: string;
   readonly validation: Readonly<Record<TransactionFormValidationErrorCode, string>>;
+  readonly balance: {
+    readonly available: string;
+    readonly current: string;
+    readonly afterTransaction: string;
+    readonly unavailable: string;
+    readonly insufficientFunds: string;
+    readonly availableInAccount: string;
+    readonly balanceChanged: string;
+    readonly unableToVerify: string;
+  };
   readonly formMerchant: string;
   readonly formMerchantPlaceholder: string;
   readonly formMerchantHelper: string;
@@ -260,6 +270,18 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
       "transactions.validation.toAccountRequired": labels["transactions.validation.toAccountRequired"],
       "transactions.validation.sameTransferAccount": labels["transactions.validation.sameTransferAccount"],
       "transactions.validation.crossCurrencyTransferUnsupported": labels["transactions.validation.crossCurrencyTransferUnsupported"],
+      "transactions.validation.insufficientFunds": labels["transactions.validation.insufficientFunds"],
+      "transactions.validation.unableToVerifyBalance": labels["transactions.validation.unableToVerifyBalance"],
+    },
+    balance: {
+      available: labels["accounts.balance.available"],
+      current: labels["accounts.balance.current"],
+      afterTransaction: labels["accounts.balance.afterTransaction"],
+      unavailable: labels["accounts.balance.unavailable"],
+      insufficientFunds: labels["transactions.validation.insufficientFunds"],
+      availableInAccount: labels["transactions.validation.availableInAccount"],
+      balanceChanged: labels["transactions.validation.balanceChanged"],
+      unableToVerify: labels["transactions.validation.unableToVerifyBalance"],
     },
     formMerchant: labels["transactions.form.merchant"],
     formMerchantPlaceholder: labels["transactions.form.merchantPlaceholder"],

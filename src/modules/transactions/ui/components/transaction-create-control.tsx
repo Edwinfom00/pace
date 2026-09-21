@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import type { CurrencyCode } from "@/money/currency";
-import type { CreatedAccountDTO } from "@/modules/ledger/create-account-contract";
 import type { TransactionAccountOptionsState } from "@/modules/transactions/domain/transaction-account-options";
 import type {
   TransactionCategoryOption,
@@ -37,7 +36,6 @@ import {
   canStartCreateAccountSubmission,
   mapCreateAccountFailure,
   parseCreatedAccountDTO,
-  reconcileTransactionAccountOptions,
   selectCreatedAccountForTarget,
   validateCreateAccountForm,
   type AccountCreationTarget,
@@ -80,6 +78,13 @@ import { TransactionNoteField } from "./transaction-note-field";
 import { TransactionTimeField } from "./transaction-time-field";
 import { TransactionTransferForm } from "./transaction-transfer-form";
 import type { TransactionFormKind } from "./transaction-type-selector";
+import {
+  applyAuthoritativeBalanceOverride,
+  formatTransactionBalance,
+  validateOutgoingBalance,
+  type InsufficientFundsDetails,
+} from "./transaction-balance";
+import { TransactionBalanceHint } from "./transaction-balance-hint";
 
 export type { AccountCreationTarget } from "./create-account-flow";
 
@@ -87,10 +92,15 @@ type TransactionFormErrorsByKind = Record<TransactionFormKind, TransactionFormEr
 type SubmittedTransactionFormKinds = Record<TransactionFormKind, boolean>;
 type LocalizedTransactionFormErrors = Partial<Record<TransactionFormField, string>>;
 type TransactionFormMessagesByKind = Record<TransactionFormKind, string | null>;
+type TransactionBalanceFeedbackByKind = Record<TransactionFormKind, InsufficientFundsDetails | null>;
 
 type ManualTransactionMutationResult =
   | { readonly ok: true }
-  | { readonly ok: false; readonly errors: TransactionFormErrors };
+  | {
+    readonly ok: false;
+    readonly errors: TransactionFormErrors;
+    readonly insufficientFunds?: InsufficientFundsDetails | null;
+  };
 
 type ManualTransactionMutation = {
   readonly kind: TransactionFormKind;
@@ -117,6 +127,10 @@ export function emptySubmittedTransactionFormKinds(): SubmittedTransactionFormKi
 }
 
 export function emptyTransactionFormMessages(): TransactionFormMessagesByKind {
+  return { EXPENSE: null, INCOME: null, TRANSFER: null };
+}
+
+export function emptyTransactionBalanceFeedback(): TransactionBalanceFeedbackByKind {
   return { EXPENSE: null, INCOME: null, TRANSFER: null };
 }
 
@@ -159,6 +173,7 @@ export function validateTransactionDraft(
   draft: TransactionFormDraft,
   accounts: readonly TransactionAccountOption[],
   categories: readonly TransactionCategoryOption[],
+  options: { readonly accountAvailability?: "error" | "loading" | "ready" } = {},
 ): TransactionFormValidationResult {
   const availableAccountIds = new Set(accounts.map((account) => account.id));
   let result: TransactionFormValidationResult;
@@ -192,6 +207,23 @@ export function validateTransactionDraft(
     const category = draft.kind === "EXPENSE" ? draft.expense.category : draft.income.category;
     if (category && !getCompatibleTransactionCategoryOptions(categories, draft.kind).some((candidate) => candidate.id === category)) {
       errors.category ??= "transactions.validation.categoryUnavailable";
+    }
+  }
+
+  const debitAccountId = draft.kind === "EXPENSE" ? draft.expense.account : draft.kind === "TRANSFER" ? draft.transfer.fromAccount : "";
+  const debitCurrency = draft.kind === "EXPENSE" ? draft.expense.currency : draft.kind === "TRANSFER" ? draft.transfer.currency : "";
+  const debitAmount = draft.kind === "EXPENSE" ? draft.expense.amount : draft.kind === "TRANSFER" ? draft.transfer.amount : "";
+  if (options.accountAvailability && debitAccountId) {
+    const balanceValidation = validateOutgoingBalance({
+      account: accounts.find((account) => account.id === debitAccountId),
+      accountAvailability: options.accountAvailability,
+      amount: debitAmount,
+      currency: debitCurrency,
+    });
+    if (balanceValidation.status === "insufficient") {
+      errors.amount ??= "transactions.validation.insufficientFunds";
+    } else if (balanceValidation.status === "unavailable") {
+      errors.amount ??= "transactions.validation.unableToVerifyBalance";
     }
   }
 
@@ -275,11 +307,11 @@ export function TransactionCreateControl({
   const [createAccountErrors, setCreateAccountErrors] = useState<CreateAccountFormErrors>({});
   const [createAccountFormError, setCreateAccountFormError] = useState<string | null>(null);
   const [createAccountAnnouncement, setCreateAccountAnnouncement] = useState("");
-  const [createdAccountAwaitingReconciliation, setCreatedAccountAwaitingReconciliation] = useState<CreatedAccountDTO | null>(null);
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
   const [pendingTransactionKind, setPendingTransactionKind] = useState<TransactionFormKind | null>(null);
   const [transactionFormErrors, setTransactionFormErrors] = useState<TransactionFormMessagesByKind>(emptyTransactionFormMessages);
   const [transactionAnnouncements, setTransactionAnnouncements] = useState<TransactionFormMessagesByKind>(emptyTransactionFormMessages);
+  const [transactionBalanceFeedback, setTransactionBalanceFeedback] = useState<TransactionBalanceFeedbackByKind>(emptyTransactionBalanceFeedback);
   const [validationErrors, setValidationErrors] = useState<TransactionFormErrorsByKind>(emptyTransactionFormErrors);
   const [submittedKinds, setSubmittedKinds] = useState<SubmittedTransactionFormKinds>(emptySubmittedTransactionFormKinds);
   const amountInputRef = useRef<HTMLInputElement>(null);
@@ -298,27 +330,59 @@ export function TransactionCreateControl({
   const kind = formDraft.kind;
   const activeAccountDraft = kind === "INCOME" ? formDraft.income : formDraft.expense;
   const authoritativeAccounts = accountOptions.accounts;
-  const accounts = reconcileTransactionAccountOptions(authoritativeAccounts, createdAccountAwaitingReconciliation);
   const accountAvailability = isRetryingAccounts ? "loading" : accountOptions.status;
+  const accounts = applyAuthoritativeBalanceOverride(authoritativeAccounts, transactionBalanceFeedback[kind]);
   const categories = categoryOptions.categories;
   const categoryAvailability = isRetryingCategories ? "loading" : categoryOptions.status;
   const activeErrors = validationErrors[kind];
   const activeDisplayErrors = localizeTransactionFormErrors(labels, activeErrors);
   const isTransactionPending = pendingTransactionKind !== null;
+  const selectedExpenseOrIncomeAccount = accounts.find((account) => account.id === activeAccountDraft.account);
+  const selectedTransferFromAccount = accounts.find((account) => account.id === formDraft.transfer.fromAccount);
+  const selectedTransferToAccount = accounts.find((account) => account.id === formDraft.transfer.toAccount);
+  const outgoingBalanceValidation = kind === "EXPENSE"
+    ? validateOutgoingBalance({
+      account: selectedExpenseOrIncomeAccount,
+      accountAvailability,
+      amount: formDraft.expense.amount,
+      currency: formDraft.expense.currency,
+    })
+    : kind === "TRANSFER"
+      ? validateOutgoingBalance({
+        account: selectedTransferFromAccount,
+        accountAvailability,
+        amount: formDraft.transfer.amount,
+        currency: formDraft.transfer.currency,
+      })
+      : { status: "not-applicable" as const };
+  const balanceFeedback = transactionBalanceFeedback[kind];
+  const balanceError = outgoingBalanceValidation.status === "insufficient"
+    ? labels.balance.insufficientFunds
+    : outgoingBalanceValidation.status === "unavailable"
+      ? labels.balance.unableToVerify
+      : undefined;
+  const balanceErrorDetail = balanceFeedback
+    ? formatBalanceMessage(
+      labels.balance.balanceChanged,
+      { amount: formatBalanceDetail(balanceFeedback.availableBalanceMinor, balanceFeedback.currency, locale) },
+    )
+    : outgoingBalanceValidation.status === "insufficient"
+      ? formatBalanceMessage(
+        labels.balance.availableInAccount,
+        {
+          amount: formatBalanceDetail(outgoingBalanceValidation.availableBalanceMinor.toString(), outgoingBalanceValidation.account.currency, locale),
+          account: outgoingBalanceValidation.account.name,
+        },
+      )
+      : undefined;
 
   useEffect(() => {
     workspaceIdRef.current = workspaceId;
   }, [workspaceId]);
 
   useEffect(() => {
-    if (
-      createdAccountAwaitingReconciliation
-      && authoritativeAccounts.some((account) => account.id === createdAccountAwaitingReconciliation.id)
-    ) {
-      const frame = requestAnimationFrame(() => setCreatedAccountAwaitingReconciliation(null));
-      return () => cancelAnimationFrame(frame);
-    }
-  }, [authoritativeAccounts, createdAccountAwaitingReconciliation]);
+    setTransactionBalanceFeedback(emptyTransactionBalanceFeedback());
+  }, [authoritativeAccounts]);
 
   function focusFirstInvalidField(kindToFocus: TransactionFormKind, errors: TransactionFormErrors) {
     const field = getFirstInvalidTransactionFormField(kindToFocus, errors);
@@ -368,14 +432,15 @@ export function TransactionCreateControl({
   ) {
     setFormDraft(nextDraft);
     setTransactionFormErrors((current) => ({ ...current, [nextDraft.kind]: null }));
+    setTransactionBalanceFeedback((current) => ({ ...current, [nextDraft.kind]: null }));
     if (!submittedKinds[nextDraft.kind]) return;
 
-    const result = validateTransactionDraft(nextDraft, accountsForValidation, categoriesForValidation);
+    const result = validateTransactionDraft(nextDraft, accountsForValidation, categoriesForValidation, { accountAvailability });
     setValidationErrors((current) => ({ ...current, [nextDraft.kind]: result.errors }));
   }
 
   function validateActiveTransactionDraft(): TransactionFormValidationResult {
-    const result = validateTransactionDraft(formDraft, accounts, categories);
+    const result = validateTransactionDraft(formDraft, accounts, categories, { accountAvailability });
     setSubmittedKinds((current) => ({ ...current, [kind]: true }));
     setValidationErrors((current) => ({ ...current, [kind]: result.errors }));
     if (!result.isValid) focusFirstInvalidField(kind, result.errors);
@@ -455,6 +520,7 @@ export function TransactionCreateControl({
     setCreateAccountDraft(createEmptyCreateAccountFormDraft(defaultCurrency));
     setTransactionFormErrors(emptyTransactionFormMessages());
     setTransactionAnnouncements(emptyTransactionFormMessages());
+    setTransactionBalanceFeedback(emptyTransactionBalanceFeedback());
   }
 
   function updateCreateAccountDraft(nextDraft: CreateAccountFormDraft) {
@@ -521,10 +587,10 @@ export function TransactionCreateControl({
         return;
       }
 
-      const accountsWithCreatedAccount = reconcileTransactionAccountOptions(accounts, account);
-      const nextDraft = selectCreatedAccountForTarget(formDraft, requestTarget, account, accountsWithCreatedAccount);
-      commitTransactionDraft(nextDraft, accountsWithCreatedAccount);
-      setCreatedAccountAwaitingReconciliation(account);
+      // Keep the real returned ID in the draft, but never invent an account
+      // option or a zero balance while the authoritative list refreshes.
+      const nextDraft = selectCreatedAccountForTarget(formDraft, requestTarget, account, accounts);
+      commitTransactionDraft(nextDraft);
       setCreateAccountDraft(createEmptyCreateAccountFormDraft(defaultCurrency));
       setCreateAccountErrors({});
       setCreateAccountFormError(null);
@@ -557,6 +623,20 @@ export function TransactionCreateControl({
     try {
       const result = await mutation.execute();
       if (!result.ok) {
+        const insufficientFunds = result.insufficientFunds ?? null;
+        if (insufficientFunds) {
+          const errors = { ...result.errors, amount: "transactions.validation.insufficientFunds" as const };
+          setTransactionBalanceFeedback((current) => ({ ...current, [mutation.kind]: insufficientFunds }));
+          setValidationErrors((current) => ({
+            ...current,
+            [mutation.kind]: { ...current[mutation.kind], ...errors },
+          }));
+          focusFirstInvalidField(mutation.kind, errors);
+          // The structured conflict is canonical at the moment of rejection;
+          // refresh the full account read rather than decrementing locally.
+          router.refresh();
+          return;
+        }
         if (Object.keys(result.errors).length > 0) {
           setValidationErrors((current) => ({
             ...current,
@@ -619,7 +699,11 @@ export function TransactionCreateControl({
         const result = await submitCanonicalExpense(command, postManualTransaction(requestWorkspaceId));
         return result.ok
           ? { ok: true }
-          : { ok: false, errors: serverExpenseFieldErrors(result.failure) };
+          : {
+            ok: false,
+            errors: serverExpenseFieldErrors(result.failure),
+            insufficientFunds: result.failure.insufficientFunds,
+          };
       },
     });
   }
@@ -647,7 +731,11 @@ export function TransactionCreateControl({
         const result = await submitCanonicalIncome(command, postManualTransaction(requestWorkspaceId));
         return result.ok
           ? { ok: true }
-          : { ok: false, errors: serverIncomeFieldErrors(result.failure) };
+          : {
+            ok: false,
+            errors: serverIncomeFieldErrors(result.failure),
+            insufficientFunds: result.failure.insufficientFunds,
+          };
       },
     });
   }
@@ -675,7 +763,11 @@ export function TransactionCreateControl({
         const result = await submitCanonicalTransfer(command, postManualTransaction(requestWorkspaceId));
         return result.ok
           ? { ok: true }
-          : { ok: false, errors: serverTransferFieldErrors(result.failure) };
+          : {
+            ok: false,
+            errors: serverTransferFieldErrors(result.failure),
+            insufficientFunds: result.failure.insufficientFunds,
+          };
       },
     });
   }
@@ -801,16 +893,29 @@ export function TransactionCreateControl({
         ) : kind === "TRANSFER" ? (
           <TransactionTransferForm
             accountAvailability={accountAvailability}
-            accountLoadError={labels.accountLoadError}
+            accountBalanceLabels={labels.balance}
+            accountLoadError={labels.balance.unableToVerify}
             accountLoadingLabel={labels.accountLoading}
             accountRetryLabel={labels.errorRetry}
             accounts={accounts}
             amountInputRef={amountInputRef}
+            amountError={balanceError ?? activeDisplayErrors.amount}
+            amountErrorDetail={balanceError ? balanceErrorDetail : undefined}
             currencyTriggerRef={currencyTriggerRef}
             dateTriggerRef={dateTriggerRef}
             draft={formDraft.transfer}
             errors={activeDisplayErrors}
             fromAccountTriggerRef={fromAccountTriggerRef}
+            fromAccountHelper={accountAvailability === "ready" ? (
+              <TransactionBalanceHint
+                account={selectedTransferFromAccount}
+                amount={formDraft.transfer.amount}
+                balanceKind="available"
+                direction="debit"
+                labels={labels.balance}
+                locale={locale}
+              />
+            ) : undefined}
             labels={labels}
             language={language}
             locale={locale}
@@ -824,6 +929,16 @@ export function TransactionCreateControl({
             timeZone={timeZone}
             timeTriggerRef={timeTriggerRef}
             toAccountTriggerRef={toAccountTriggerRef}
+            toAccountHelper={accountAvailability === "ready" ? (
+              <TransactionBalanceHint
+                account={selectedTransferToAccount}
+                amount={formDraft.transfer.amount}
+                balanceKind="current"
+                direction="credit"
+                labels={labels.balance}
+                locale={locale}
+              />
+            ) : undefined}
           />
         ) : (
           <div className="grid gap-4">
@@ -835,7 +950,8 @@ export function TransactionCreateControl({
               currencyLabel={labels.formCurrency}
               currencySearchPlaceholder={labels.formCurrencySearch}
               currencyTriggerRef={currencyTriggerRef}
-              error={activeDisplayErrors.amount}
+              error={balanceError ?? activeDisplayErrors.amount}
+              errorDetail={balanceError ? balanceErrorDetail : undefined}
               helperText={kind === "INCOME" ? labels.formAmountIncomeHelper : labels.formAmountExpenseHelper}
               label={labels.formAmount}
               language={language}
@@ -901,17 +1017,29 @@ export function TransactionCreateControl({
 
             <TransactionAccountField
               availability={accountAvailability}
-              accountLoadError={labels.accountLoadError}
+              accountLoadError={kind === "INCOME" ? labels.accountLoadError : labels.balance.unableToVerify}
               accountLoadingLabel={labels.accountLoading}
               accountRetryLabel={labels.errorRetry}
               accounts={accounts}
+              balanceKind={kind === "INCOME" ? "current" : "available"}
+              balanceLabels={labels.balance}
               createAccountLabel={labels.accountsCreate}
               createFirstAccountLabel={labels.accountsCreateFirst}
               emptyDescription={labels.accountsEmptyDescription}
               emptyTitle={labels.accountsEmptyTitle}
               error={activeDisplayErrors.account}
-              helperText={kind === "INCOME" ? labels.formAccountIncomeHelper : labels.formAccountHelper}
+              helperText={accountAvailability === "ready" && selectedExpenseOrIncomeAccount ? (
+                <TransactionBalanceHint
+                  account={selectedExpenseOrIncomeAccount}
+                  amount={activeAccountDraft.amount}
+                  balanceKind={kind === "INCOME" ? "current" : "available"}
+                  direction={kind === "INCOME" ? "credit" : "debit"}
+                  labels={labels.balance}
+                  locale={locale}
+                />
+              ) : kind === "INCOME" ? labels.formAccountIncomeHelper : labels.formAccountHelper}
               label={labels.formAccount}
+              locale={locale}
               noResultsLabel={labels.accountsSearchNoResults}
               onCreateAccount={() => handleCreateAccountRequest(kind === "INCOME" ? "INCOME_ACCOUNT" : "EXPENSE_ACCOUNT")}
               onRetryAccounts={retryAccounts}
@@ -964,5 +1092,17 @@ export function TransactionCreateControl({
         )}
       </TransactionFormDialog>
     </>
+  );
+}
+
+function formatBalanceDetail(minor: string, currency: string, locale: string): string {
+  const formatted = formatTransactionBalance(minor, currency, locale);
+  return formatted ?? currency;
+}
+
+function formatBalanceMessage(template: string, variables: Record<string, string>): string {
+  return Object.entries(variables).reduce(
+    (message, [name, value]) => message.replaceAll(`{${name}}`, value),
+    template,
   );
 }

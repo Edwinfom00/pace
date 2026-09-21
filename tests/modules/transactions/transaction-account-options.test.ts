@@ -46,16 +46,21 @@ async function fixture() {
   return { active, archived: archivedRecord, ledger, outside, workspaces };
 }
 
-test("manual transaction account DTO mapping exposes only the selector fields", async () => {
-  const { active, archived } = await fixture();
+test("manual transaction account DTO mapping exposes canonical balance and spendability fields", async () => {
+  const { active, archived, ledger } = await fixture();
+  const balance = await ledger.getAccountBalance(workspaceOne, active.id);
+  assert.ok(balance);
 
-  assert.deepEqual(mapTransactionAccountOption(active), {
+  assert.deepEqual(mapTransactionAccountOption(active, balance), {
     id: active.id,
     name: "Everyday",
     currency: "XAF",
     type: "CHECKING",
+    currentBalanceMinor: "0",
+    availableBalanceMinor: "0",
+    spendabilityMode: "ZERO_FLOOR",
   });
-  assert.equal(mapTransactionAccountOption(archived), null);
+  assert.equal(mapTransactionAccountOption(archived, undefined), null);
 });
 
 test("manual transaction accounts are authorized, workspace-scoped, active, and empty when the workspace has none", async () => {
@@ -65,7 +70,15 @@ test("manual transaction accounts are authorized, workspace-scoped, active, and 
     { actor: owner, workspaceId: workspaceOne },
     { ledger, workspaces },
   );
-  assert.deepEqual(accounts, [{ id: active.id, name: "Everyday", currency: "XAF", type: "CHECKING" }]);
+  assert.deepEqual(accounts, [{
+    id: active.id,
+    name: "Everyday",
+    currency: "XAF",
+    type: "CHECKING",
+    currentBalanceMinor: "0",
+    availableBalanceMinor: "0",
+    spendabilityMode: "ZERO_FLOOR",
+  }]);
   assert.equal(accounts.some((account) => account.id === outside.id), false);
 
   const zeroAccounts = await getTransactionAccountOptions(

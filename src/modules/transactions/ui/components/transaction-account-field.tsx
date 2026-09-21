@@ -12,6 +12,10 @@ import {
 
 import { cn } from "@/lib/utils";
 import type { TransactionAccountOption } from "./transaction-account.types";
+import {
+  accountBalanceText,
+  type TransactionBalanceLabels,
+} from "./transaction-balance";
 
 export type TransactionAccountFieldProps<T extends string = string> = {
   readonly accounts: readonly (TransactionAccountOption & { readonly id: T })[];
@@ -25,7 +29,7 @@ export type TransactionAccountFieldProps<T extends string = string> = {
   readonly error?: string;
   readonly emptyDescription: string;
   readonly emptyTitle: string;
-  readonly helperText?: string;
+  readonly helperText?: React.ReactNode;
   readonly label: string;
   readonly noResultsLabel: string;
   readonly onRetryAccounts?: () => void;
@@ -34,6 +38,9 @@ export type TransactionAccountFieldProps<T extends string = string> = {
   readonly placeholder: string;
   /** Reserved for the later currency-eligibility policy. */
   readonly preferredCurrency?: string;
+  readonly balanceKind?: "available" | "current";
+  readonly balanceLabels?: TransactionBalanceLabels;
+  readonly locale?: string;
   readonly searchPlaceholder: string;
   readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
   readonly value: T | "";
@@ -56,6 +63,8 @@ export function TransactionAccountField<T extends string = string>({
   accountLoadingLabel,
   accountRetryLabel,
   availability = "ready",
+  balanceKind = "available",
+  balanceLabels,
   createAccountLabel,
   createFirstAccountLabel,
   disabledAccountIds = [],
@@ -66,6 +75,7 @@ export function TransactionAccountField<T extends string = string>({
   emptyTitle,
   helperText,
   label,
+  locale,
   noResultsLabel,
   onCreateAccount,
   onRetryAccounts,
@@ -208,6 +218,9 @@ export function TransactionAccountField<T extends string = string>({
                     filteredAccounts.map((account) => {
                       const isSelected = account.id === value;
                       const isDisabled = disabledAccountIdSet.has(account.id);
+                      const balanceText = balanceLabels && locale
+                        ? accountBalanceText(account, locale, balanceLabels, balanceKind)
+                        : null;
                       return (
                         <CommandItem
                           aria-disabled={isDisabled || undefined}
@@ -224,7 +237,7 @@ export function TransactionAccountField<T extends string = string>({
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px] font-medium">{account.name}</span>
                             <span className="mt-0.5 block truncate text-[11px] leading-4 text-[#71809a]">
-                              {getAccountMetadata(account)}
+                              {balanceText ?? getAccountMetadata(account)}
                             </span>
                           </span>
                           {isDisabled ? (

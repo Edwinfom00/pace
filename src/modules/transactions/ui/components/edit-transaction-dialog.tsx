@@ -19,6 +19,7 @@ import {
 
 import type { TransactionEditLabels } from "../transaction-edit-labels";
 import { EditTransactionForm } from "./edit-transaction-form";
+import { formatTransactionBalance, parseInsufficientFundsDetails } from "./transaction-balance";
 import { TransactionCorrectionReview, type TransactionCorrectionReason } from "./transaction-correction-review";
 import {
   classifyTransactionChanges,
@@ -73,6 +74,7 @@ export function EditTransactionDialog({
   const [errors, setErrors] = useState<TransactionEditFieldErrors>({});
   const [formError, setFormError] = useState<TransactionEditFormError>(null);
   const [correctionError, setCorrectionError] = useState<TransactionCorrectionFormError>(null);
+  const [correctionBalanceMessage, setCorrectionBalanceMessage] = useState<string | null>(null);
   const [correctionIdempotencyKey, setCorrectionIdempotencyKey] = useState<string | null>(null);
   const [reason, setReason] = useState<TransactionCorrectionReason>("");
   const [reasonDetails, setReasonDetails] = useState("");
@@ -94,6 +96,7 @@ export function EditTransactionDialog({
     setErrors({});
     setFormError(null);
     setCorrectionError(null);
+    setCorrectionBalanceMessage(null);
     setCorrectionIdempotencyKey(null);
     setReason("");
     setReasonDetails("");
@@ -124,6 +127,7 @@ export function EditTransactionDialog({
     setErrors({});
     setFormError(null);
     setCorrectionError(null);
+    setCorrectionBalanceMessage(null);
     setCorrectionIdempotencyKey(null);
   }
 
@@ -131,6 +135,7 @@ export function EditTransactionDialog({
     if (isSaving) return;
     setReason(nextReason);
     setCorrectionError(null);
+    setCorrectionBalanceMessage(null);
     setCorrectionIdempotencyKey(null);
   }
 
@@ -138,6 +143,7 @@ export function EditTransactionDialog({
     if (isSaving) return;
     setReasonDetails(nextReasonDetails);
     setCorrectionError(null);
+    setCorrectionBalanceMessage(null);
     setCorrectionIdempotencyKey(null);
   }
 
@@ -220,10 +226,10 @@ export function EditTransactionDialog({
     setFormError(failure.formError);
   }
 
-  function applyCorrectionServerFailure(code: string | undefined) {
+  function applyCorrectionServerFailure(code: string | undefined, payload?: unknown) {
     const failure = mapTransactionCorrectionFailureForKind(code, transaction.kind);
     setErrors({
-      ...(failure.fieldErrors.amount ? { amount: labels.amountInvalid } : {}),
+      ...(failure.fieldErrors.amount ? { amount: failure.formError === "insufficientFunds" ? labels.balance.insufficientFunds : labels.amountInvalid } : {}),
       ...(failure.fieldErrors.account ? { account: labels.accountUnavailable } : {}),
       ...(failure.fieldErrors.fromAccount ? { fromAccount: labels.accountUnavailable } : {}),
       ...(failure.fieldErrors.counterparty ? { counterparty: labels.counterpartyTooLong } : {}),
@@ -233,6 +239,20 @@ export function EditTransactionDialog({
       ...(failure.fieldErrors.toAccount ? { toAccount: labels.sameTransferAccount } : {}),
     });
     setCorrectionError(failure.formError);
+    const insufficientFunds = parseInsufficientFundsDetails(payload);
+    if (insufficientFunds) {
+      const formatted = formatTransactionBalance(
+        insufficientFunds.availableBalanceMinor,
+        insufficientFunds.currency,
+        locale,
+      );
+      setCorrectionBalanceMessage(formatTemplate(labels.balance.balanceChanged, { amount: formatted ?? insufficientFunds.currency }));
+      // Do not reimplement correction spendability in the browser: the server
+      // evaluates the atomic reversal and replacement together.
+      router.refresh();
+    } else {
+      setCorrectionBalanceMessage(null);
+    }
   }
 
   async function applyCorrection() {
@@ -279,7 +299,7 @@ export function EditTransactionDialog({
       const replacementTransactionId = correctionReplacementTransactionId(payload);
 
       if (!response.ok || !replacementTransactionId || replacementTransactionId === transaction.id) {
-        applyCorrectionServerFailure(transactionEditErrorCode(payload));
+        applyCorrectionServerFailure(transactionEditErrorCode(payload), payload);
         return;
       }
 
@@ -369,6 +389,7 @@ export function EditTransactionDialog({
             labels={labels}
             locale={locale}
             correctionError={correctionError}
+            correctionBalanceMessage={correctionBalanceMessage}
             isApplying={isSaving}
             onApply={applyCorrection}
             onBack={backToEdit}
@@ -404,6 +425,13 @@ export function EditTransactionDialog({
         <p aria-live="polite" className="sr-only">{isSaving ? view === "review" ? labels.correction.applying : labels.saving : ""}</p>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  );
+}
+
+function formatTemplate(template: string, variables: Record<string, string>): string {
+  return Object.entries(variables).reduce(
+    (message, [name, value]) => message.replaceAll(`{${name}}`, value),
+    template,
   );
 }
 

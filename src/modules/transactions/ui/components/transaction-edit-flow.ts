@@ -67,6 +67,7 @@ export type TransactionCorrectionFormError =
   | "conflict"
   | "currency"
   | "failed"
+  | "insufficientFunds"
   | "notAllowed"
   | "refundLimit"
   | "transfer"
@@ -377,6 +378,8 @@ export function mapTransactionCorrectionFailureForKind(
     ? { fromAccount: "fromAccount" as const, toAccount: "toAccount" as const }
     : { account: "account" as const };
   switch (code) {
+    case "INSUFFICIENT_FUNDS":
+      return { fieldErrors: { amount: "amount" }, formError: "insufficientFunds" };
     case "INVALID_AMOUNT":
       return { fieldErrors: { amount: "amount" }, formError: "amount" };
     case "CORRECTED_AMOUNT_BELOW_REFUNDED_TOTAL":

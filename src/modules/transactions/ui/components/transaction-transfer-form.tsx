@@ -1,6 +1,6 @@
 "use client";
 
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { FiArrowDown } from "react-icons/fi";
 
 import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
@@ -18,6 +18,7 @@ import { TransactionDateField } from "./transaction-date-field";
 import { TransactionFormTip } from "./transaction-form-tip";
 import { TransactionNoteField } from "./transaction-note-field";
 import { TransactionTimeField } from "./transaction-time-field";
+import type { TransactionBalanceLabels } from "./transaction-balance";
 
 export type { TransferTransactionFormDraft } from "@/modules/transactions/schemas/transaction-form.schema";
 
@@ -26,12 +27,16 @@ export function TransactionTransferForm({
   accountLoadError,
   accountLoadingLabel,
   accountRetryLabel,
+  accountBalanceLabels,
   accounts,
   amountInputRef,
+  amountError,
+  amountErrorDetail,
   currencyTriggerRef,
   dateTriggerRef,
   draft,
   errors = {},
+  fromAccountHelper,
   fromAccountTriggerRef,
   labels,
   language,
@@ -43,17 +48,22 @@ export function TransactionTransferForm({
   timeZone,
   timeTriggerRef,
   toAccountTriggerRef,
+  toAccountHelper,
 }: {
   readonly accountAvailability: "loading" | "ready" | "error";
   readonly accountLoadError: string;
   readonly accountLoadingLabel: string;
   readonly accountRetryLabel: string;
+  readonly accountBalanceLabels?: TransactionBalanceLabels;
   readonly accounts: readonly TransactionAccountOption[];
   readonly amountInputRef?: RefObject<HTMLInputElement | null>;
+  readonly amountError?: string;
+  readonly amountErrorDetail?: string;
   readonly currencyTriggerRef?: RefObject<HTMLButtonElement | null>;
   readonly dateTriggerRef?: RefObject<HTMLButtonElement | null>;
   readonly draft: TransferTransactionFormDraft;
   readonly errors?: Readonly<Partial<Record<keyof TransactionFormErrors, string>>>;
+  readonly fromAccountHelper?: ReactNode;
   readonly fromAccountTriggerRef: RefObject<HTMLButtonElement | null>;
   readonly labels: TransactionUiLabels;
   readonly language: OnboardingLanguage;
@@ -65,6 +75,7 @@ export function TransactionTransferForm({
   readonly timeZone: string;
   readonly timeTriggerRef?: RefObject<HTMLButtonElement | null>;
   readonly toAccountTriggerRef: RefObject<HTMLButtonElement | null>;
+  readonly toAccountHelper?: ReactNode;
 }) {
   const fromAccount = accounts.find((account) => account.id === draft.fromAccount);
   const toAccount = accounts.find((account) => account.id === draft.toAccount);
@@ -92,7 +103,8 @@ export function TransactionTransferForm({
         currencyLabel={labels.formCurrency}
         currencySearchPlaceholder={labels.formCurrencySearch}
         currencyTriggerRef={currencyTriggerRef}
-        error={errors.amount}
+        error={amountError ?? errors.amount}
+        errorDetail={amountErrorDetail}
         helperText={labels.formAmountTransferHelper}
         label={labels.formAmount}
         language={language}
@@ -109,6 +121,8 @@ export function TransactionTransferForm({
           accountLoadingLabel={accountLoadingLabel}
           accountRetryLabel={accountRetryLabel}
           accounts={accounts}
+          balanceKind="available"
+          balanceLabels={accountBalanceLabels}
           createAccountLabel={labels.accountsCreate}
           createFirstAccountLabel={labels.accountsCreateFirst}
           disabledAccountIds={getTransferDisabledAccountIds(draft.toAccount)}
@@ -116,7 +130,9 @@ export function TransactionTransferForm({
           emptyDescription={labels.accountsEmptyDescription}
           emptyTitle={labels.accountsEmptyTitle}
           error={errors.fromAccount}
+          helperText={fromAccountHelper}
           label={labels.formFromAccount}
+          locale={locale}
           noResultsLabel={labels.accountsSearchNoResults}
           onCreateAccount={() => onCreateAccount("FROM")}
           onRetryAccounts={onRetryAccounts}
@@ -137,6 +153,8 @@ export function TransactionTransferForm({
           accountLoadingLabel={accountLoadingLabel}
           accountRetryLabel={accountRetryLabel}
           accounts={accounts}
+          balanceKind="current"
+          balanceLabels={accountBalanceLabels}
           createAccountLabel={labels.accountsCreate}
           createFirstAccountLabel={labels.accountsCreateFirst}
           disabledAccountIds={getTransferDisabledAccountIds(draft.fromAccount)}
@@ -144,7 +162,9 @@ export function TransactionTransferForm({
           emptyDescription={labels.accountsEmptyDescription}
           emptyTitle={labels.accountsEmptyTitle}
           error={errors.toAccount}
+          helperText={toAccountHelper}
           label={labels.formToAccount}
+          locale={locale}
           noResultsLabel={labels.accountsSearchNoResults}
           onCreateAccount={() => onCreateAccount("TO")}
           onRetryAccounts={onRetryAccounts}
