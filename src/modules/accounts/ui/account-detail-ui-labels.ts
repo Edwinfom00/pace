@@ -16,6 +16,11 @@ export type AccountDetailUiLabels = {
   readonly chartRange: Readonly<Record<AccountDetailChartRange, string>>;
   readonly chartSummary: string;
   readonly information: string;
+  readonly openingBalance: {
+    readonly startingBalance: string;
+    readonly balanceAsOf: string;
+    readonly corrected: string;
+  };
   readonly type: string;
   readonly currency: string;
   readonly status: string;
@@ -84,6 +89,45 @@ export type AccountDetailUiLabels = {
       readonly success: string;
       readonly failed: string;
     };
+    readonly openingBalance: {
+      readonly setAction: string;
+      readonly correctAction: string;
+      readonly setTitle: string;
+      readonly correctTitle: string;
+      readonly description: string;
+      readonly correctionDescription: string;
+      readonly amount: string;
+      readonly currentAmount: string;
+      readonly correctedAmount: string;
+      readonly balanceAsOf: string;
+      readonly dateDescription: string;
+      readonly locked: string;
+      readonly review: string;
+      readonly reviewCorrection: string;
+      readonly notIncome: string;
+      readonly historyPreserved: string;
+      readonly set: string;
+      readonly setting: string;
+      readonly applyCorrection: string;
+      readonly correcting: string;
+      readonly reason: string;
+      readonly reasonOptional: string;
+      readonly before: string;
+      readonly after: string;
+      readonly difference: string;
+      readonly back: string;
+      readonly cancel: string;
+      readonly close: string;
+      readonly accountContext: string;
+      readonly invalidAmount: string;
+      readonly amountUnchanged: string;
+      readonly invalidDate: string;
+      readonly conflict: string;
+      readonly reloadLatest: string;
+      readonly notAllowed: string;
+      readonly failed: string;
+      readonly typeValues: Readonly<Record<LedgerAccountType, string>>;
+    };
   };
   readonly columns: {
     readonly transaction: string;
@@ -118,6 +162,11 @@ export function getAccountDetailUiLabels(labels: DashboardLabels): AccountDetail
     },
     chartSummary: labels["accounts.detail.chartSummary"],
     information: labels["accounts.detail.information"],
+    openingBalance: {
+      startingBalance: labels["accounts.openingBalance.startingBalance"],
+      balanceAsOf: labels["accounts.openingBalance.balanceAsOf"],
+      corrected: labels["accounts.openingBalance.corrected"],
+    },
     type: labels["accounts.detail.type"],
     currency: labels["accounts.detail.currency"],
     status: labels["accounts.detail.status"],
@@ -195,6 +244,52 @@ export function getAccountDetailUiLabels(labels: DashboardLabels): AccountDetail
         restoring: labels["accounts.restore.restoring"],
         success: labels["accounts.restore.success"],
         failed: labels["accounts.restore.failed"],
+      },
+      openingBalance: {
+        setAction: labels["accounts.openingBalance.setAction"],
+        correctAction: labels["accounts.openingBalance.correctAction"],
+        setTitle: labels["accounts.openingBalance.setTitle"],
+        correctTitle: labels["accounts.openingBalance.correctTitle"],
+        description: labels["accounts.openingBalance.description"],
+        correctionDescription: labels["accounts.openingBalance.correctionDescription"],
+        amount: labels["accounts.openingBalance.amount"],
+        currentAmount: labels["accounts.openingBalance.currentAmount"],
+        correctedAmount: labels["accounts.openingBalance.correctedAmount"],
+        balanceAsOf: labels["accounts.openingBalance.balanceAsOf"],
+        dateDescription: labels["accounts.openingBalance.dateDescription"],
+        locked: labels["accounts.openingBalance.locked"],
+        review: labels["accounts.openingBalance.review"],
+        reviewCorrection: labels["accounts.openingBalance.reviewCorrection"],
+        notIncome: labels["accounts.openingBalance.notIncome"],
+        historyPreserved: labels["accounts.openingBalance.historyPreserved"],
+        set: labels["accounts.openingBalance.set"],
+        setting: labels["accounts.openingBalance.setting"],
+        applyCorrection: labels["accounts.openingBalance.applyCorrection"],
+        correcting: labels["accounts.openingBalance.correcting"],
+        reason: labels["accounts.openingBalance.reason"],
+        reasonOptional: labels["accounts.openingBalance.reasonOptional"],
+        before: labels["accounts.openingBalance.before"],
+        after: labels["accounts.openingBalance.after"],
+        difference: labels["accounts.openingBalance.difference"],
+        back: labels["accounts.openingBalance.back"],
+        cancel: labels["accounts.actions.cancel"],
+        close: labels["accounts.actions.close"],
+        accountContext: labels["accounts.openingBalance.accountContext"],
+        invalidAmount: labels["accounts.openingBalance.invalidAmount"],
+        amountUnchanged: labels["accounts.openingBalance.amountUnchanged"],
+        invalidDate: labels["accounts.openingBalance.invalidDate"],
+        conflict: labels["accounts.openingBalance.conflict"],
+        reloadLatest: labels["accounts.openingBalance.reloadLatest"],
+        notAllowed: labels["accounts.openingBalance.notAllowed"],
+        failed: labels["accounts.openingBalance.failed"],
+        typeValues: {
+          CASH: labels["accounts.type.cash.label"],
+          CHECKING: labels["accounts.type.checking.label"],
+          SAVINGS: labels["accounts.type.savings.label"],
+          CREDIT_CARD: labels["accounts.type.creditCard.label"],
+          MOBILE_MONEY: labels["accounts.type.mobileMoney.label"],
+          OTHER: labels["accounts.type.other.label"],
+        },
       },
     },
     columns: {

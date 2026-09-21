@@ -183,6 +183,13 @@
       "when": 1790100000001,
       "tag": "0025_opening_balance_foundation_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790100000002,
+      "tag": "0026_dusty_madripoor",
+      "breakpoints": true
     }
   ]
 }

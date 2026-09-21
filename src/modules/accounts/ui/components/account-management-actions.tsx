@@ -40,6 +40,8 @@ import {
   type AccountManagementSnapshot,
   type ManagedAccountResponse,
 } from "./account-management-flow";
+import { OpeningBalanceDialog } from "./opening-balance-dialog";
+import type { OpeningBalanceMode } from "./opening-balance-flow";
 
 type DialogMode = "edit" | "archive" | "restore" | null;
 type Operation = "RENAME" | "CHANGE_TYPE" | "ARCHIVE" | "RESTORE";
@@ -50,6 +52,9 @@ export function AccountManagementActions({
   currentBalanceMinor,
   labels,
   locale,
+  now,
+  openingBalance,
+  timeZone,
   typeValues,
   workspaceId,
   workspaceSlug,
@@ -59,6 +64,9 @@ export function AccountManagementActions({
   readonly currentBalanceMinor: string;
   readonly labels: AccountDetailUiLabels["management"];
   readonly locale: string;
+  readonly now: string;
+  readonly openingBalance: AccountDetail["openingBalance"];
+  readonly timeZone: string;
   readonly typeValues: AccountDetailUiLabels["typeValues"];
   readonly workspaceId: string;
   readonly workspaceSlug: string;
@@ -70,6 +78,7 @@ export function AccountManagementActions({
   const idempotencyKeys = useRef<Partial<Record<Operation, string>>>({});
   const [mode, setMode] = useState<DialogMode>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [openingBalanceMode, setOpeningBalanceMode] = useState<OpeningBalanceMode | null>(null);
   const [baseline, setBaseline] = useState<AccountManagementSnapshot>(() => snapshotFor(account));
   const [draft, setDraft] = useState<AccountManagementDraft>(() => createAccountManagementDraft(account));
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<AccountManagementField, "invalid" | "tooLong" | "server">>>({});
@@ -78,7 +87,9 @@ export function AccountManagementActions({
   const canEdit = capabilities.canRename || capabilities.canChangeType;
   const canArchive = account.status === "ACTIVE" && capabilities.canArchive;
   const canRestore = account.status === "ARCHIVED" && capabilities.canRestore;
-  const hasActions = canEdit || canArchive || canRestore;
+  const canSetOpeningBalance = capabilities.canSetOpeningBalance && openingBalance === null;
+  const canCorrectOpeningBalance = capabilities.canCorrectOpeningBalance && openingBalance !== null;
+  const hasActions = canEdit || canArchive || canRestore || canSetOpeningBalance || canCorrectOpeningBalance;
   const changes = accountManagementChanges(baseline, draft, capabilities);
   const hasChanges = changes.name || changes.type;
   const typeOptions = capabilities.allowedTypeChanges;
@@ -259,6 +270,11 @@ export function AccountManagementActions({
     window.requestAnimationFrame(() => menuTriggerRef.current?.focus());
   }
 
+  function closeOpeningBalanceDialog() {
+    setOpeningBalanceMode(null);
+    window.requestAnimationFrame(() => menuTriggerRef.current?.focus());
+  }
+
   return (
     <>
       <DropdownMenu>
@@ -282,6 +298,24 @@ export function AccountManagementActions({
             >
               <Pencil aria-hidden="true" className="size-3.5" />
               {labels.actions.edit}
+            </DropdownMenuItem>
+          ) : null}
+          {canSetOpeningBalance ? (
+            <DropdownMenuItem
+              className="gap-2 rounded-[7px] px-2.5 py-2 text-[13px] text-[#34405d] focus:bg-[#f3f6fa]"
+              onSelect={() => setOpeningBalanceMode("set")}
+            >
+              <Pencil aria-hidden="true" className="size-3.5" />
+              {labels.openingBalance.setAction}
+            </DropdownMenuItem>
+          ) : null}
+          {canCorrectOpeningBalance ? (
+            <DropdownMenuItem
+              className="gap-2 rounded-[7px] px-2.5 py-2 text-[13px] text-[#34405d] focus:bg-[#f3f6fa]"
+              onSelect={() => setOpeningBalanceMode("correct")}
+            >
+              <Pencil aria-hidden="true" className="size-3.5" />
+              {labels.openingBalance.correctAction}
             </DropdownMenuItem>
           ) : null}
           {canArchive ? (
@@ -368,6 +402,20 @@ export function AccountManagementActions({
           ) : null}
         </ResponsiveDialogContent>
       </ResponsiveDialog>
+      {openingBalanceMode ? (
+        <OpeningBalanceDialog
+          account={account}
+          key={`${openingBalanceMode}:${openingBalance?.updatedAt ?? "new"}`}
+          labels={labels.openingBalance}
+          locale={locale}
+          mode={openingBalanceMode}
+          now={now}
+          onClose={closeOpeningBalanceDialog}
+          openingBalance={openingBalance}
+          timeZone={timeZone}
+          workspaceId={workspaceId}
+        />
+      ) : null}
     </>
   );
 }

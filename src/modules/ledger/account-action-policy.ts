@@ -29,6 +29,9 @@ export type AccountActionPolicy = {
   readonly canChangeType: boolean;
   readonly canArchive: boolean;
   readonly canRestore: boolean;
+  /** Establishment/correction remains a separate financial action from metadata editing. */
+  readonly canSetOpeningBalance: boolean;
+  readonly canCorrectOpeningBalance: boolean;
   readonly canDelete: false;
   /** Safe targets have the same configured spendability semantics. */
   readonly allowedTypeChanges: readonly LedgerAccountType[];
@@ -39,12 +42,15 @@ export type AccountActionPolicyInput = {
   readonly account: Pick<LedgerAccountRecord, "type" | "archivedAt">;
   readonly workspaceRole: WorkspaceRole;
   readonly hasFinancialActivity: boolean;
+  /** The canonical opening-balance root exists, including an explicit zero balance. */
+  readonly hasOpeningBalance?: boolean;
 };
 
 export function getAccountActionPolicy({
   account,
   workspaceRole,
   hasFinancialActivity,
+  hasOpeningBalance = false,
 }: AccountActionPolicyInput): AccountActionPolicy {
   const canManageLedger = canPerformWorkspaceAction(workspaceRole, "manage_ledger");
   if (!canManageLedger) {
@@ -53,6 +59,8 @@ export function getAccountActionPolicy({
       canChangeType: false,
       canArchive: false,
       canRestore: false,
+      canSetOpeningBalance: false,
+      canCorrectOpeningBalance: false,
       canDelete: false,
       allowedTypeChanges: [],
       reasons: {
@@ -82,6 +90,8 @@ export function getAccountActionPolicy({
     canChangeType: allowedTypeChanges.some((type) => type !== account.type),
     canArchive: archiveReason === null,
     canRestore: restoreReason === null,
+    canSetOpeningBalance: account.archivedAt === null && !hasOpeningBalance,
+    canCorrectOpeningBalance: account.archivedAt === null && hasOpeningBalance,
     canDelete: false,
     allowedTypeChanges,
     reasons: {

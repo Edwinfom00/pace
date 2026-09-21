@@ -446,11 +446,15 @@ export class LedgerService {
   ): Promise<AccountActionPolicy> {
     const membership = await this.requireWorkspacePermission(actor.userId, workspaceId, "read");
     const account = await this.requireManagedAccount(workspaceId, accountId);
-    const hasFinancialActivity = await this.repository.hasFinancialActivity(workspaceId, account.id);
+    const [hasFinancialActivity, openingBalance] = await Promise.all([
+      this.repository.hasFinancialActivity(workspaceId, account.id),
+      this.repository.findOpeningBalance(workspaceId, account.id),
+    ]);
     return getAccountActionPolicy({
       account,
       workspaceRole: membership.role,
       hasFinancialActivity,
+      hasOpeningBalance: Boolean(openingBalance),
     });
   }
 

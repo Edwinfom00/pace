@@ -84,6 +84,8 @@ test("the canonical account policy exposes role, lifecycle, type, and delete rul
   assert.equal(ownerPolicy.canRename, true);
   assert.equal(ownerPolicy.canArchive, true);
   assert.equal(ownerPolicy.canRestore, false);
+  assert.equal(ownerPolicy.canSetOpeningBalance, true);
+  assert.equal(ownerPolicy.canCorrectOpeningBalance, false);
   assert.equal(ownerPolicy.canDelete, false);
   assert.deepEqual(ownerPolicy.reasons, { restore: "ACCOUNT_NOT_ARCHIVED", delete: "DELETE_NOT_SUPPORTED" });
   assert.equal(ownerPolicy.allowedTypeChanges.includes("CHECKING"), true);
@@ -95,7 +97,14 @@ test("the canonical account policy exposes role, lifecycle, type, and delete rul
 
   const readOnly = getAccountActionPolicy({ account: active, workspaceRole: "VIEWER", hasFinancialActivity: false });
   assert.equal(readOnly.canRename, false);
+  assert.equal(readOnly.canSetOpeningBalance, false);
   assert.equal(readOnly.reasons.rename, "READ_ONLY_ROLE");
+
+  const initialized = getAccountActionPolicy({ account: active, workspaceRole: "OWNER", hasFinancialActivity: true, hasOpeningBalance: true });
+  assert.equal(initialized.canSetOpeningBalance, false);
+  assert.equal(initialized.canCorrectOpeningBalance, true);
+  const archived = getAccountActionPolicy({ account: { ...active, archivedAt: new Date() }, workspaceRole: "OWNER", hasFinancialActivity: true, hasOpeningBalance: true });
+  assert.equal(archived.canCorrectOpeningBalance, false);
 });
 
 test("rename changes only descriptive metadata and writes one account audit", async () => {

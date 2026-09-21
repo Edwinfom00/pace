@@ -117,6 +117,9 @@ export function AccountDetailView({
             currentBalanceMinor={detail.currentBalanceMinor}
             labels={labels.management}
             locale={locale}
+            now={now}
+            openingBalance={detail.openingBalance}
+            timeZone={timeZone}
             typeValues={labels.typeValues}
             workspaceId={workspaceId}
             workspaceSlug={workspaceSlug}
@@ -344,6 +347,22 @@ export function AccountDetailView({
                 label={labels.createdAt}
                 value={formatDate(account.createdAt, locale, timeZone)}
               />
+              {detail.openingBalance ? (
+                <Definition
+                  label={labels.openingBalance.startingBalance}
+                  value={
+                    <span className="grid justify-items-end gap-0.5">
+                      <span className="font-medium tabular-nums text-[#34405d]">
+                        {formatOverviewMoney(detail.openingBalance.amountMinor, account.currency, locale)}
+                      </span>
+                      <span className="text-[11px] font-normal text-[#71809a]">
+                        {labels.openingBalance.balanceAsOf} {formatDate(detail.openingBalance.effectiveAt, locale, timeZone)}
+                        {detail.openingBalance.hasBeenCorrected ? ` · ${labels.openingBalance.corrected}` : ""}
+                      </span>
+                    </span>
+                  }
+                />
+              ) : null}
             </dl>
           </section>
 

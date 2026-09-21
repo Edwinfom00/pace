@@ -77,7 +77,7 @@ test("account-management response parsing and error mapping preserve safe field 
   assert.deepEqual(mapAccountManagementFailure("ACCOUNT_WORKSPACE_MISMATCH"), { formError: "failed" });
 });
 
-test("Account Detail management uses the shared responsive dialog layer and never exposes delete", async () => {
+test("Account Detail management uses the shared responsive dialog layer, canonical opening-balance action, and never exposes delete", async () => {
   const source = await readFile(
     resolve("src/modules/accounts/ui/components/account-management-actions.tsx"),
     "utf8",
@@ -86,5 +86,8 @@ test("Account Detail management uses the shared responsive dialog layer and neve
   assert.match(source, /ResponsiveDialog/);
   assert.doesNotMatch(source, /components\/ui\/dialog/);
   assert.doesNotMatch(source, /DELETE/);
-  assert.doesNotMatch(source, /openingBalance|availableBalance/);
+  assert.match(source, /OpeningBalanceDialog/);
+  assert.match(source, /canSetOpeningBalance/);
+  assert.match(source, /canCorrectOpeningBalance/);
+  assert.doesNotMatch(source, /availableBalance/);
 });

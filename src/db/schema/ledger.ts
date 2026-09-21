@@ -369,7 +369,9 @@ export const ledgerTransactionAudits = pgTable(
     actorUserId: text("actor_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    action: varchar("action", { length: 32 }).notNull(),
+    // Opening-balance correction audit actions are intentionally explicit and
+    // exceed the legacy 32-character limit.
+    action: varchar("action", { length: 64 }).notNull(),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
