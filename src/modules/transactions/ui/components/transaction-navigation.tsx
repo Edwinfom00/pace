@@ -1,8 +1,9 @@
 "use client";
 
 import { createContext, useCallback, useContext, useTransition } from "react";
-import { HiOutlineArrowPath } from "react-icons/hi2";
 import { useRouter } from "next/navigation";
+
+import { FilterLoadingSurface } from "@/components/pace/shared/filter-loading-surface";
 
 import { transactionListHref } from "../../domain/transaction-list-url";
 import type { TransactionFilterState } from "../../types/transaction-ui.types";
@@ -31,16 +32,18 @@ export function useTransactionNavigation(): TransactionNavigationContextValue {
   return value;
 }
 
-export function TransactionNavigationProgress({ label }: { readonly label: string }) {
+export function TransactionNavigationLoadingSurface({
+  children,
+  label,
+}: {
+  readonly children: React.ReactNode;
+  readonly label: string;
+}) {
   const { isPending } = useTransactionNavigation();
+
   return (
-    <div aria-live="polite" className="mb-3 flex h-5 items-center" role="status">
-      {isPending ? (
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#526785]">
-          <HiOutlineArrowPath aria-hidden="true" className="size-3.5 animate-spin text-[#2f6fed] motion-reduce:animate-none" />
-          {label}
-        </span>
-      ) : null}
-    </div>
+    <FilterLoadingSurface isLoading={isPending} label={label}>
+      {children}
+    </FilterLoadingSurface>
   );
 }

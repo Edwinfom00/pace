@@ -8,7 +8,7 @@ import type {
 import { TransactionEmptyState } from "../components/transaction-empty-state";
 import { TransactionMobileCard } from "../components/transaction-mobile-card";
 import {
-  TransactionNavigationProgress,
+  TransactionNavigationLoadingSurface,
   TransactionNavigationProvider,
 } from "../components/transaction-navigation";
 import { TransactionPagination } from "../components/transaction-pagination";
@@ -100,39 +100,40 @@ export function TransactionsTableView({
           </div>
         </header>
         <TransactionToolbar amountSortingAvailable={amountSortingAvailable} labels={labels} locale={locale} options={filterOptions} pathname={pathname} state={filterState} />
-        <section aria-label={labels.title} className="pt-5">
-          <TransactionNavigationProgress label={labels.loading} />
-          {loading ? (
-            <TransactionTableSkeleton />
-          ) : transactions.length === 0 ? (
-            <TransactionEmptyState clearFiltersHref={filtered ? transactionListHref(pathname, { kind: "ALL", page: 1, search: "", sort: "NEWEST" }) : undefined} filtered={filtered} labels={labels} />
-          ) : (
-            <>
-              <TransactionTable
-                getDetailHref={(transaction) => `${pathname}/${transaction.id}`}
-                labels={labels}
-                locale={locale}
-                now={now}
-                timeZone={timeZone}
-                transactions={transactions}
-              />
-              <div className="space-y-2.5 md:hidden">
-                {transactions.map((transaction) => (
-                  <TransactionMobileCard
-                    key={transaction.id}
-                    labels={labels}
-                    locale={locale}
-                    now={now}
-                    timeZone={timeZone}
-                    transaction={transaction}
-                    detailHref={`${pathname}/${transaction.id}`}
-                  />
-                ))}
-              </div>
-              <TransactionPagination labels={labels} pagination={pagination} pathname={pathname} state={filterState} />
-            </>
-          )}
-        </section>
+        <TransactionNavigationLoadingSurface label={labels.loading}>
+          <section aria-label={labels.title} className="pt-5">
+            {loading ? (
+              <TransactionTableSkeleton />
+            ) : transactions.length === 0 ? (
+              <TransactionEmptyState clearFiltersHref={filtered ? transactionListHref(pathname, { kind: "ALL", page: 1, search: "", sort: "NEWEST" }) : undefined} filtered={filtered} labels={labels} />
+            ) : (
+              <>
+                <TransactionTable
+                  getDetailHref={(transaction) => `${pathname}/${transaction.id}`}
+                  labels={labels}
+                  locale={locale}
+                  now={now}
+                  timeZone={timeZone}
+                  transactions={transactions}
+                />
+                <div className="space-y-2.5 md:hidden">
+                  {transactions.map((transaction) => (
+                    <TransactionMobileCard
+                      key={transaction.id}
+                      labels={labels}
+                      locale={locale}
+                      now={now}
+                      timeZone={timeZone}
+                      transaction={transaction}
+                      detailHref={`${pathname}/${transaction.id}`}
+                    />
+                  ))}
+                </div>
+                <TransactionPagination labels={labels} pagination={pagination} pathname={pathname} state={filterState} />
+              </>
+            )}
+          </section>
+        </TransactionNavigationLoadingSurface>
       </main>
     </TransactionNavigationProvider>
   );
