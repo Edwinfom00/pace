@@ -55,7 +55,7 @@ export function PaceCopyField({
       </label>
       <div className="relative">
         <input
-          className="h-[52px] w-full rounded-[10px] border border-[#d8e1ef] bg-white py-3 pl-4 pr-12 text-[15px] text-[#31476e] outline-none selection:bg-[#d8e6ff] focus:border-[#3268ed] focus:ring-4 focus:ring-[#3268ed]/10"
+          className="h-13 w-full rounded-[10px] border border-[#d8e1ef] bg-white py-3 pl-4 pr-12 text-[15px] text-[#31476e] outline-none selection:bg-[#d8e6ff] focus:border-[#3268ed] focus:ring-4 focus:ring-[#3268ed]/10"
           id={fieldId}
           readOnly
           value={value}

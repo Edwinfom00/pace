@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { isCurrencyCode, type CurrencyCode } from "@/money/currency";
-import { parseDecimalMoney } from "@/money/money";
 
 import { LEDGER_ACCOUNT_TYPES, type LedgerAccountType } from "./domain";
 
@@ -22,16 +21,18 @@ export const createAccountSchema = z
     name: z.string().trim().min(1).max(120),
     type: z.enum(LEDGER_ACCOUNT_TYPES),
     currency: currencySchema,
+    // Kept temporarily so the pre-existing create-account surface fails
+    // explicitly instead of silently losing money while no Opening Balance UI
+    // has been approved. The canonical command requires effectiveAt.
     openingBalance: z.string().trim().optional(),
   })
   .strict()
   .superRefine((value, context) => {
-    if (!value.openingBalance || !isCurrencyCode(value.currency)) return;
-    if (!parseDecimalMoney(value.openingBalance, value.currency)) {
+    if (value.openingBalance && value.openingBalance !== "") {
       context.addIssue({
         code: "custom",
         path: ["openingBalance"],
-        message: "Opening balance must be an exact decimal amount for the selected currency.",
+        message: "Opening balances require an effective date and must be set through the canonical command.",
       });
     }
   });
@@ -52,6 +53,7 @@ export type CreateAccountErrorCode =
   | "INVALID_ACCOUNT_TYPE"
   | "INVALID_CURRENCY"
   | "INVALID_OPENING_BALANCE"
+  | "OPENING_BALANCE_EFFECTIVE_AT_REQUIRED"
   | "ACCOUNT_CREATE_FAILED";
 
 export type CreateAccountResult =

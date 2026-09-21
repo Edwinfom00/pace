@@ -6,6 +6,7 @@ import type { AuthenticatedActor } from "@/authorization/session";
 import { deriveInsightCandidates, type InsightSeverity } from "@/money/insights";
 import { calendarMonthPeriod } from "@/money/period";
 import type { FinancialInboxRepository } from "@/modules/financial-inbox/repositories/financial-inbox-repository";
+import { isUserFacingLedgerTransaction } from "@/modules/ledger/domain";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import type { PlansRepository } from "@/modules/plans/repositories/plans-repository";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
@@ -157,7 +158,7 @@ export class InsightService {
       currency: settings.currency,
       timeZone: settings.timezone,
       now,
-      transactions,
+      transactions: transactions.filter(isUserFacingLedgerTransaction),
       budgets,
       goals,
       recurringPayments,

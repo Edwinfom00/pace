@@ -10,6 +10,7 @@ import {
   isNull,
   lt,
   lte,
+  ne,
   notExists,
   or,
 } from "drizzle-orm";
@@ -22,6 +23,7 @@ import {
   ledgerAccountAudits,
   ledgerCategories,
   ledgerMerchants,
+  ledgerOpeningBalances,
   ledgerTransactionAudits,
   ledgerTransactionCorrections,
   ledgerTransactions,
@@ -38,6 +40,8 @@ import type {
   LedgerAccountRecord,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
+  LedgerOpeningBalanceReadRecord,
+  LedgerOpeningBalanceRecord,
   LedgerTransactionAuditRecord,
   LedgerTransactionCorrectionRecord,
   LedgerTransactionListFilters,
@@ -79,6 +83,12 @@ export type CreateLedgerTransactionCorrectionRecord = Omit<
   "createdAt"
 >;
 
+export type CreateLedgerOpeningBalanceRecord = {
+  readonly openingBalance: Omit<LedgerOpeningBalanceRecord, "createdAt" | "updatedAt">;
+  readonly transaction: CreateLedgerTransactionRecord;
+  readonly audit: CreateLedgerTransactionAuditRecord;
+};
+
 export interface CreateLedgerFinancialCorrectionRecord {
   workspaceId: string;
   originalTransactionId: string;
@@ -88,10 +98,17 @@ export interface CreateLedgerFinancialCorrectionRecord {
   replacement: CreateLedgerTransactionRecord;
   /** Archived accounts may be retained only when they belong to the original history. */
   historicalAccountIds: readonly string[];
+  /** Opening-balance corrections reject even historical archived accounts. */
+  allowHistoricalArchivedAccounts: boolean;
   /** Applied after the reversal, inside this same atomic financial transition. */
   spendabilityGuard: DebitSpendabilityGuard | null;
   /** Created inside the same all-or-nothing correction write when needed. */
   merchantToCreate: CreateLedgerMerchantRecord | null;
+  /** Present only when the correction advances an opening-balance chain. */
+  openingBalance: {
+    readonly accountId: string;
+    readonly expectedCurrentTransactionId: string;
+  } | null;
   audits: readonly [
     CreateLedgerTransactionAuditRecord,
     CreateLedgerTransactionAuditRecord,
@@ -207,6 +224,13 @@ export interface LedgerRepository {
    */
   getAccountBalance(workspaceId: string, accountId: string): Promise<LedgerAccountBalance | null>;
   getWorkspaceAccountBalances(workspaceId: string): Promise<readonly LedgerAccountBalance[]>;
+  /** Returns the current effective version of an account's opening balance. */
+  findOpeningBalance(
+    workspaceId: string,
+    accountId: string,
+  ): Promise<LedgerOpeningBalanceReadRecord | null>;
+  /** Atomically creates the opening transaction, root linkage, and audit. */
+  createOpeningBalance(input: CreateLedgerOpeningBalanceRecord): Promise<LedgerTransactionRecord | null>;
   /** Internal correction validation only; never exposed to an untrusted caller. */
   findAccountById(accountId: string): Promise<LedgerAccountRecord | null>;
   findAccountAuditByIdempotencyKey(
@@ -374,6 +398,107 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return this.queryAccountBalances(workspaceId);
   }
 
+  async findOpeningBalance(
+    workspaceId: string,
+    accountId: string,
+  ): Promise<LedgerOpeningBalanceReadRecord | null> {
+    const [record] = await db
+      .select({ openingBalance: ledgerOpeningBalances, transaction: ledgerTransactions })
+      .from(ledgerOpeningBalances)
+      .innerJoin(
+        ledgerTransactions,
+        eq(ledgerTransactions.id, ledgerOpeningBalances.currentTransactionId),
+      )
+      .where(
+        and(
+          eq(ledgerOpeningBalances.workspaceId, workspaceId),
+          eq(ledgerOpeningBalances.accountId, accountId),
+          eq(ledgerTransactions.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1);
+    return record
+      ? { ...record.openingBalance, transaction: record.transaction }
+      : null;
+  }
+
+  async createOpeningBalance(
+    input: CreateLedgerOpeningBalanceRecord,
+  ): Promise<LedgerTransactionRecord | null> {
+    const { openingBalance, transaction: entry, audit } = input;
+    const [rows] = await neonSql.transaction(
+      (databaseTransaction) => [databaseTransaction`
+        WITH account AS (
+          SELECT id
+          FROM ledger_account
+          WHERE workspace_id = ${entry.workspaceId}
+            AND id = ${entry.accountId}
+            AND archived_at IS NULL
+          FOR UPDATE
+        ),
+        candidate AS (
+          SELECT account.id
+          FROM account
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM ledger_opening_balance
+            WHERE workspace_id = ${entry.workspaceId}
+              AND account_id = ${entry.accountId}
+          )
+        ),
+        created AS (
+          INSERT INTO ledger_transaction (
+            id, workspace_id, kind, status, amount_minor, currency, occurred_at,
+            account_id, transfer_account_id, category_id, merchant_id,
+            created_by_user_id, paid_by_user_id, transfer_group_id,
+            refunded_transaction_id, reversal_of_transaction_id, source,
+            deduplication_fingerprint, note
+          )
+          SELECT ${entry.id}, ${entry.workspaceId}, ${entry.kind}, ${entry.status},
+            ${entry.amountMinor}, ${entry.currency}, ${entry.occurredAt}, ${entry.accountId},
+            ${entry.transferAccountId}, ${entry.categoryId}, ${entry.merchantId},
+            ${entry.createdByUserId}, ${entry.paidByUserId}, ${entry.transferGroupId},
+            ${entry.refundedTransactionId}, ${entry.reversalOfTransactionId},
+            ${JSON.stringify(entry.source)}::jsonb, ${entry.deduplicationFingerprint}, ${entry.note}
+          FROM candidate
+          RETURNING id, workspace_id AS "workspaceId", kind, status,
+            amount_minor AS "amountMinor", currency, occurred_at AS "occurredAt",
+            account_id AS "accountId", transfer_account_id AS "transferAccountId",
+            category_id AS "categoryId", merchant_id AS "merchantId",
+            created_by_user_id AS "createdByUserId", paid_by_user_id AS "paidByUserId",
+            transfer_group_id AS "transferGroupId", refunded_transaction_id AS "refundedTransactionId",
+            reversal_of_transaction_id AS "reversalOfTransactionId", source,
+            deduplication_fingerprint AS "deduplicationFingerprint", note,
+            created_at AS "createdAt", updated_at AS "updatedAt"
+        ),
+        linked AS (
+          INSERT INTO ledger_opening_balance (
+            id, workspace_id, account_id, original_transaction_id, current_transaction_id
+          )
+          SELECT ${openingBalance.id}, ${openingBalance.workspaceId}, ${openingBalance.accountId},
+            ${openingBalance.originalTransactionId}, created.id
+          FROM created
+          RETURNING id
+        ),
+        audited AS (
+          INSERT INTO ledger_transaction_audit (
+            id, workspace_id, transaction_id, actor_user_id, action, metadata
+          )
+          SELECT ${audit.id}, ${audit.workspaceId}, created.id, ${audit.actorUserId},
+            ${audit.action}, ${JSON.stringify(audit.metadata)}::jsonb
+          FROM created
+          WHERE EXISTS (SELECT 1 FROM linked)
+        )
+        SELECT created.*
+        FROM created
+        WHERE EXISTS (SELECT 1 FROM linked);
+      `],
+      { isolationLevel: "Serializable" },
+    );
+    const record = (rows as unknown as readonly RawLedgerTransaction[])[0];
+    return record ? mapLedgerTransaction(record) : null;
+  }
+
   
   async getAccountDetailMovementSummary(
     input: AccountDetailMovementSummaryInput,
@@ -398,6 +523,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         WHERE entry.workspace_id = ${input.workspaceId}
           AND entry.status = 'POSTED'
           AND (entry.account_id = ${input.accountId} OR entry.transfer_account_id = ${input.accountId})
+          AND entry.kind <> 'OPENING_BALANCE'
           AND entry.reversal_of_transaction_id IS NULL
           AND NOT EXISTS (
             SELECT 1
@@ -463,6 +589,8 @@ export class DatabaseLedgerRepository implements LedgerRepository {
             WHEN entry.kind = 'EXPENSE' THEN entry.amount_minor
             WHEN entry.kind IN ('INCOME', 'REFUND') AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
             WHEN entry.kind IN ('INCOME', 'REFUND') THEN -entry.amount_minor
+            WHEN entry.kind = 'OPENING_BALANCE' AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
+            WHEN entry.kind = 'OPENING_BALANCE' THEN -entry.amount_minor
             ELSE 0::bigint
           END AS movement_minor
         FROM ledger_transaction AS entry
@@ -579,6 +707,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
       .where(
         and(
           eq(ledgerTransactions.workspaceId, workspaceId),
+          ne(ledgerTransactions.kind, "OPENING_BALANCE"),
           or(eq(ledgerTransactions.accountId, accountId), eq(ledgerTransactions.transferAccountId, accountId)),
           isNull(ledgerTransactions.reversalOfTransactionId),
           notExists(
@@ -681,7 +810,6 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         WHERE account.id = candidate.id
         RETURNING account.id, account.workspace_id AS "workspaceId", account.name,
           account.type::text AS type, account.currency,
-          account.opening_balance_minor AS "openingBalanceMinor",
           account.created_by_user_id AS "createdByUserId",
           account.archived_at AS "archivedAt", account.created_at AS "createdAt",
           account.updated_at AS "updatedAt"
@@ -733,7 +861,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     const accountId = requestedAccountId ?? null;
     const records = await neonSql`
       WITH scoped_accounts AS (
-        SELECT id, type, currency, opening_balance_minor
+        SELECT id, type, currency
         FROM ledger_account
         WHERE workspace_id = ${workspaceId}
           AND (${accountId}::text IS NULL OR id = ${accountId})
@@ -742,6 +870,9 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         SELECT entry.account_id AS account_id,
           CASE
             WHEN entry.kind = 'TRANSFER' THEN -entry.amount_minor
+            WHEN entry.kind = 'OPENING_BALANCE'
+              AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
+            WHEN entry.kind = 'OPENING_BALANCE' THEN -entry.amount_minor
             WHEN entry.kind = 'EXPENSE'
               AND entry.reversal_of_transaction_id IS NULL THEN -entry.amount_minor
             WHEN entry.kind = 'EXPENSE' THEN entry.amount_minor
@@ -773,7 +904,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
       SELECT account.id AS "accountId",
         account.type AS "accountType",
         account.currency AS currency,
-        account.opening_balance_minor + COALESCE(total.movement_minor, 0) AS "currentBalanceMinor"
+        COALESCE(total.movement_minor, 0) AS "currentBalanceMinor"
       FROM scoped_accounts AS account
       LEFT JOIN account_movement_totals AS total ON total.account_id = account.id
       ORDER BY account.id ASC;
@@ -880,7 +1011,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
           WHERE id IS NOT NULL
         ),
         locked_accounts AS (
-          SELECT account.id, account.type, account.currency, account.opening_balance_minor
+          SELECT account.id, account.type, account.currency
           FROM ledger_account AS account
           INNER JOIN affected_account_ids AS affected ON affected.id = account.id
           WHERE account.workspace_id = ${record.workspaceId}
@@ -890,7 +1021,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         ),
         current_guard_balance AS (
           SELECT account.id AS "accountId", account.type::text AS "accountType", account.currency,
-            account.opening_balance_minor + COALESCE((
+            COALESCE((
               SELECT SUM(
                 CASE
                   WHEN entry.kind = 'TRANSFER' AND entry.account_id = account.id THEN -entry.amount_minor
@@ -899,6 +1030,8 @@ export class DatabaseLedgerRepository implements LedgerRepository {
                   WHEN entry.kind = 'EXPENSE' THEN entry.amount_minor
                   WHEN entry.kind IN ('INCOME', 'REFUND') AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
                   WHEN entry.kind IN ('INCOME', 'REFUND') THEN -entry.amount_minor
+                  WHEN entry.kind = 'OPENING_BALANCE' AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
+                  WHEN entry.kind = 'OPENING_BALANCE' THEN -entry.amount_minor
                   ELSE 0::bigint
                 END
               )
@@ -1189,6 +1322,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
   ): Promise<LedgerFinancialCorrectionWriteResult> {
     const merchant = input.merchantToCreate;
     const guard = input.spendabilityGuard;
+    const openingBalance = input.openingBalance;
     const [originalAudit, reversalAudit, replacementAudit] = input.audits;
     const [rows] = await neonSql.transaction(
       (databaseTransaction) => [databaseTransaction`
@@ -1199,7 +1333,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         WHERE id IS NOT NULL
       ),
       locked_accounts AS (
-        SELECT account.id, account.type, account.currency, account.opening_balance_minor, account.archived_at
+        SELECT account.id, account.type, account.currency, account.archived_at
         FROM ledger_account AS account
         INNER JOIN affected_account_ids AS affected ON affected.id = account.id
         WHERE account.workspace_id = ${input.workspaceId}
@@ -1211,13 +1345,16 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         FROM locked_accounts AS account
         WHERE (
             account.archived_at IS NULL
-            OR account.id IN (${input.historicalAccountIds[0] ?? null}, ${input.historicalAccountIds[1] ?? null})
+            OR (
+              ${input.allowHistoricalArchivedAccounts}
+              AND account.id IN (${input.historicalAccountIds[0] ?? null}, ${input.historicalAccountIds[1] ?? null})
+            )
           )
           AND account.id IN (${input.replacement.accountId}, ${input.replacement.transferAccountId ?? null})
       ),
       current_guard_balance AS (
         SELECT account.id AS "accountId", account.type::text AS "accountType", account.currency,
-          account.opening_balance_minor + COALESCE((
+          COALESCE((
             SELECT SUM(
               CASE
                 WHEN entry.kind = 'TRANSFER' AND entry.account_id = account.id THEN -entry.amount_minor
@@ -1226,6 +1363,8 @@ export class DatabaseLedgerRepository implements LedgerRepository {
                 WHEN entry.kind = 'EXPENSE' THEN entry.amount_minor
                 WHEN entry.kind IN ('INCOME', 'REFUND') AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
                 WHEN entry.kind IN ('INCOME', 'REFUND') THEN -entry.amount_minor
+                WHEN entry.kind = 'OPENING_BALANCE' AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
+                WHEN entry.kind = 'OPENING_BALANCE' THEN -entry.amount_minor
                 ELSE 0::bigint
               END
             )
@@ -1242,6 +1381,8 @@ export class DatabaseLedgerRepository implements LedgerRepository {
             WHEN ${input.reversal.kind} = 'EXPENSE' AND ${input.reversal.accountId} = account.id
               THEN ${input.reversal.amountMinor}
             WHEN ${input.reversal.kind} = 'INCOME' AND ${input.reversal.accountId} = account.id
+              THEN -${input.reversal.amountMinor}
+            WHEN ${input.reversal.kind} = 'OPENING_BALANCE' AND ${input.reversal.accountId} = account.id
               THEN -${input.reversal.amountMinor}
             ELSE 0::bigint
           END AS "postReversalBalanceMinor"
@@ -1267,6 +1408,14 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         FROM ledger_transaction_correction AS correction
         INNER JOIN lineage ON lineage.id = correction.replacement_transaction_id
         WHERE correction.workspace_id = ${input.workspaceId}
+      ),
+      opening_balance_candidate AS (
+        SELECT id
+        FROM ledger_opening_balance
+        WHERE workspace_id = ${input.workspaceId}
+          AND account_id = ${openingBalance?.accountId ?? null}
+          AND current_transaction_id = ${openingBalance?.expectedCurrentTransactionId ?? null}
+        FOR UPDATE
       ),
       candidate AS (
         SELECT id
@@ -1301,6 +1450,10 @@ export class DatabaseLedgerRepository implements LedgerRepository {
             ), 0) <= ${input.replacement.amountMinor}
           )
           AND EXISTS (SELECT 1 FROM spendability_eligible)
+          AND (
+            ${openingBalance === null}
+            OR EXISTS (SELECT 1 FROM opening_balance_candidate)
+          )
           AND (SELECT COUNT(*) FROM locked_accounts) = (SELECT COUNT(*) FROM affected_account_ids)
           AND (SELECT COUNT(*) FROM active_replacement_accounts) = (
             SELECT COUNT(DISTINCT id)
@@ -1356,6 +1509,17 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         WHERE EXISTS (SELECT 1 FROM reversal)
         RETURNING id
       ),
+      advanced_opening_balance AS (
+        UPDATE ledger_opening_balance AS opening_balance
+        SET current_transaction_id = replacement.id,
+          updated_at = greatest(clock_timestamp(), opening_balance.updated_at + interval '1 millisecond')
+        FROM replacement
+        WHERE ${openingBalance !== null}
+          AND opening_balance.workspace_id = ${input.workspaceId}
+          AND opening_balance.account_id = ${openingBalance?.accountId ?? null}
+          AND opening_balance.current_transaction_id = ${openingBalance?.expectedCurrentTransactionId ?? null}
+        RETURNING opening_balance.id
+      ),
       correction AS (
         INSERT INTO ledger_transaction_correction (
           id, workspace_id, original_transaction_id, reversal_transaction_id,
@@ -1369,6 +1533,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         FROM candidate
         CROSS JOIN reversal
         CROSS JOIN replacement
+        WHERE ${openingBalance === null} OR EXISTS (SELECT 1 FROM advanced_opening_balance)
         RETURNING id
       ),
       original_audit AS (
@@ -1636,6 +1801,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     filters: LedgerTransactionFilters = {},
   ): Promise<LedgerTransactionRecord[]> {
     const predicates = [eq(ledgerTransactions.workspaceId, workspaceId)];
+    predicates.push(ne(ledgerTransactions.kind, "OPENING_BALANCE"));
 
     if (filters.statuses?.length) {
       predicates.push(inArray(ledgerTransactions.status, [...filters.statuses]));
@@ -1789,6 +1955,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     const reversal = alias(ledgerTransactions, "ledger_transaction_reversal");
     const predicates = [
       eq(ledgerTransactions.workspaceId, workspaceId),
+      ne(ledgerTransactions.kind, "OPENING_BALANCE"),
       isNull(ledgerTransactions.reversalOfTransactionId),
       notExists(
         db
@@ -1873,9 +2040,8 @@ type RawLedgerAccountBalance = {
 
 type RawLedgerAccount = Omit<
   LedgerAccountRecord,
-  "openingBalanceMinor" | "archivedAt" | "createdAt" | "updatedAt"
+  "archivedAt" | "createdAt" | "updatedAt"
 > & {
-  openingBalanceMinor: bigint | string | number;
   archivedAt: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -1926,7 +2092,6 @@ function mapLedgerAccountBalance(record: RawLedgerAccountBalance): LedgerAccount
 function mapLedgerAccount(record: RawLedgerAccount): LedgerAccountRecord {
   return {
     ...record,
-    openingBalanceMinor: toBigInt(record.openingBalanceMinor),
     archivedAt: record.archivedAt === null ? null : new Date(record.archivedAt),
     createdAt: new Date(record.createdAt),
     updatedAt: new Date(record.updatedAt),

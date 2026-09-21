@@ -157,6 +157,7 @@ export function getTransactionDetailLabels(labels: DashboardLabels): Transaction
       INCOME: labels["transactions.detail.kind.income"],
       TRANSFER: labels["transactions.detail.kind.transfer"],
       REFUND: labels["transactions.detail.kind.refund"],
+      OPENING_BALANCE: "Opening balance",
     },
     status: {
       PENDING: labels["transactions.status.pending"],

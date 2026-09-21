@@ -28,6 +28,7 @@ export const ledgerTransactionKind = pgEnum("ledger_transaction_kind", [
   "INCOME",
   "TRANSFER",
   "REFUND",
+  "OPENING_BALANCE",
 ]);
 export const ledgerTransactionStatus = pgEnum("ledger_transaction_status", ["PENDING", "POSTED"]);
 export const ledgerAccountType = pgEnum("ledger_account_type", LEDGER_ACCOUNT_TYPES);
@@ -43,9 +44,6 @@ export const ledgerAccounts = pgTable(
     name: varchar("name", { length: 120 }).notNull(),
     type: ledgerAccountType("type").notNull(),
     currency: varchar("currency", { length: 3 }).notNull(),
-    openingBalanceMinor: bigint("opening_balance_minor", { mode: "bigint" })
-      .notNull()
-      .default(sql`0`),
     createdByUserId: text("created_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -235,7 +233,12 @@ export const ledgerTransactions = pgTable(
     uniqueIndex("ledger_transaction_workspace_fingerprint_unique")
       .on(table.workspaceId, table.deduplicationFingerprint)
       .where(sql`${table.deduplicationFingerprint} IS NOT NULL`),
-    check("ledger_transaction_amount_positive_check", sql`${table.amountMinor} > 0`),
+    // A zero or signed amount is only valid for the internal opening-balance
+    // event. All user-originating financial transaction kinds remain positive.
+    check(
+      "ledger_transaction_amount_positive_check",
+      sql`${table.amountMinor} > 0 OR ${table.kind} = 'OPENING_BALANCE'`,
+    ),
     check("ledger_transaction_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
     check(
       "ledger_transaction_shape_check",
@@ -267,8 +270,48 @@ export const ledgerTransactions = pgTable(
         AND ${table.categoryId} IS NOT NULL
         AND ${table.refundedTransactionId} IS NOT NULL
         AND ${table.transferGroupId} IS NULL
+      ) OR (
+        ${table.kind} = 'OPENING_BALANCE'
+        AND ${table.accountId} IS NOT NULL
+        AND ${table.transferAccountId} IS NULL
+        AND ${table.categoryId} IS NULL
+        AND ${table.merchantId} IS NULL
+        AND ${table.refundedTransactionId} IS NULL
+        AND ${table.transferGroupId} IS NULL
       )`,
     ),
+  ],
+);
+
+
+export const ledgerOpeningBalances = pgTable(
+  "ledger_opening_balance",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => ledgerAccounts.id, { onDelete: "restrict" }),
+    originalTransactionId: text("original_transaction_id")
+      .notNull()
+      .references(() => ledgerTransactions.id, { onDelete: "restrict" }),
+    currentTransactionId: text("current_transaction_id")
+      .notNull()
+      .references(() => ledgerTransactions.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("ledger_opening_balance_account_unique").on(table.accountId),
+    uniqueIndex("ledger_opening_balance_original_transaction_unique").on(table.originalTransactionId),
+    uniqueIndex("ledger_opening_balance_current_transaction_unique").on(table.currentTransactionId),
+    index("ledger_opening_balance_workspace_account_idx").on(table.workspaceId, table.accountId),
   ],
 );
 

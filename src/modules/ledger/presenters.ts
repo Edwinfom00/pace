@@ -7,7 +7,7 @@ import type {
 
 /** JSON cannot encode bigint; APIs expose exact minor units as decimal strings. */
 export function presentLedgerAccount(account: LedgerAccountRecord) {
-  return { ...account, openingBalanceMinor: account.openingBalanceMinor.toString() };
+  return account;
 }
 
 export function presentLedgerCategory(category: LedgerCategoryRecord) {

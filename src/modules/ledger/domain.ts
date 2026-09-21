@@ -3,7 +3,7 @@ import type { CurrencyCode } from "@/money/currency";
 export const LEDGER_CATEGORY_KINDS = ["EXPENSE", "INCOME"] as const;
 export type LedgerCategoryKind = (typeof LEDGER_CATEGORY_KINDS)[number];
 
-export const LEDGER_TRANSACTION_KINDS = ["EXPENSE", "INCOME", "TRANSFER", "REFUND"] as const;
+export const LEDGER_TRANSACTION_KINDS = ["EXPENSE", "INCOME", "TRANSFER", "REFUND", "OPENING_BALANCE"] as const;
 export type LedgerTransactionKind = (typeof LEDGER_TRANSACTION_KINDS)[number];
 
 export const LEDGER_TRANSACTION_STATUSES = ["PENDING", "POSTED"] as const;
@@ -21,11 +21,26 @@ export interface LedgerAccountRecord {
   name: string;
   type: LedgerAccountType;
   currency: string;
-  openingBalanceMinor: bigint;
   createdByUserId: string;
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+
+export interface LedgerOpeningBalanceRecord {
+  id: string;
+  workspaceId: string;
+  accountId: string;
+  originalTransactionId: string;
+  currentTransactionId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Internal read projection; callers must not expose transaction source data. */
+export interface LedgerOpeningBalanceReadRecord extends LedgerOpeningBalanceRecord {
+  transaction: LedgerTransactionRecord;
 }
 
 export const LEDGER_ACCOUNT_AUDIT_ACTIONS = ["RENAMED", "TYPE_CHANGED", "ARCHIVED", "RESTORED"] as const;
@@ -99,6 +114,18 @@ export interface LedgerTransactionRecord {
   updatedAt: Date;
 }
 
+/** Transaction kinds that may cross ordinary user-transaction/reporting boundaries. */
+export type LedgerUserFacingTransactionKind = Exclude<LedgerTransactionKind, "OPENING_BALANCE">;
+export type LedgerUserFacingTransactionRecord = Omit<LedgerTransactionRecord, "kind"> & {
+  kind: LedgerUserFacingTransactionKind;
+};
+
+export function isUserFacingLedgerTransaction(
+  transaction: LedgerTransactionRecord,
+): transaction is LedgerUserFacingTransactionRecord {
+  return transaction.kind !== "OPENING_BALANCE";
+}
+
 export interface LedgerTransactionCorrectionRecord {
   id: string;
   workspaceId: string;
@@ -121,6 +148,10 @@ export const LEDGER_TRANSACTION_AUDIT_ACTIONS = [
   "MANUAL_REVERSAL_ENTRY",
   "REFUND_ISSUED",
   "REFUND_CREATED",
+  "OPENING_BALANCE_ESTABLISHED",
+  "OPENING_BALANCE_CORRECTED",
+  "OPENING_BALANCE_CORRECTION_REVERSAL",
+  "OPENING_BALANCE_CORRECTION_REPLACEMENT",
 ] as const;
 export type LedgerTransactionAuditAction = (typeof LEDGER_TRANSACTION_AUDIT_ACTIONS)[number];
 

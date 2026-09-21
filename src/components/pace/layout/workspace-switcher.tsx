@@ -4,7 +4,8 @@ import { useState, useTransition, type MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  HiOutlineCheck,
+  HiOutlineArrowRight,
+  HiOutlineChevronUp,
   HiOutlineChevronUpDown,
   HiOutlinePlus,
 } from "react-icons/hi2";
@@ -23,6 +24,12 @@ import { CreateWorkspaceDialog } from "./create-workspace-dialog";
 import type { PaceSidebarLabels, SidebarWorkspace } from "./sidebar-types";
 import { WorkspaceAvatar } from "./workspace-avatar";
 
+type WorkspaceTab = "personal" | "shared";
+
+function workspaceTabFor(workspace: SidebarWorkspace): WorkspaceTab {
+  return workspace.type === "PERSONAL" ? "personal" : "shared";
+}
+
 export function WorkspaceSwitcher({
   workspaces,
   activeWorkspaceSlug,
@@ -40,8 +47,15 @@ export function WorkspaceSwitcher({
   const [pendingWorkspace, setPendingWorkspace] = useState<SidebarWorkspace | null>(null);
   const [, startNavigation] = useTransition();
   const activeWorkspace = workspaces.find((workspace) => workspace.slug === activeWorkspaceSlug) ?? workspaces[0];
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => (
+    activeWorkspace && workspaceTabFor(activeWorkspace)
+  ) || "personal");
 
   if (!activeWorkspace) return null;
+
+  const visibleWorkspaces = workspaces.filter(
+    (workspace) => workspace.slug !== activeWorkspace.slug && workspaceTabFor(workspace) === activeTab,
+  );
 
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
@@ -90,36 +104,90 @@ export function WorkspaceSwitcher({
           </SidebarMenuButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          className="min-w-64 rounded-[10px] border-[#e4e7ec] p-1.5 shadow-[0_8px_8px_rgb(16_24_40/0.06)]"
+          align="start"
+          className="w-[calc(100vw-2rem)] min-w-0 max-w-76 rounded-[16px] border-[#e4e6eb] bg-[#f7f7f8] p-2 shadow-[0_8px_8px_rgb(31_38_55/0.1)]"
           sideOffset={7}
         >
-          {workspaces.map((workspace) => {
-            const isActive = workspace.slug === activeWorkspaceSlug;
-            return (
-              <DropdownMenuItem asChild className="min-h-10 cursor-pointer gap-2.5 rounded-[7px] px-2 text-[#344054] focus:bg-[#f4f6fb]" key={workspace.id} onSelect={closeMobileSidebar}>
-                <Link
-                  aria-current={isActive ? "page" : undefined}
-                  href={`/w/${workspace.slug}/overview`}
-                  onClick={(event) => switchWorkspace(event, workspace)}
+          <div
+            aria-current="page"
+            className="flex min-h-15 items-center gap-3 rounded-[11px] bg-white px-3 py-2 text-[#1f2937]"
+          >
+            <WorkspaceAvatar className="size-9 rounded-full" name={activeWorkspace.name} />
+            <span className="grid min-w-0 flex-1 gap-0.5">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-sm font-medium tracking-[-0.02em] text-[#171b24]">{activeWorkspace.name}</span>
+                <span className="shrink-0 rounded-full bg-[#ecf7eb] px-1.5 py-0.5 text-[10px] font-medium leading-none text-[#4d8052]">
+                  {labels[workspaceTypeMessageKeys[activeWorkspace.type]]}
+                </span>
+              </span>
+              <span className="truncate text-xs leading-4 text-[#9aa0ac]">
+                {labels[workspaceTypeMessageKeys[activeWorkspace.type]]}
+              </span>
+            </span>
+            <span className="flex size-6 shrink-0 items-center justify-center text-[#1f2937]">
+              <HiOutlineChevronUp aria-hidden="true" className="size-4" />
+              <span className="sr-only">{labels["workspace.switch"]}</span>
+            </span>
+          </div>
+
+          <div className="mt-2 grid grid-cols-2 rounded-[9px] bg-[#f1f1f3] p-1" role="tablist">
+            {(["personal", "shared"] as const).map((tab) => {
+              const isSelected = activeTab === tab;
+              return (
+                <button
+                  aria-selected={isSelected}
+                  className={`h-8 rounded-[7px] px-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5282ee] ${isSelected ? "bg-white text-[#1b1f29] shadow-[0_2px_3px_rgb(31_38_55/0.1)]" : "text-[#6d7280] hover:text-[#313744]"}`}
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  role="tab"
+                  type="button"
                 >
-                  <WorkspaceAvatar className="size-7 rounded-[7px]" name={workspace.name} />
-                  <span className="min-w-0 flex-1 truncate font-medium">{workspace.name}</span>
-                  {isActive ? <HiOutlineCheck aria-hidden="true" className="size-4 text-[#2457c5]" /> : null}
-                </Link>
-              </DropdownMenuItem>
-            );
-          })}
-          <DropdownMenuSeparator className="my-1.5 bg-[#eaecf0]" />
+                  {labels[`workspace.switch.${tab}`]}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-2.5">
+            {visibleWorkspaces.map((workspace) => (
+                <DropdownMenuItem
+                  asChild
+                  className="group min-h-13.5 cursor-pointer gap-2.5 rounded-[8px] px-2 text-[#252a35] focus:bg-white"
+                  key={workspace.id}
+                  onSelect={closeMobileSidebar}
+                >
+                  <Link
+                    href={`/w/${workspace.slug}/overview`}
+                    onClick={(event) => switchWorkspace(event, workspace)}
+                  >
+                    <WorkspaceAvatar className="size-9 rounded-full" name={workspace.name} />
+                    <span className="grid min-w-0 flex-1 gap-px">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-sm font-medium tracking-[-0.02em] text-[#191d27]">{workspace.name}</span>
+                        <span className="shrink-0 rounded-full bg-[#f0f1f5] px-1.5 py-0.5 text-[10px] font-medium leading-none text-[#6b7280]">
+                          {labels[workspaceTypeMessageKeys[workspace.type]]}
+                        </span>
+                      </span>
+                      <span className="truncate text-xs leading-4 text-[#9ba1ad]">
+                        {labels[workspaceTypeMessageKeys[workspace.type]]}
+                      </span>
+                    </span>
+                    <HiOutlineArrowRight aria-hidden="true" className="size-4 text-[#a7acb6]" />
+                  </Link>
+                </DropdownMenuItem>
+            ))}
+          </div>
+
+          <DropdownMenuSeparator className="mx-1 my-2.5 bg-[#e1e2e6]" />
           <DropdownMenuItem
-            className="min-h-9 cursor-pointer gap-2 rounded-[7px] px-2 text-[#475467] focus:bg-[#f4f6fb]"
+            className="min-h-9 cursor-pointer rounded-[8px] border border-[#e1e3e8] bg-white px-2.5 font-medium text-[#171b24] shadow-[0_2px_3px_rgb(31_38_55/0.08)] focus:bg-white focus:text-[#171b24]"
             onSelect={() => setIsCreateWorkspaceOpen(true)}
           >
-            <HiOutlinePlus aria-hidden="true" className="size-4 text-[#667085]" />
-            <span>{labels["workspace.create"]}</span>
+            <span className="flex-1 text-center">{labels["workspace.create"]}</span>
+            <HiOutlinePlus aria-hidden="true" className="size-4 text-[#3d4657]" />
           </DropdownMenuItem>
-          <DropdownMenuItem asChild className="min-h-9 cursor-pointer gap-2 rounded-[7px] px-2 text-[#475467] focus:bg-[#f4f6fb]" onSelect={closeMobileSidebar}>
+          <DropdownMenuItem asChild className="min-h-8 justify-center rounded-[8px] px-2.5 text-xs text-[#777d89] focus:bg-white focus:text-[#444b59]" onSelect={closeMobileSidebar}>
             <Link href="/join">
-              <HiOutlinePlus aria-hidden="true" className="size-4 text-[#667085]" />
               <span>{labels["workspace.join"]}</span>
             </Link>
           </DropdownMenuItem>

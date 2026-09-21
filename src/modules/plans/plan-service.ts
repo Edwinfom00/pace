@@ -5,7 +5,11 @@ import { assertWorkspacePermission } from "@/authorization/workspace-permissions
 import type { AuthenticatedActor } from "@/authorization/session";
 import { calculateDailyPace, summarizePeriod } from "@/money/engine";
 import { localDateForInstant, localDateKey, periodForLocalDates } from "@/money/period";
-import type { LedgerCategoryRecord, LedgerTransactionRecord } from "@/modules/ledger/domain";
+import {
+  isUserFacingLedgerTransaction,
+  type LedgerCategoryRecord,
+  type LedgerTransactionRecord,
+} from "@/modules/ledger/domain";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import type { WorkspaceMemberContext } from "@/modules/workspaces/domain";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
@@ -296,12 +300,16 @@ export function summarizeBudget(
     return emptyBudgetSummary(budget, monthly.start, monthly.end);
   }
   const period = { start: effectiveStart, end: effectiveEnd };
-  const summary = summarizePeriod(transactions, period, { currency: budget.currency, statuses: ["POSTED"] });
+  const financialTransactions = transactions.filter(isUserFacingLedgerTransaction);
+  const summary = summarizePeriod(financialTransactions, period, {
+    currency: budget.currency,
+    statuses: ["POSTED"],
+  });
   const spend =
     budget.scope === "OVERALL"
       ? summary.totals.spending.minor
       : summary.categories.find((entry) => entry.id === budget.categoryId)?.spending.minor ?? 0n;
-  const dailyPace = calculateDailyPace(transactions, period, timeZone, {
+  const dailyPace = calculateDailyPace(financialTransactions, period, timeZone, {
     currency: budget.currency,
     statuses: ["POSTED"],
     now,

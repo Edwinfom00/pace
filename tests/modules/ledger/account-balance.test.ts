@@ -12,6 +12,7 @@ import {
   SYSTEM_GROCERIES_ID,
   SYSTEM_SALARY_ID,
 } from "../../support/in-memory-ledger-repository";
+import { createAccountWithOpeningBalance } from "../../support/opening-balance";
 import { InMemoryWorkspaceRepository } from "../../support/in-memory-workspace-repository";
 
 const owner: AuthenticatedActor = { userId: "owner-1", email: "owner@pace.test", name: "Owner" };
@@ -56,11 +57,11 @@ async function createAccount(
   ledger: LedgerService,
   input: { name: string; currency?: string; openingBalanceMinor?: bigint },
 ) {
-  return ledger.createAccount(owner, workspaceOne, {
+  return createAccountWithOpeningBalance(ledger, owner, workspaceOne, {
     type: "CHECKING",
     currency: input.currency ?? "XAF",
     name: input.name,
-    openingBalanceMinor: input.openingBalanceMinor ?? 0n,
+    openingBalanceMinor: input.openingBalanceMinor,
   });
 }
 

@@ -1,6 +1,7 @@
 import type { AuthenticatedActor } from "@/authorization/session";
 import type { MoneyTransaction } from "@/money";
 import { calendarMonthPeriod, type Period } from "@/money/period";
+import { isUserFacingLedgerTransaction } from "@/modules/ledger/domain";
 import { DatabaseLedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 
 import { buildOverviewFinancialSummary } from "../domain/overview-financial-summary";
@@ -32,6 +33,6 @@ export async function getOverviewFinancialSummary(input: GetOverviewFinancialSum
     period: input.period,
     timeZone: input.timeZone,
     now: input.now ?? new Date(),
-    transactions: transactions satisfies readonly MoneyTransaction[],
+    transactions: transactions.filter(isUserFacingLedgerTransaction) satisfies readonly MoneyTransaction[],
   });
 }

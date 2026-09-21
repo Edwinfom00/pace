@@ -6,6 +6,7 @@ import {
   HiOutlineCheck,
   HiOutlineEllipsisHorizontal,
   HiOutlineHome,
+  HiOutlinePlus,
   HiOutlineUser,
   HiOutlineUserGroup,
 } from "react-icons/hi2";
@@ -13,7 +14,6 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   ResponsiveDialog,
-  ResponsiveDialogClose,
   ResponsiveDialogContent,
   ResponsiveDialogDescription,
   ResponsiveDialogFooter,
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/responsive-dialog";
 import { Input } from "@/components/ui/input";
 import type { WorkspaceType } from "@/modules/workspaces/domain";
+import { workspaceTypeMessageKeys } from "@/i18n/dashboard-messages";
 
 import type { PaceSidebarLabels } from "./sidebar-types";
 import { WorkspaceAvatar } from "./workspace-avatar";
@@ -115,65 +116,29 @@ export function CreateWorkspaceDialog({
   return (
     <ResponsiveDialog onOpenChange={handleOpenChange} open={open}>
       <ResponsiveDialogContent
-        className="gap-0 overflow-hidden rounded-[14px] p-0 text-[#344054] sm:max-w-[32rem]"
+        className="gap-0 overflow-hidden rounded-[16px] p-0 text-[#344054] sm:max-w-120"
         drawerClassName="max-h-[calc(100svh-1rem)] rounded-t-[16px]"
       >
         <form className="flex max-h-[calc(100svh-1rem)] flex-col lg:block lg:max-h-none" onSubmit={handleSubmit}>
-          <ResponsiveDialogHeader className="px-5 pt-6 pb-5 lg:px-6">
-            <ResponsiveDialogTitle className="text-[18px] font-semibold tracking-[-0.015em] text-[#101828]">
-              {labels["workspace.create.title"]}
-            </ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="leading-5 text-[#667085]">
+          <ResponsiveDialogHeader className="bg-white px-5 pt-6 pb-4 lg:px-6">
+            <div className="flex items-center gap-3">
+              <WorkspaceAvatar className="size-10 rounded-full" name={previewName} />
+              <div className="min-w-0">
+                <ResponsiveDialogTitle className="text-[18px] font-medium tracking-[-0.02em] text-[#191d27]">
+                  {labels["workspace.create.title"]}
+                </ResponsiveDialogTitle>
+                <p aria-live="polite" className="mt-0.5 truncate text-xs text-[#9aa0ac]">
+                  {previewName} <span aria-hidden="true" className="px-1 text-[#c2c6ce]">·</span> {labels[workspaceTypeMessageKeys[type]]}
+                </p>
+              </div>
+            </div>
+            <ResponsiveDialogDescription className="mt-3 leading-5 text-[#737987]">
               {labels["workspace.create.description"]}
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
 
-          <div className="min-h-0 overflow-y-auto px-5 pb-5 lg:overflow-visible lg:px-6 lg:pb-6">
-            <fieldset>
-              <legend className="text-sm font-medium text-[#344054]">{labels["workspace.create.typeLabel"]}</legend>
-              <div aria-label={labels["workspace.create.typeLabel"]} className="mt-2.5 grid grid-cols-2 gap-2" role="radiogroup">
-                {workspaceTypeOptions.map((option) => {
-                  const Icon = option.icon;
-                  const isSelected = type === option.value;
-
-                  return (
-                    <button
-                      aria-checked={isSelected}
-                      className="relative flex min-h-[82px] cursor-pointer items-start gap-2.5 rounded-[9px] border border-[#e4e7ec] bg-white px-3 py-3 text-left outline-none transition-colors hover:border-[#cbd5e6] hover:bg-[#fafbff] focus-visible:border-[#5282ee] focus-visible:ring-3 focus-visible:ring-[#5282ee]/15 aria-checked:border-[#5282ee] aria-checked:bg-[#f5f8ff]"
-                      key={option.value}
-                      onClick={() => setType(option.value)}
-                      role="radio"
-                      type="button"
-                    >
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-[#eef3ff] text-[#2457c5]">
-                        <Icon aria-hidden="true" className="size-4" />
-                      </span>
-                      <span className="min-w-0 pr-3">
-                        <span className="block text-sm font-semibold leading-5 text-[#344054]">{labels[option.titleKey]}</span>
-                        <span className="mt-0.5 block text-xs leading-4 text-[#667085]">{labels[option.descriptionKey]}</span>
-                      </span>
-                      {isSelected ? (
-                        <span className="absolute top-2.5 right-2.5 flex size-4 items-center justify-center rounded-full bg-[#2457c5] text-white">
-                          <HiOutlineCheck aria-hidden="true" className="size-3" />
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </fieldset>
-
-            <div className="mt-5 flex items-center gap-3 rounded-[10px] bg-[#f6f8ff] px-3 py-3">
-              <WorkspaceAvatar className="size-12 rounded-[10px]" name={previewName} />
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-[#667085]">{labels["workspace.create.preview"]}</p>
-                <p aria-live="polite" className="truncate text-sm font-semibold text-[#344054]">
-                  {previewName}
-                </p>
-              </div>
-            </div>
-
-            <label className="mt-5 block text-sm font-medium text-[#344054]" htmlFor="workspace-name">
+          <div className="min-h-0 overflow-y-auto px-5 pt-1 pb-5 lg:overflow-visible lg:px-6 lg:pb-6">
+            <label className="block text-sm font-medium text-[#333944]" htmlFor="workspace-name">
               {labels["workspace.create.nameLabel"]}
             </label>
             <Input
@@ -181,7 +146,7 @@ export function CreateWorkspaceDialog({
               aria-invalid={Boolean(error)}
               autoComplete="organization"
               autoFocus
-              className="mt-2 h-10 rounded-[8px] border-[#d0d5dd] bg-white px-3 text-sm text-[#101828] shadow-none placeholder:text-[#667085] focus-visible:border-[#5282ee] focus-visible:ring-[#5282ee]/20 aria-invalid:border-[#d92d20] aria-invalid:ring-[#d92d20]/15"
+              className="mt-2 h-10 rounded-[8px] border-[#dfe1e6] bg-white px-3 text-sm text-[#191d27] shadow-none placeholder:text-[#9aa0ac] focus-visible:border-[#5282ee] focus-visible:ring-[#5282ee]/20 aria-invalid:border-[#d92d20] aria-invalid:ring-[#d92d20]/15"
               id="workspace-name"
               maxLength={120}
               onChange={(event) => {
@@ -196,16 +161,50 @@ export function CreateWorkspaceDialog({
                 {error}
               </p>
             ) : null}
+
+            <fieldset>
+              <legend className="mt-5 text-sm font-medium text-[#333944]">{labels["workspace.create.typeLabel"]}</legend>
+              <div className="mt-2 grid gap-1">
+                {workspaceTypeOptions.map((option) => {
+                  const Icon = option.icon;
+                  const isSelected = type === option.value;
+
+                  return (
+                    <label
+                      className={`relative flex min-h-13.5 cursor-pointer items-center gap-2.5 rounded-[8px] px-2 py-2 text-left outline-none transition-colors duration-200 hover:bg-[#f7f7f8] focus-within:bg-[#f7f7f8] focus-within:ring-2 focus-within:ring-[#5282ee]/20 ${isSelected ? "bg-[#f7f7f8]" : "bg-white"}`}
+                      key={option.value}
+                    >
+                      <input
+                        checked={isSelected}
+                        className="sr-only"
+                        name="workspace-type"
+                        onChange={() => setType(option.value)}
+                        type="radio"
+                        value={option.value}
+                      />
+                      <span className={`flex size-8 shrink-0 items-center justify-center rounded-full ${isSelected ? "bg-[#2457c5] text-white" : "bg-[#eef3ff] text-[#2457c5]"}`}>
+                        <Icon aria-hidden="true" className="size-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium leading-5 text-[#20242d]">{labels[option.titleKey]}</span>
+                        <span className="block text-xs leading-4 text-[#969ca7]">{labels[option.descriptionKey]}</span>
+                      </span>
+                      {isSelected ? (
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[#2457c5] text-white">
+                          <HiOutlineCheck aria-hidden="true" className="size-3" />
+                        </span>
+                      ) : null}
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
           </div>
 
-          <ResponsiveDialogFooter className="mx-0 mb-0 rounded-none border-[#eaecf0] bg-[#fcfcfd] px-5 py-4 lg:px-6">
-            <ResponsiveDialogClose>
-              <Button className="border-[#d0d5dd] bg-white text-[#344054] hover:bg-[#f9fafb]" disabled={isCreating} type="button" variant="outline">
-                {labels["workspace.create.cancel"]}
-              </Button>
-            </ResponsiveDialogClose>
-            <Button className="bg-[#2457c5] text-white hover:bg-[#1d4aae]" disabled={isCreating} type="submit">
-              {isCreating ? labels["workspace.create.submitting"] : labels["workspace.create.submit"]}
+          <ResponsiveDialogFooter className="mx-0 mb-0 !flex-col rounded-none border-[#e1e2e6] bg-[#f7f7f8] px-5 py-3 lg:px-6">
+            <Button className="h-10 w-full rounded-[8px] border-[#e1e3e8] bg-white px-3 text-[#171b24] shadow-[0_2px_3px_rgb(31_38_55/0.08)] hover:bg-white" disabled={isCreating} type="submit" variant="outline">
+              <span className="flex-1 text-center">{isCreating ? labels["workspace.create.submitting"] : labels["workspace.create.submit"]}</span>
+              {!isCreating ? <HiOutlinePlus aria-hidden="true" className="size-4 text-[#3d4657]" /> : null}
             </Button>
           </ResponsiveDialogFooter>
         </form>

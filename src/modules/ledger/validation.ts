@@ -50,19 +50,6 @@ export const createLedgerAccountSchema = z
     name: z.string().trim().min(1).max(120),
     type: z.enum(LEDGER_ACCOUNT_TYPES),
     currency: currencyCode,
-    openingBalanceMinor: z
-      .union([
-        z.bigint(),
-        z
-          .string()
-          .trim()
-          .regex(/^-?\d+$/, "Opening balance must be an integer minor-unit string.")
-          .transform((value) => BigInt(value)),
-      ])
-      .refine((value) => value >= -9_223_372_036_854_775_808n && value <= 9_223_372_036_854_775_807n, {
-        message: "Opening balance must fit in PostgreSQL bigint.",
-      })
-      .default(0n),
   })
   .strict();
 

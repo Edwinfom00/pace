@@ -22,6 +22,7 @@ import type {
   LedgerCategoryKind,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
+  LedgerOpeningBalanceReadRecord,
   LedgerTransactionFilters,
   LedgerTransactionRecord,
 } from "./domain";
@@ -43,6 +44,7 @@ import type {
   CreateLedgerTransactionCorrectionRecord,
   CreateLedgerFinancialRefundRecord,
   CreateLedgerFinancialReversalRecord,
+  CreateLedgerOpeningBalanceRecord,
   LedgerRepository,
   MutateLedgerAccountRecord,
 } from "./repositories/ledger-repository";
@@ -52,6 +54,11 @@ import type {
 } from "./correct-transaction-contract";
 import type { CreateRefundCommand, RefundStatus } from "./create-refund-contract";
 import type { ReverseTransactionCommand } from "./reverse-transaction-contract";
+import type {
+  CorrectOpeningBalanceCommand,
+  OpeningBalanceDTO,
+  SetOpeningBalanceCommand,
+} from "./opening-balance-contract";
 import { resolveManualOccurredAt } from "./manual-transaction";
 import {
   parseTransactionDetailsPatch,
@@ -86,7 +93,6 @@ export class LedgerService {
       name: parsed.name,
       type: parsed.type,
       currency: toCurrencyCode(parsed.currency),
-      openingBalanceMinor: parsed.openingBalanceMinor,
       createdByUserId: actor.userId,
     });
   }
@@ -112,6 +118,325 @@ export class LedgerService {
   ): Promise<readonly LedgerAccountBalance[]> {
     await this.requireWorkspacePermission(actor.userId, input.workspaceId, "read");
     return this.repository.getWorkspaceAccountBalances(input.workspaceId);
+  }
+
+  /** Read projection for Account Detail; source metadata never crosses this boundary. */
+  async getOpeningBalance(
+    actor: AuthenticatedActor,
+    input: { workspaceId: string; accountId: string },
+  ): Promise<OpeningBalanceDTO | null> {
+    await this.requireWorkspacePermission(actor.userId, input.workspaceId, "read");
+    await this.requireManagedAccount(input.workspaceId, input.accountId);
+    const openingBalance = await this.repository.findOpeningBalance(input.workspaceId, input.accountId);
+    return openingBalance ? presentOpeningBalance(openingBalance) : null;
+  }
+
+  /**
+   * Establishes the account's only logical opening-balance chain. This is an
+   * internal ledger event, deliberately not a user-facing transaction.
+   */
+  async setOpeningBalance(
+    actor: AuthenticatedActor,
+    command: SetOpeningBalanceCommand,
+  ): Promise<OpeningBalanceDTO> {
+    await this.requireWorkspacePermission(actor.userId, command.workspaceId, "manage_ledger");
+    if (command.amountMinor < 0n) {
+      throw new DomainConflictError(
+        "NEGATIVE_OPENING_BALANCE_NOT_ALLOWED",
+        "This account type has no configured debt or overdraft semantics for a negative opening balance.",
+      );
+    }
+
+    const commandFingerprint = openingBalanceSetCommandFingerprint(command);
+    const idempotencyFingerprint = openingBalanceSetIdempotencyFingerprint(actor.userId, command.idempotencyKey);
+    const replay = await this.repository.findTransactionByFingerprint(command.workspaceId, idempotencyFingerprint);
+    if (replay) {
+      return this.resolveExistingOpeningBalanceSet(command, commandFingerprint, replay);
+    }
+
+    const account = await this.requireManagedAccount(command.workspaceId, command.accountId);
+    if (account.archivedAt) {
+      throw new DomainConflictError("ACCOUNT_UNAVAILABLE", "Archived accounts cannot receive an opening balance.");
+    }
+    this.assertCurrencyMatchesAccount(command.currency, account);
+    if (await this.repository.findOpeningBalance(command.workspaceId, account.id)) {
+      throw new DomainConflictError(
+        "OPENING_BALANCE_ALREADY_EXISTS",
+        "This account already has an opening balance. Use the correction command instead.",
+      );
+    }
+
+    const transactionId = randomUUID();
+    const transaction: CreateLedgerTransactionRecord = {
+      id: transactionId,
+      workspaceId: command.workspaceId,
+      kind: "OPENING_BALANCE",
+      status: "POSTED",
+      amountMinor: command.amountMinor,
+      currency: command.currency,
+      occurredAt: command.effectiveAt,
+      accountId: account.id,
+      transferAccountId: null,
+      categoryId: null,
+      merchantId: null,
+      createdByUserId: actor.userId,
+      paidByUserId: null,
+      transferGroupId: null,
+      refundedTransactionId: null,
+      reversalOfTransactionId: null,
+      source: {
+        provider: "pace",
+        origin: "OPENING_BALANCE",
+        openingBalance: {
+          operation: "SET",
+          commandFingerprint,
+        },
+      },
+      deduplicationFingerprint: idempotencyFingerprint,
+      note: null,
+    };
+    const write: CreateLedgerOpeningBalanceRecord = {
+      openingBalance: {
+        id: randomUUID(),
+        workspaceId: command.workspaceId,
+        accountId: account.id,
+        originalTransactionId: transactionId,
+        currentTransactionId: transactionId,
+      },
+      transaction,
+      audit: {
+        id: randomUUID(),
+        workspaceId: command.workspaceId,
+        transactionId,
+        actorUserId: actor.userId,
+        action: "OPENING_BALANCE_ESTABLISHED",
+        metadata: {
+          accountId: account.id,
+          amountMinor: command.amountMinor.toString(),
+          currency: command.currency,
+          effectiveAt: command.effectiveAt.toISOString(),
+        },
+      },
+    };
+
+    let created: LedgerTransactionRecord | null;
+    try {
+      created = await this.repository.createOpeningBalance(write);
+    } catch (error) {
+      const concurrentReplay = await this.repository.findTransactionByFingerprint(
+        command.workspaceId,
+        idempotencyFingerprint,
+      );
+      if (concurrentReplay) return this.resolveExistingOpeningBalanceSet(command, commandFingerprint, concurrentReplay);
+      if (isSerializationFailure(error)) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "The account changed while its opening balance was being established. Retry the command.",
+        );
+      }
+      throw error;
+    }
+
+    if (!created) {
+      const concurrentReplay = await this.repository.findTransactionByFingerprint(
+        command.workspaceId,
+        idempotencyFingerprint,
+      );
+      if (concurrentReplay) return this.resolveExistingOpeningBalanceSet(command, commandFingerprint, concurrentReplay);
+      const currentAccount = await this.requireManagedAccount(command.workspaceId, account.id);
+      if (currentAccount.archivedAt) {
+        throw new DomainConflictError("ACCOUNT_UNAVAILABLE", "Archived accounts cannot receive an opening balance.");
+      }
+      if (await this.repository.findOpeningBalance(command.workspaceId, account.id)) {
+        throw new DomainConflictError(
+          "OPENING_BALANCE_ALREADY_EXISTS",
+          "This account already has an opening balance. Use the correction command instead.",
+        );
+      }
+      throw new DomainConflictError(
+        "CONCURRENT_MODIFICATION",
+        "The account changed while its opening balance was being established. Retry the command.",
+      );
+    }
+
+    const openingBalance = await this.repository.findOpeningBalance(command.workspaceId, account.id);
+    if (!openingBalance || openingBalance.currentTransactionId !== created.id) {
+      throw new Error("Opening balance linkage verification failed.");
+    }
+    const audit = (await this.repository.listTransactionAudit(command.workspaceId, created.id)).find(
+      (candidate) => candidate.id === write.audit.id,
+    );
+    if (!audit) throw new Error("Opening balance establishment was not audited.");
+    return presentOpeningBalance(openingBalance);
+  }
+
+  /**
+   * Financial corrections preserve the original opening event and append a
+   * bookkeeping reversal plus replacement. V1 intentionally locks effectiveAt
+   * after establishment so the account's historical chronology cannot move.
+   */
+  async correctOpeningBalance(
+    actor: AuthenticatedActor,
+    command: CorrectOpeningBalanceCommand,
+  ): Promise<OpeningBalanceDTO> {
+    await this.requireWorkspacePermission(actor.userId, command.workspaceId, "manage_ledger");
+    if (command.newAmountMinor < 0n) {
+      throw new DomainConflictError(
+        "NEGATIVE_OPENING_BALANCE_NOT_ALLOWED",
+        "This account type has no configured debt or overdraft semantics for a negative opening balance.",
+      );
+    }
+
+    const commandFingerprint = openingBalanceCorrectionCommandFingerprint(command);
+    const idempotencyKey = openingBalanceCorrectionIdempotencyKey(actor.userId, command.idempotencyKey);
+    const replay = await this.repository.findTransactionCorrectionByIdempotencyKey(
+      command.workspaceId,
+      actor.userId,
+      idempotencyKey,
+    );
+    if (replay) return this.resolveExistingOpeningBalanceCorrection(command, commandFingerprint, replay);
+
+    const account = await this.requireManagedAccount(command.workspaceId, command.accountId);
+    if (account.archivedAt) {
+      throw new DomainConflictError("ACCOUNT_UNAVAILABLE", "Archived accounts cannot have their opening balance changed.");
+    }
+    const openingBalance = await this.repository.findOpeningBalance(command.workspaceId, account.id);
+    if (!openingBalance) throw new NotFoundError("Opening balance not found for this account.");
+    const original = openingBalance.transaction;
+    if (original.kind !== "OPENING_BALANCE" || original.accountId !== account.id) {
+      throw new Error("Opening balance linkage does not reference a valid ledger event.");
+    }
+    if (command.expectedVersion && original.updatedAt.getTime() !== command.expectedVersion.getTime()) {
+      throw new DomainConflictError(
+        "CONCURRENT_MODIFICATION",
+        "The opening balance changed since it was loaded. Refresh it before correcting it.",
+      );
+    }
+    if (command.newAmountMinor === original.amountMinor) {
+      throw new DomainConflictError("INVALID_OPENING_BALANCE", "A correction must change the opening-balance amount.");
+    }
+
+    const correctionId = randomUUID();
+    const reversal = createTransactionReversal(original, {
+      actorUserId: actor.userId,
+      purpose: "CORRECTION",
+      operationId: correctionId,
+      deduplicationFingerprint: correctionTransactionFingerprint(correctionId, "reversal"),
+      reason: command.reason ?? null,
+    });
+    const replacement: CreateLedgerTransactionRecord = {
+      id: randomUUID(),
+      workspaceId: command.workspaceId,
+      kind: "OPENING_BALANCE",
+      status: "POSTED",
+      amountMinor: command.newAmountMinor,
+      currency: original.currency,
+      occurredAt: original.occurredAt,
+      accountId: account.id,
+      transferAccountId: null,
+      categoryId: null,
+      merchantId: null,
+      createdByUserId: actor.userId,
+      paidByUserId: null,
+      transferGroupId: null,
+      refundedTransactionId: null,
+      reversalOfTransactionId: null,
+      source: {
+        provider: "pace",
+        origin: "OPENING_BALANCE",
+        openingBalance: {
+          operation: "CORRECTION_REPLACEMENT",
+          commandFingerprint,
+          originalTransactionId: original.id,
+        },
+      },
+      deduplicationFingerprint: correctionTransactionFingerprint(correctionId, "replacement"),
+      note: null,
+    };
+    const correction: CreateLedgerTransactionCorrectionRecord = {
+      id: correctionId,
+      workspaceId: command.workspaceId,
+      originalTransactionId: original.id,
+      reversalTransactionId: reversal.id,
+      replacementTransactionId: replacement.id,
+      actorUserId: actor.userId,
+      idempotencyKey,
+      commandFingerprint,
+      reason: command.reason ?? null,
+    };
+    const audits = openingBalanceCorrectionAudits({
+      actorUserId: actor.userId,
+      accountId: account.id,
+      correction,
+      original,
+      reversal,
+      replacement,
+    });
+
+    let created;
+    try {
+      created = await this.repository.createFinancialCorrection({
+        workspaceId: command.workspaceId,
+        originalTransactionId: original.id,
+        expectedOriginalUpdatedAt: command.expectedVersion,
+        correction,
+        reversal,
+        replacement,
+        historicalAccountIds: [account.id],
+        allowHistoricalArchivedAccounts: false,
+        spendabilityGuard: null,
+        merchantToCreate: null,
+        openingBalance: {
+          accountId: account.id,
+          expectedCurrentTransactionId: original.id,
+        },
+        audits,
+      });
+    } catch (error) {
+      const concurrentReplay = await this.repository.findTransactionCorrectionByIdempotencyKey(
+        command.workspaceId,
+        actor.userId,
+        idempotencyKey,
+      );
+      if (concurrentReplay) return this.resolveExistingOpeningBalanceCorrection(command, commandFingerprint, concurrentReplay);
+      if (isSerializationFailure(error)) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "The opening balance changed while its correction was being saved. Retry the command.",
+        );
+      }
+      throw error;
+    }
+    if (created.outcome !== "CREATED") {
+      const concurrentReplay = await this.repository.findTransactionCorrectionByIdempotencyKey(
+        command.workspaceId,
+        actor.userId,
+        idempotencyKey,
+      );
+      if (concurrentReplay) return this.resolveExistingOpeningBalanceCorrection(command, commandFingerprint, concurrentReplay);
+      const currentAccount = await this.requireManagedAccount(command.workspaceId, account.id);
+      if (currentAccount.archivedAt) {
+        throw new DomainConflictError("ACCOUNT_UNAVAILABLE", "Archived accounts cannot have their opening balance changed.");
+      }
+      throw new DomainConflictError(
+        "CONCURRENT_MODIFICATION",
+        "The opening balance changed while its correction was being saved. Refresh and retry.",
+      );
+    }
+
+    const current = await this.repository.findOpeningBalance(command.workspaceId, account.id);
+    if (!current || current.currentTransactionId !== replacement.id) {
+      throw new Error("Opening balance correction linkage verification failed.");
+    }
+    const auditIds = new Set(
+      (await Promise.all(audits.map((audit) => this.repository.listTransactionAudit(command.workspaceId, audit.transactionId))))
+        .flat()
+        .map((audit) => audit.id),
+    );
+    if (audits.some((audit) => !auditIds.has(audit.id))) {
+      throw new Error("Opening balance correction was not fully audited.");
+    }
+    return presentOpeningBalance(current);
   }
 
   async getAccountActionPolicy(
@@ -756,8 +1081,10 @@ export class LedgerService {
         historicalAccountIds: [original.accountId, original.transferAccountId].filter(
           (accountId): accountId is string => accountId !== null,
         ),
+        allowHistoricalArchivedAccounts: true,
         spendabilityGuard,
         merchantToCreate: replacement.merchant,
+        openingBalance: null,
         audits,
       });
     } catch (error) {
@@ -1255,6 +1582,48 @@ export class LedgerService {
       );
     }
     return this.hydrateCorrection(correction);
+  }
+
+  private async resolveExistingOpeningBalanceSet(
+    command: SetOpeningBalanceCommand,
+    commandFingerprint: string,
+    transaction: LedgerTransactionRecord,
+  ): Promise<OpeningBalanceDTO> {
+    const metadata = transaction.source.openingBalance;
+    if (
+      transaction.kind !== "OPENING_BALANCE"
+      || transaction.accountId !== command.accountId
+      || !isOpeningBalanceSetMetadata(metadata, commandFingerprint)
+    ) {
+      throw new DomainConflictError(
+        "OPENING_BALANCE_ALREADY_PROCESSED",
+        "This idempotency key has already been used for another opening-balance command.",
+      );
+    }
+    const current = await this.repository.findOpeningBalance(command.workspaceId, command.accountId);
+    if (!current) throw new Error("Opening balance idempotency record has no opening-balance linkage.");
+    return presentOpeningBalance(current);
+  }
+
+  private async resolveExistingOpeningBalanceCorrection(
+    command: CorrectOpeningBalanceCommand,
+    commandFingerprint: string,
+    correction: import("./domain").LedgerTransactionCorrectionRecord,
+  ): Promise<OpeningBalanceDTO> {
+    const original = await this.requireTransaction(command.workspaceId, correction.originalTransactionId);
+    if (
+      correction.commandFingerprint !== commandFingerprint
+      || original.kind !== "OPENING_BALANCE"
+      || original.accountId !== command.accountId
+    ) {
+      throw new DomainConflictError(
+        "OPENING_BALANCE_ALREADY_PROCESSED",
+        "This idempotency key has already been used for another opening-balance correction.",
+      );
+    }
+    const current = await this.repository.findOpeningBalance(command.workspaceId, command.accountId);
+    if (!current) throw new Error("Opening-balance correction has no current opening-balance linkage.");
+    return presentOpeningBalance(current);
   }
 
   private async resolveExistingManualReversal(
@@ -2122,6 +2491,71 @@ function correctionAudits({
   ];
 }
 
+function openingBalanceCorrectionAudits({
+  actorUserId,
+  accountId,
+  correction,
+  original,
+  reversal,
+  replacement,
+}: {
+  actorUserId: string;
+  accountId: string;
+  correction: CreateLedgerTransactionCorrectionRecord;
+  original: LedgerTransactionRecord;
+  reversal: CreateLedgerTransactionRecord;
+  replacement: CreateLedgerTransactionRecord;
+}): readonly [
+  CreateLedgerTransactionAuditRecord,
+  CreateLedgerTransactionAuditRecord,
+  CreateLedgerTransactionAuditRecord,
+] {
+  const linkage = {
+    accountId,
+    correctionId: correction.id,
+    originalTransactionId: original.id,
+    reversalTransactionId: reversal.id,
+    replacementTransactionId: replacement.id,
+    reason: correction.reason,
+    before: {
+      amountMinor: original.amountMinor.toString(),
+      currency: original.currency,
+      effectiveAt: original.occurredAt.toISOString(),
+    },
+    after: {
+      amountMinor: replacement.amountMinor.toString(),
+      currency: replacement.currency,
+      effectiveAt: replacement.occurredAt.toISOString(),
+    },
+  };
+  return [
+    {
+      id: randomUUID(),
+      workspaceId: correction.workspaceId,
+      transactionId: original.id,
+      actorUserId,
+      action: "OPENING_BALANCE_CORRECTED",
+      metadata: linkage,
+    },
+    {
+      id: randomUUID(),
+      workspaceId: correction.workspaceId,
+      transactionId: reversal.id,
+      actorUserId,
+      action: "OPENING_BALANCE_CORRECTION_REVERSAL",
+      metadata: linkage,
+    },
+    {
+      id: randomUUID(),
+      workspaceId: correction.workspaceId,
+      transactionId: replacement.id,
+      actorUserId,
+      action: "OPENING_BALANCE_CORRECTION_REPLACEMENT",
+      metadata: linkage,
+    },
+  ];
+}
+
 function correctionFinancialChanges(
   original: LedgerTransactionRecord,
   replacement: CreateLedgerTransactionRecord,
@@ -2171,6 +2605,58 @@ function correctionSource(
 
 function correctionIdempotencyKey(actorUserId: string, idempotencyKey: string): string {
   return `correction:${createHash("sha256").update(`${actorUserId}:${idempotencyKey}`).digest("hex")}`;
+}
+
+function openingBalanceSetIdempotencyFingerprint(actorUserId: string, idempotencyKey: string): string {
+  return `opening-balance:set:${createHash("sha256").update(`${actorUserId}:${idempotencyKey}`).digest("hex")}`;
+}
+
+function openingBalanceCorrectionIdempotencyKey(actorUserId: string, idempotencyKey: string): string {
+  return `opening-balance:correction:${createHash("sha256").update(`${actorUserId}:${idempotencyKey}`).digest("hex")}`;
+}
+
+function openingBalanceSetCommandFingerprint(command: SetOpeningBalanceCommand): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      accountId: command.accountId,
+      amountMinor: command.amountMinor.toString(),
+      currency: command.currency,
+      effectiveAt: command.effectiveAt.toISOString(),
+    }))
+    .digest("hex");
+}
+
+function openingBalanceCorrectionCommandFingerprint(command: CorrectOpeningBalanceCommand): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      accountId: command.accountId,
+      newAmountMinor: command.newAmountMinor.toString(),
+      reason: command.reason ?? null,
+      expectedVersion: command.expectedVersion?.toISOString() ?? null,
+    }))
+    .digest("hex");
+}
+
+function isOpeningBalanceSetMetadata(
+  value: unknown,
+  commandFingerprint: string,
+): value is { operation: "SET"; commandFingerprint: string } {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && (value as { operation?: unknown }).operation === "SET"
+    && (value as { commandFingerprint?: unknown }).commandFingerprint === commandFingerprint,
+  );
+}
+
+function presentOpeningBalance(value: LedgerOpeningBalanceReadRecord): OpeningBalanceDTO {
+  return {
+    amountMinor: value.transaction.amountMinor.toString(),
+    currency: toCurrencyCode(value.transaction.currency),
+    effectiveAt: value.transaction.occurredAt.toISOString(),
+    hasBeenCorrected: value.currentTransactionId !== value.originalTransactionId,
+    updatedAt: value.transaction.updatedAt.toISOString(),
+  };
 }
 
 function manualReversalIdempotencyFingerprint(actorUserId: string, idempotencyKey: string): string {

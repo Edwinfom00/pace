@@ -425,7 +425,7 @@ function reversalKind(
   kind: TransactionDetailData["kind"],
   labels: TransactionReversalLabels,
 ): string {
-  return kind === "REFUND" ? labels.kind.EXPENSE : labels.kind[kind];
+  return kind === "REFUND" || kind === "OPENING_BALANCE" ? labels.kind.EXPENSE : labels.kind[kind];
 }
 
 function formatReversalTemplate(template: string, values: Readonly<Record<string, string>>): string {

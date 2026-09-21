@@ -4,6 +4,8 @@ import type {
   LedgerAccountRecord,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
+  LedgerOpeningBalanceReadRecord,
+  LedgerOpeningBalanceRecord,
   LedgerTransactionAuditRecord,
   LedgerTransactionCorrectionRecord,
   LedgerTransactionListFilters,
@@ -21,6 +23,7 @@ import type {
   CreateLedgerTransactionAuditRecord,
   CreateLedgerFinancialCorrectionRecord,
   CreateLedgerFinancialReversalRecord,
+  CreateLedgerOpeningBalanceRecord,
   CreateLedgerFinancialRefundRecord,
   LedgerFinancialCorrectionWriteResult,
   CreateLedgerTransactionRecord,
@@ -45,6 +48,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   readonly transactionAudits = new Map<string, LedgerTransactionAuditRecord>();
   readonly accountAudits = new Map<string, LedgerAccountAuditRecord>();
   readonly transactionCorrections = new Map<string, LedgerTransactionCorrectionRecord>();
+  readonly openingBalances = new Map<string, LedgerOpeningBalanceRecord>();
   accountBalanceReadCount = 0;
   workspaceAccountBalancesReadCount = 0;
   /** Test-only fault injection proves correction writes commit atomically. */
@@ -148,6 +152,41 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   async getWorkspaceAccountBalances(workspaceId: string): Promise<readonly LedgerAccountBalance[]> {
     this.workspaceAccountBalancesReadCount += 1;
     return this.queryAccountBalances(workspaceId);
+  }
+
+  async findOpeningBalance(
+    workspaceId: string,
+    accountId: string,
+  ): Promise<LedgerOpeningBalanceReadRecord | null> {
+    const openingBalance = this.openingBalances.get(accountId);
+    if (!openingBalance || openingBalance.workspaceId !== workspaceId) return null;
+    const transaction = this.transactions.get(openingBalance.currentTransactionId);
+    return transaction ? { ...openingBalance, transaction } : null;
+  }
+
+  async createOpeningBalance(input: CreateLedgerOpeningBalanceRecord): Promise<LedgerTransactionRecord | null> {
+    const account = input.transaction.accountId ? this.accounts.get(input.transaction.accountId) : null;
+    if (
+      !account
+      || account.workspaceId !== input.transaction.workspaceId
+      || account.archivedAt !== null
+      || this.openingBalances.has(input.openingBalance.accountId)
+    ) {
+      return null;
+    }
+    this.assertTransactionFingerprintAvailable(input.transaction);
+    if (this.transactions.has(input.transaction.id)) throw new Error("Opening balance transaction ID already exists.");
+    const now = new Date();
+    const transaction: LedgerTransactionRecord = { ...input.transaction, createdAt: now, updatedAt: now };
+    const openingBalance: LedgerOpeningBalanceRecord = {
+      ...input.openingBalance,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.transactions.set(transaction.id, transaction);
+    this.openingBalances.set(openingBalance.accountId, openingBalance);
+    this.createTransactionAudit(input.audit, now);
+    return transaction;
   }
 
   async createCategory(input: CreateLedgerCategoryRecord): Promise<LedgerCategoryRecord> {
@@ -512,6 +551,14 @@ export class InMemoryLedgerRepository implements LedgerRepository {
           && transaction.reversalOfTransactionId === input.originalTransactionId,
       )
       || replacementFallsBelowRefunds
+      || (
+        input.openingBalance !== null
+        && (
+          this.openingBalances.get(input.openingBalance.accountId)?.workspaceId !== input.workspaceId
+          || this.openingBalances.get(input.openingBalance.accountId)?.currentTransactionId
+            !== input.openingBalance.expectedCurrentTransactionId
+        )
+      )
     ) {
       return { outcome: "CONFLICT" };
     }
@@ -522,7 +569,10 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       const account = this.accounts.get(accountId);
       return !account
         || account.workspaceId !== input.workspaceId
-        || (account.archivedAt !== null && !input.historicalAccountIds.includes(accountId));
+        || (
+          account.archivedAt !== null
+          && (!input.allowHistoricalArchivedAccounts || !input.historicalAccountIds.includes(accountId))
+        );
     })) {
       return { outcome: "CONFLICT" };
     }
@@ -577,6 +627,17 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     }
     this.transactions.set(reversal.id, reversal);
     this.transactions.set(replacement.id, replacement);
+    if (input.openingBalance) {
+      const current = this.openingBalances.get(input.openingBalance.accountId);
+      if (!current || current.currentTransactionId !== input.openingBalance.expectedCurrentTransactionId) {
+        throw new Error("Opening balance changed before the correction could commit.");
+      }
+      this.openingBalances.set(current.accountId, {
+        ...current,
+        currentTransactionId: replacement.id,
+        updatedAt: now,
+      });
+    }
     this.transactionCorrections.set(correction.id, correction);
     for (const audit of input.audits) this.createTransactionAudit(audit, now);
     return { outcome: "CREATED", correction };
@@ -723,6 +784,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   ): Promise<LedgerTransactionRecord[]> {
     const transactions = [...this.transactions.values()].filter((transaction) => {
       if (transaction.workspaceId !== workspaceId) return false;
+      if (transaction.kind === "OPENING_BALANCE") return false;
       if (filters.statuses?.length && !filters.statuses.includes(transaction.status)) return false;
       if (filters.accountId && transaction.accountId !== filters.accountId) return false;
       if (filters.categoryId && transaction.categoryId !== filters.categoryId) return false;
@@ -828,7 +890,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       [...this.accounts.values()]
         .filter((account) => account.workspaceId === workspaceId)
         .filter((account) => requestedAccountId === undefined || account.id === requestedAccountId)
-        .map((account) => [account.id, account.openingBalanceMinor]),
+        .map((account) => [account.id, 0n]),
     );
 
     for (const transaction of this.transactions.values()) {
@@ -898,6 +960,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     );
     return [...this.transactions.values()].flatMap((transaction) => {
       if (transaction.workspaceId !== workspaceId) return [];
+      if (transaction.kind === "OPENING_BALANCE") return [];
       if (nonCurrentCorrectionTransactionIds.has(transaction.id)) return [];
       if (transaction.reversalOfTransactionId !== null || reversedTransactionIds.has(transaction.id)) return [];
       if (filters.kind && transaction.kind !== filters.kind) return [];

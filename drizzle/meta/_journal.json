@@ -169,6 +169,20 @@
       "when": 1790000000000,
       "tag": "0023_account_management_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790100000000,
+      "tag": "0024_opening_balance_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790100000001,
+      "tag": "0025_opening_balance_foundation_schema",
+      "breakpoints": true
     }
   ]
 }

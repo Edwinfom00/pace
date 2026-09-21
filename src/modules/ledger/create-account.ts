@@ -1,7 +1,6 @@
 import { AuthorizationError } from "@/authorization/errors";
 import { getAuthenticatedActor, type AuthenticatedActor } from "@/authorization/session";
 import { toCurrencyCode } from "@/money/currency";
-import { parseDecimalMoney } from "@/money/money";
 
 import type { LedgerAccountRecord } from "./domain";
 import { LedgerService } from "./ledger-service";
@@ -42,19 +41,11 @@ export async function createAccountForActor(
   const parsed = createAccountSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: validationErrorCode(parsed.error) };
 
-  const openingBalance = parsed.data.openingBalance
-    ? parseDecimalMoney(parsed.data.openingBalance, parsed.data.currency)
-    : parseDecimalMoney("0", parsed.data.currency);
-  // The schema has already proved this, but retain an explicit boundary should
-  // the schema evolve separately from the exact-money parser.
-  if (!openingBalance) return { ok: false, code: "INVALID_OPENING_BALANCE" };
-
   try {
     const account = await ledger.createAccount(actor, parsed.data.workspaceId, {
       name: parsed.data.name,
       type: parsed.data.type,
       currency: parsed.data.currency,
-      openingBalanceMinor: openingBalance.minor,
     });
     return { ok: true, account: toCreatedAccountDTO(account) };
   } catch (error) {
@@ -74,7 +65,7 @@ export function toCreatedAccountDTO(account: LedgerAccountRecord): CreatedAccoun
 
 function validationErrorCode(error: { readonly issues: readonly { readonly path: readonly PropertyKey[] }[] }): CreateAccountErrorCode {
   const fields = new Set(error.issues.map((issue) => issue.path[0]));
-  if (fields.has("openingBalance")) return "INVALID_OPENING_BALANCE";
+  if (fields.has("openingBalance")) return "OPENING_BALANCE_EFFECTIVE_AT_REQUIRED";
   if (fields.has("currency")) return "INVALID_CURRENCY";
   if (fields.has("type")) return "INVALID_ACCOUNT_TYPE";
   return "INVALID_ACCOUNT_NAME";

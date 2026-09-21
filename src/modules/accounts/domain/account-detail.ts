@@ -48,6 +48,14 @@ export type AccountDetail = {
   readonly capabilities: AccountActionPolicy;
   readonly currentBalanceMinor: string;
   readonly availableBalanceMinor: string;
+  /** Null means the account has not been explicitly initialized yet. */
+  readonly openingBalance: {
+    readonly amountMinor: string;
+    readonly currency: string;
+    readonly effectiveAt: string;
+    readonly hasBeenCorrected: boolean;
+    readonly updatedAt: string;
+  } | null;
   readonly summary: {
     readonly inflowsMinor: string;
     readonly outflowsMinor: string;

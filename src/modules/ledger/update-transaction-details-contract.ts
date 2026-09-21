@@ -94,6 +94,8 @@ export function parseTransactionDetailsPatch(
       return transferTransactionDetailsPatchSchema.parse(patch);
     case "REFUND":
       return refundTransactionDetailsPatchSchema.parse(patch);
+    case "OPENING_BALANCE":
+      throw new Error("Opening balances cannot be edited through transaction details.");
   }
 }
 

@@ -3,6 +3,7 @@ import type { AuthenticatedActor } from "@/authorization/session";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
 import { resolveMerchantLogo } from "@/lib/transaction-visuals/merchant-logo-matcher";
 import { resolveTransactionIcon } from "@/lib/transaction-visuals/transaction-icon-matcher";
+import { isUserFacingLedgerTransaction } from "@/modules/ledger/domain";
 import type {
   LedgerAccountRecord,
   LedgerCategoryRecord,
@@ -35,6 +36,7 @@ type TransactionDetailLedgerRepository = Pick<
   | "findAccount"
   | "findCategory"
   | "findMerchant"
+  | "findOpeningBalance"
   | "listTransactions"
   | "listRefundsForEffectiveExpense"
   | "findTransactionCorrectionByOriginal"
@@ -66,6 +68,9 @@ export async function getTransactionDetail(
 
   const transaction = await dependencies.ledger.findTransaction(input.workspaceId, input.transactionId);
   if (!transaction) return null;
+  // Opening Balance is an internal ledger event and deliberately has no
+  // ordinary Transaction Detail route or UI surface.
+  if (!isUserFacingLedgerTransaction(transaction)) return null;
 
   const [account, transferAccount, category, merchant, workspaceTransactions] = await Promise.all([
     transaction.accountId ? dependencies.ledger.findAccount(input.workspaceId, transaction.accountId) : null,
@@ -116,6 +121,18 @@ export async function getTransactionDetail(
   const refundAudit = isCurrentEffectiveExpense
     ? await dependencies.ledger.listTransactionAudit(input.workspaceId, effectiveTransaction.id)
     : [];
+  const accountImpacts = reversal
+    ? []
+    : await Promise.all(
+      [effectiveAccount, effectiveTransferAccount]
+        .filter((candidate): candidate is LedgerAccountRecord => candidate !== null)
+        .map(async (candidate) => mapAccountImpact(
+          candidate,
+          effectiveTransaction,
+          workspaceTransactions,
+          (await dependencies.ledger.findOpeningBalance(input.workspaceId, candidate.id))?.transaction ?? null,
+        )),
+    );
 
   return {
     id: transaction.id,
@@ -148,9 +165,7 @@ export async function getTransactionDetail(
       })
       : null,
     context: {
-      accountImpacts: reversal ? [] : [effectiveAccount, effectiveTransferAccount]
-        .filter((candidate): candidate is LedgerAccountRecord => candidate !== null)
-        .map((candidate) => mapAccountImpact(candidate, effectiveTransaction, workspaceTransactions)),
+      accountImpacts,
       monthlyCategory: !reversal && effectiveCategory
         ? mapMonthlyCategoryContext(effectiveTransaction, effectiveCategory, workspaceTransactions, input.timeZone)
         : null,
@@ -430,11 +445,17 @@ function mapAccountImpact(
   account: LedgerAccountRecord,
   selected: LedgerTransactionRecord,
   transactions: readonly LedgerTransactionRecord[],
+  openingBalance: LedgerTransactionRecord | null,
 ): TransactionAccountImpact {
   const effect = accountEffect(selected, account.id);
   const balanceAfter = transactions
     .filter((transaction) => transaction.currency === account.currency && wasRecordedBy(selected, transaction))
-    .reduce((balance, transaction) => balance + accountEffect(transaction, account.id), account.openingBalanceMinor);
+    .reduce(
+      (balance, transaction) => balance + accountEffect(transaction, account.id),
+      openingBalance && wasRecordedBy(selected, openingBalance)
+        ? accountEffect(openingBalance, account.id)
+        : 0n,
+    );
 
   return {
     account: mapAccount(account),
@@ -484,6 +505,10 @@ function accountEffect(transaction: LedgerTransactionRecord, accountId: string):
   }
   if (transaction.kind === "EXPENSE") {
     const amount = transaction.reversalOfTransactionId == null ? -transaction.amountMinor : transaction.amountMinor;
+    return transaction.accountId === accountId ? amount : 0n;
+  }
+  if (transaction.kind === "OPENING_BALANCE") {
+    const amount = transaction.reversalOfTransactionId == null ? transaction.amountMinor : -transaction.amountMinor;
     return transaction.accountId === accountId ? amount : 0n;
   }
   if (transaction.kind === "TRANSFER") {

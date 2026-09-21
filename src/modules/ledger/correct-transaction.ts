@@ -76,7 +76,7 @@ function presentCorrection(result: LedgerFinancialCorrectionResult) {
 }
 
 function presentCorrectedTransaction(transaction: LedgerTransactionRecord): CorrectedTransactionDTO {
-  if (transaction.kind === "REFUND") {
+  if (transaction.kind === "REFUND" || transaction.kind === "OPENING_BALANCE") {
     throw new Error("A refund cannot be part of a financial correction result.");
   }
   return {

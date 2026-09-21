@@ -186,7 +186,7 @@ export function createTransactionCorrectionCommand(
   idempotencyKey: string,
   reason: string,
 ): TransactionCorrectionCommand | null {
-  if (transaction.kind === "REFUND") return null;
+  if (transaction.kind === "REFUND" || transaction.kind === "OPENING_BALANCE") return null;
   const classification = classifyTransactionChanges(baseline, draft, transaction);
   if (!classification.hasFinancialChanges) return null;
 

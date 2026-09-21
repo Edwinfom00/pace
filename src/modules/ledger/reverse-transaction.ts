@@ -62,7 +62,9 @@ function presentReversal(result: LedgerFinancialReversalResult) {
 }
 
 function presentTransaction(transaction: LedgerTransactionRecord): ReversedTransactionDTO {
-  if (transaction.kind === "REFUND") throw new Error("A refund cannot be part of a manual reversal result.");
+  if (transaction.kind === "REFUND" || transaction.kind === "OPENING_BALANCE") {
+    throw new Error("An internal ledger entry cannot be part of a manual reversal result.");
+  }
   return {
     id: transaction.id,
     kind: transaction.kind,

@@ -4,7 +4,7 @@ import { calendarMonthPeriod } from "@/money/period";
 import { resolveMerchantLogo } from "@/lib/transaction-visuals/merchant-logo-matcher";
 import { resolveTransactionIcon } from "@/lib/transaction-visuals/transaction-icon-matcher";
 import { getFinancialInboxService } from "@/modules/financial-inbox/server";
-import type { LedgerTransactionRecord } from "@/modules/ledger/domain";
+import { isUserFacingLedgerTransaction, type LedgerTransactionRecord } from "@/modules/ledger/domain";
 import { currentFinancialTransactions } from "@/modules/ledger/correction-chain";
 import { getLedgerService } from "@/modules/ledger/server";
 import { buildOverviewFinancialSummary } from "@/modules/overview/domain/overview-financial-summary";
@@ -41,7 +41,7 @@ export async function getAssistantOverviewSummary(
     period: selectedPeriod,
     timeZone: context.timeZone,
     now: new Date(),
-    transactions,
+    transactions: transactions.filter(isUserFacingLedgerTransaction),
   });
 
   return {
