@@ -36,6 +36,55 @@ export type AccountDetailUiLabels = {
   readonly notFoundDescription: string;
   readonly statusValues: Readonly<Record<AccountDetailStatus, string>>;
   readonly typeValues: Readonly<Record<LedgerAccountType, string>>;
+  readonly management: {
+    readonly actions: {
+      readonly edit: string;
+      readonly archive: string;
+      readonly restore: string;
+      readonly more: string;
+      readonly cancel: string;
+      readonly close: string;
+    };
+    readonly archivedDescription: string;
+    readonly edit: {
+      readonly title: string;
+      readonly description: string;
+      readonly name: string;
+      readonly type: string;
+      readonly currency: string;
+      readonly currencyLocked: string;
+      readonly typeLocked: string;
+      readonly typeTransitionLocked: string;
+      readonly readOnly: string;
+      readonly save: string;
+      readonly saving: string;
+      readonly noChanges: string;
+      readonly invalidName: string;
+      readonly nameTooLong: string;
+      readonly failed: string;
+      readonly notAllowed: string;
+      readonly conflict: string;
+      readonly reloadLatest: string;
+    };
+    readonly archive: {
+      readonly title: string;
+      readonly description: string;
+      readonly currentBalance: string;
+      readonly historyPreserved: string;
+      readonly confirm: string;
+      readonly archiving: string;
+      readonly success: string;
+      readonly failed: string;
+    };
+    readonly restore: {
+      readonly title: string;
+      readonly description: string;
+      readonly confirm: string;
+      readonly restoring: string;
+      readonly success: string;
+      readonly failed: string;
+    };
+  };
   readonly columns: {
     readonly transaction: string;
     readonly category: string;
@@ -98,6 +147,55 @@ export function getAccountDetailUiLabels(labels: DashboardLabels): AccountDetail
       CREDIT_CARD: labels["accounts.type.creditCard.label"],
       MOBILE_MONEY: labels["accounts.type.mobileMoney.label"],
       OTHER: labels["accounts.type.other.label"],
+    },
+    management: {
+      actions: {
+        edit: labels["accounts.actions.edit"],
+        archive: labels["accounts.actions.archive"],
+        restore: labels["accounts.actions.restore"],
+        more: labels["accounts.actions.more"],
+        cancel: labels["accounts.actions.cancel"],
+        close: labels["accounts.actions.close"],
+      },
+      archivedDescription: labels["accounts.status.archivedDescription"],
+      edit: {
+        title: labels["accounts.edit.title"],
+        description: labels["accounts.edit.description"],
+        name: labels["accounts.edit.name"],
+        type: labels["accounts.edit.type"],
+        currency: labels["accounts.edit.currency"],
+        currencyLocked: labels["accounts.edit.currencyLocked"],
+        typeLocked: labels["accounts.edit.typeLocked"],
+        typeTransitionLocked: labels["accounts.edit.typeTransitionLocked"],
+        readOnly: labels["accounts.edit.readOnly"],
+        save: labels["accounts.edit.save"],
+        saving: labels["accounts.edit.saving"],
+        noChanges: labels["accounts.edit.noChanges"],
+        invalidName: labels["accounts.edit.invalidName"],
+        nameTooLong: labels["accounts.edit.nameTooLong"],
+        failed: labels["accounts.edit.failed"],
+        notAllowed: labels["accounts.edit.notAllowed"],
+        conflict: labels["accounts.edit.conflict"],
+        reloadLatest: labels["accounts.edit.reloadLatest"],
+      },
+      archive: {
+        title: labels["accounts.archive.title"],
+        description: labels["accounts.archive.description"],
+        currentBalance: labels["accounts.archive.currentBalance"],
+        historyPreserved: labels["accounts.archive.historyPreserved"],
+        confirm: labels["accounts.archive.confirm"],
+        archiving: labels["accounts.archive.archiving"],
+        success: labels["accounts.archive.success"],
+        failed: labels["accounts.archive.failed"],
+      },
+      restore: {
+        title: labels["accounts.restore.title"],
+        description: labels["accounts.restore.description"],
+        confirm: labels["accounts.restore.confirm"],
+        restoring: labels["accounts.restore.restoring"],
+        success: labels["accounts.restore.success"],
+        failed: labels["accounts.restore.failed"],
+      },
     },
     columns: {
       transaction: labels["transactions.columns.transaction"],

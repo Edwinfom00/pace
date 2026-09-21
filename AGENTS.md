@@ -15,4 +15,8 @@ Do not redesign, regenerate, reinterpret, recolor or replace it without explicit
 
 All product surfaces must use the shared `PaceLogo` component instead of recreating the logo manually.
 
+## Dialogs
+
+Use the shared `ResponsiveDialog` primitives for product dialogs. Do not import the base `Dialog` primitives directly in product surfaces.
+
 <!-- END:nextjs-agent-rules -->

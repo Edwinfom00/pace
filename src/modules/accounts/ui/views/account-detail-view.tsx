@@ -29,6 +29,7 @@ import {
   type AccountDetailRecentTransaction,
 } from "../../domain/account-detail";
 import type { AccountDetailUiLabels } from "../account-detail-ui-labels";
+import { AccountManagementActions } from "../components/account-management-actions";
 import { AccountDetailBalanceChart } from "../components/account-detail-balance-chart";
 import { AccountsAskPace } from "../components/accounts-ask-pace";
 
@@ -109,13 +110,35 @@ export function AccountDetailView({
             </p>
           </div>
         </div>
-        <AccountsAskPace
-          language={language}
-          locale={locale}
-          timeZone={timeZone}
-          workspaceId={workspaceId}
-        />
+        <div className="flex items-center gap-2">
+          <AccountManagementActions
+            account={account}
+            capabilities={detail.capabilities}
+            currentBalanceMinor={detail.currentBalanceMinor}
+            labels={labels.management}
+            locale={locale}
+            typeValues={labels.typeValues}
+            workspaceId={workspaceId}
+            workspaceSlug={workspaceSlug}
+          />
+          <AccountsAskPace
+            language={language}
+            locale={locale}
+            timeZone={timeZone}
+            workspaceId={workspaceId}
+          />
+        </div>
       </header>
+
+      {account.status === "ARCHIVED" ? (
+        <section
+          aria-label={labels.statusValues.ARCHIVED}
+          className="mt-5 flex gap-2.5 rounded-[10px] border border-[#e0e6ee] bg-[#f8fafc] px-4 py-3 text-[#52627b]"
+        >
+          <HiOutlineArchiveBox aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-[#63738a]" />
+          <p className="text-[13px] leading-5">{labels.management.archivedDescription}</p>
+        </section>
+      ) : null}
 
       <div className="mt-7 grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0">
