@@ -35,6 +35,7 @@ async function createFixture() {
     workspace,
     preferences: { currency: "XAF", locale: "fr-CM", timezone: "Africa/Douala", weekStartsOn: 1 },
     owner: { workspaceId, userId: owner.userId, role: "OWNER", invitedByUserId: null, joinedAt: now },
+    initialAccount: { id: `${workspaceId}-main`, workspaceId, name: "Main account", type: "CHECKING", currency: "XAF", createdByUserId: owner.userId },
   });
   const ledger = new LedgerService(ledgerRecords, workspaces);
   const plans = new PlansService(planRecords, ledgerRecords, workspaces);

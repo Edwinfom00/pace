@@ -1,4 +1,7 @@
 import type {
+  LedgerAccountRecord,
+} from "@/modules/ledger/domain";
+import type {
   WorkspaceInvitationRecord,
   WorkspaceMemberContext,
   WorkspaceMembershipRecord,
@@ -22,6 +25,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
     CreateInvitationRecordInput & Pick<WorkspaceInvitationRecord, "createdAt" | "usedAt" | "revokedAt" | "acceptedByUserId">
   >();
   readonly preferences = new Map<string, WorkspacePreferenceRecord>();
+  /** Initial accounts are part of the same atomic workspace-provisioning bundle. */
+  readonly accounts = new Map<string, LedgerAccountRecord>();
+  /** Test-only fault injection for workspace bootstrap atomicity. */
+  failInitialAccountCreation = false;
   readonly invitationAuditEvents: Array<{
     invitationId: string;
     workspaceId: string;
@@ -35,6 +42,23 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
         constraint: "workspace_slug_unique",
       });
     }
+    if (this.failInitialAccountCreation) {
+      throw new Error("Initial account bootstrap failed.");
+    }
+    if (input.initialAccount.workspaceId !== input.workspace.id) {
+      throw new Error("Initial account must belong to its workspace.");
+    }
+    if (this.accounts.has(input.initialAccount.id)) {
+      throw new Error("Initial account already exists.");
+    }
+
+    const now = new Date();
+    const initialAccount: LedgerAccountRecord = {
+      ...input.initialAccount,
+      archivedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
     this.workspaces.set(input.workspace.id, input.workspace);
     this.memberships.set(this.membershipKey(input.owner.workspaceId, input.owner.userId), input.owner);
     this.preferences.set(input.workspace.id, {
@@ -43,6 +67,7 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
       createdAt: input.workspace.createdAt,
       updatedAt: input.workspace.updatedAt,
     });
+    this.accounts.set(initialAccount.id, initialAccount);
   }
 
   async findMembership(workspaceId: string, userId: string): Promise<WorkspaceMembershipRecord | null> {

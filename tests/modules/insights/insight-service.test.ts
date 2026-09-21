@@ -66,6 +66,7 @@ async function fixture() {
       workspace,
       preferences: { currency: "USD", locale: "en-US", timezone: "UTC", weekStartsOn: 1 },
       owner: { workspaceId: workspace.id, userId: owner.userId, role: "OWNER", invitedByUserId: null, joinedAt: now },
+      initialAccount: { id: `${workspace.id}-main`, workspaceId: workspace.id, name: "Main account", type: "CHECKING", currency: "USD", createdByUserId: owner.userId },
     });
     repository.settings.set(workspace.id, { workspaceId: workspace.id, currency: "USD", timezone: "UTC" });
   }

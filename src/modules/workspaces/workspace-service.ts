@@ -13,6 +13,7 @@ import {
 } from "@/authorization/errors";
 
 import type { AuthenticatedActor } from "@/authorization/session";
+import { createInitialWorkspaceAccount } from "@/modules/ledger/ledger-service";
 
 import type {
   JoinInvitationPreview,
@@ -333,6 +334,7 @@ export class WorkspaceService {
     workspaceId: string,
   ): Promise<WorkspaceRecord> {
     const now = new Date();
+    const preferences = { ...DEFAULT_PREFERENCES, ...input.preferences };
     const workspace: WorkspaceRecord = {
       id: workspaceId,
       name: input.name,
@@ -345,7 +347,7 @@ export class WorkspaceService {
 
     await this.repository.createWorkspaceWithOwner({
       workspace,
-      preferences: { ...DEFAULT_PREFERENCES, ...input.preferences },
+      preferences,
       owner: {
         workspaceId: workspace.id,
         userId: actor.userId,
@@ -353,6 +355,11 @@ export class WorkspaceService {
         invitedByUserId: null,
         joinedAt: now,
       },
+      initialAccount: createInitialWorkspaceAccount({
+        workspaceId: workspace.id,
+        createdByUserId: actor.userId,
+        currency: preferences.currency,
+      }),
     });
 
     return workspace;

@@ -366,6 +366,10 @@ test("workspace Step 2 persistence is idempotent, creates an owner, and advances
   assert.equal(stored[0]?.name, "Family finances");
   assert.ok(stored[0]?.slug);
   assert.equal((await workspaces.findMembership(stored[0]!.id, actor.userId))?.role, "OWNER");
+  const bootstrapAccounts = [...workspaces.accounts.values()].filter((account) => account.workspaceId === stored[0]?.id);
+  assert.equal(bootstrapAccounts.length, 1);
+  assert.equal(bootstrapAccounts[0]?.name, "Main account");
+  assert.equal(bootstrapAccounts[0]?.currency, workspaces.preferences.get(stored[0]!.id)?.currency);
 
   await assert.rejects(
     service.createOrUpdateOnboardingWorkspace(

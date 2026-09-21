@@ -37,6 +37,7 @@ import {
   InsufficientFundsError,
 } from "./spendability-policy";
 import type {
+  CreateLedgerAccountRecord,
   CreateLedgerMerchantRecord,
   CreateLedgerAccountAuditRecord,
   CreateLedgerTransactionRecord,
@@ -72,6 +73,50 @@ import {
   type CreateLedgerTransactionInput,
 } from "./validation";
 
+export const INITIAL_WORKSPACE_ACCOUNT_NAME = "Main account";
+export const INITIAL_WORKSPACE_ACCOUNT_TYPE = "CHECKING";
+
+/**
+ * Builds the persisted form of an account from the same validation and money
+ * normalization used by every account-creation path. Persistence remains the
+ * caller's responsibility so workspace provisioning can include the account
+ * in its atomic database bundle.
+ */
+export function createLedgerAccountRecord(input: {
+  id: string;
+  workspaceId: string;
+  createdByUserId: string;
+  account: unknown;
+}): CreateLedgerAccountRecord {
+  const parsed = createLedgerAccountSchema.parse(input.account);
+  return {
+    id: input.id,
+    workspaceId: input.workspaceId,
+    name: parsed.name,
+    type: parsed.type,
+    currency: toCurrencyCode(parsed.currency),
+    createdByUserId: input.createdByUserId,
+  };
+}
+
+/** Creates the one initial, ordinary funded account for a new workspace. */
+export function createInitialWorkspaceAccount(input: {
+  id?: string;
+  workspaceId: string;
+  createdByUserId: string;
+  currency: string;
+}): CreateLedgerAccountRecord {
+  return createLedgerAccountRecord({
+    id: input.id ?? randomUUID(),
+    workspaceId: input.workspaceId,
+    createdByUserId: input.createdByUserId,
+    account: {
+      name: INITIAL_WORKSPACE_ACCOUNT_NAME,
+      type: INITIAL_WORKSPACE_ACCOUNT_TYPE,
+      currency: input.currency,
+    },
+  });
+}
 
 export class LedgerService {
   constructor(
@@ -84,17 +129,15 @@ export class LedgerService {
     workspaceId: string,
     input: unknown,
   ): Promise<LedgerAccountRecord> {
-    const parsed = createLedgerAccountSchema.parse(input);
-    await this.requireWorkspacePermission(actor.userId, workspaceId, "manage_ledger");
-
-    return this.repository.createAccount({
+    const account = createLedgerAccountRecord({
       id: randomUUID(),
       workspaceId,
-      name: parsed.name,
-      type: parsed.type,
-      currency: toCurrencyCode(parsed.currency),
       createdByUserId: actor.userId,
+      account: input,
     });
+    await this.requireWorkspacePermission(actor.userId, workspaceId, "manage_ledger");
+
+    return this.repository.createAccount(account);
   }
 
   async listAccounts(actor: AuthenticatedActor, workspaceId: string): Promise<LedgerAccountRecord[]> {

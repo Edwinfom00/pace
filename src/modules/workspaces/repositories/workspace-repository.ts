@@ -4,12 +4,14 @@ import { alias } from "drizzle-orm/pg-core";
 
 import { db, neonSql } from "@/db/client";
 import {
+  ledgerAccounts,
   workspaceInvitations,
   workspaceMembers,
   workspacePreferences,
   workspaces,
 } from "@/db/schema";
 import { users } from "@/db/schema/auth";
+import type { CreateLedgerAccountRecord } from "@/modules/ledger/repositories/ledger-repository";
 
 import type {
   WorkspaceInvitationRecord,
@@ -24,6 +26,8 @@ export interface CreateWorkspaceWithOwnerInput {
   workspace: WorkspaceRecord;
   preferences: WorkspacePreferencesInput;
   owner: WorkspaceMembershipRecord;
+  /** The canonical initial ledger account, persisted with workspace provisioning. */
+  initialAccount: CreateLedgerAccountRecord;
 }
 
 export interface CreateInvitationRecordInput {
@@ -94,6 +98,7 @@ export class DatabaseWorkspaceRepository implements WorkspaceRepository {
         ...input.preferences,
       }),
       db.insert(workspaceMembers).values(input.owner),
+      db.insert(ledgerAccounts).values(input.initialAccount),
     ]);
   }
 
