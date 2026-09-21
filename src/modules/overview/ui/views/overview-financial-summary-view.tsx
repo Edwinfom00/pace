@@ -3,6 +3,10 @@ import type { DashboardLabels } from "@/i18n/dashboard-messages";
 import type { OverviewFinancialSummary } from "../../domain/overview.types";
 import type { OverviewRightRailData } from "../../queries/get-overview-right-rail";
 import { OverviewFilters } from "../components/overview-filters";
+import {
+  OverviewFilterLoadingProvider,
+  OverviewFilterLoadingSurface,
+} from "../components/overview-filter-loading";
 import { OverviewKpis } from "../components/overview-kpis";
 import { OverviewPeriodControls } from "../components/overview-period-controls";
 import { SpendingPaceChart } from "../components/spending-pace-chart";
@@ -50,18 +54,24 @@ export function OverviewFinancialSummaryView({
             locale={summary.locale}
             periodKey={periodKey}
           />
-          <OverviewFilters labels={labels} selectedFilter={summary.filter} />
-          <OverviewKpis labels={labels} summary={summary} />
-          <SpendingPaceChart labels={labels} summary={summary} />
-          <OverviewActivityView
-            inbox={inbox}
-            labels={labels}
-            locale={summary.locale}
-            now={now}
-            recentTransactions={recentTransactions}
-            timeZone={timeZone}
-            workspaceSlug={workspaceSlug}
-          />
+          <OverviewFilterLoadingProvider selectedFilter={summary.filter}>
+            <OverviewFilters labels={labels} />
+            <OverviewFilterLoadingSurface labels={labels}>
+              <div className="space-y-4 sm:space-y-5">
+                <OverviewKpis labels={labels} summary={summary} />
+                <SpendingPaceChart labels={labels} summary={summary} />
+                <OverviewActivityView
+                  inbox={inbox}
+                  labels={labels}
+                  locale={summary.locale}
+                  now={now}
+                  recentTransactions={recentTransactions}
+                  timeZone={timeZone}
+                  workspaceSlug={workspaceSlug}
+                />
+              </div>
+            </OverviewFilterLoadingSurface>
+          </OverviewFilterLoadingProvider>
         </div>
         <div className="min-w-0 xl:sticky xl:top-5">
           <OverviewRightRailView
