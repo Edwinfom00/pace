@@ -27,18 +27,26 @@ import type {
 } from "./domain";
 import { normalizeMerchantName } from "./domain";
 import {
+  getAccountActionPolicy,
+  isAccountTypeChangeAllowed,
+  type AccountActionPolicy,
+} from "./account-action-policy";
+import {
   debitSpendabilityGuard,
   InsufficientFundsError,
 } from "./spendability-policy";
 import type {
   CreateLedgerMerchantRecord,
+  CreateLedgerAccountAuditRecord,
   CreateLedgerTransactionRecord,
   CreateLedgerTransactionAuditRecord,
   CreateLedgerTransactionCorrectionRecord,
   CreateLedgerFinancialRefundRecord,
   CreateLedgerFinancialReversalRecord,
   LedgerRepository,
+  MutateLedgerAccountRecord,
 } from "./repositories/ledger-repository";
+import type { ManageAccountCommand } from "./manage-account-contract";
 import type {
   CorrectTransactionCommand,
 } from "./correct-transaction-contract";
@@ -104,6 +112,155 @@ export class LedgerService {
   ): Promise<readonly LedgerAccountBalance[]> {
     await this.requireWorkspacePermission(actor.userId, input.workspaceId, "read");
     return this.repository.getWorkspaceAccountBalances(input.workspaceId);
+  }
+
+  async getAccountActionPolicy(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    accountId: string,
+  ): Promise<AccountActionPolicy> {
+    const membership = await this.requireWorkspacePermission(actor.userId, workspaceId, "read");
+    const account = await this.requireManagedAccount(workspaceId, accountId);
+    const hasFinancialActivity = await this.repository.hasFinancialActivity(workspaceId, account.id);
+    return getAccountActionPolicy({
+      account,
+      workspaceRole: membership.role,
+      hasFinancialActivity,
+    });
+  }
+
+  /**
+   * Canonical account lifecycle command. It only ever changes descriptive
+   * metadata, type under the policy's safe conditions, or archivedAt.
+   */
+  async manageAccount(
+    actor: AuthenticatedActor,
+    command: ManageAccountCommand,
+  ): Promise<LedgerAccountRecord> {
+    const membership = await this.requireWorkspacePermission(actor.userId, command.workspaceId, "manage_ledger");
+    const commandFingerprint = accountManagementCommandFingerprint(command);
+    const replay = await this.repository.findAccountAuditByIdempotencyKey(
+      command.workspaceId,
+      actor.userId,
+      command.idempotencyKey,
+    );
+    if (replay) {
+      if (
+        replay.accountId !== command.accountId
+        || replay.commandFingerprint !== commandFingerprint
+        || replay.action !== accountAuditAction(command.action)
+      ) {
+        throw new DomainConflictError(
+          "ACCOUNT_MANAGEMENT_IDEMPOTENCY_CONFLICT",
+          "This idempotency key has already been used for another account management command.",
+        );
+      }
+      return this.requireManagedAccount(command.workspaceId, command.accountId);
+    }
+
+    const account = await this.requireManagedAccount(command.workspaceId, command.accountId);
+    const hasFinancialActivity = command.action === "CHANGE_TYPE"
+      ? await this.repository.hasFinancialActivity(command.workspaceId, account.id)
+      : false;
+    const policy = getAccountActionPolicy({
+      account,
+      workspaceRole: membership.role,
+      hasFinancialActivity,
+    });
+
+    switch (command.action) {
+      case "RENAME":
+        if (!policy.canRename) {
+          throw new DomainConflictError("ACCOUNT_MANAGEMENT_NOT_ALLOWED", "This account cannot be renamed.");
+        }
+        if (command.name === account.name) return account;
+        return this.persistAccountManagementMutation({
+          account,
+          command,
+          commandFingerprint,
+          requiredArchived: account.archivedAt !== null,
+          name: command.name,
+          audit: accountManagementAudit({
+            actorUserId: actor.userId,
+            workspaceId: command.workspaceId,
+            accountId: account.id,
+            action: "RENAMED",
+            commandFingerprint,
+            idempotencyKey: command.idempotencyKey,
+            metadata: { before: { name: account.name }, after: { name: command.name } },
+          }),
+        });
+      case "CHANGE_TYPE":
+        if (command.type === account.type) return account;
+        if (hasFinancialActivity) {
+          throw new DomainConflictError(
+            "ACCOUNT_HAS_FINANCIAL_ACTIVITY",
+            "Account type is locked after the account has financial activity.",
+          );
+        }
+        if (!policy.canChangeType || !isAccountTypeChangeAllowed(account.type, command.type, hasFinancialActivity)) {
+          throw new DomainConflictError(
+            "ACCOUNT_TYPE_CHANGE_NOT_ALLOWED",
+            "The requested account type would change the account's spendability semantics.",
+          );
+        }
+        return this.persistAccountManagementMutation({
+          account,
+          command,
+          commandFingerprint,
+          requiredArchived: account.archivedAt !== null,
+          type: command.type,
+          audit: accountManagementAudit({
+            actorUserId: actor.userId,
+            workspaceId: command.workspaceId,
+            accountId: account.id,
+            action: "TYPE_CHANGED",
+            commandFingerprint,
+            idempotencyKey: command.idempotencyKey,
+            metadata: { before: { type: account.type }, after: { type: command.type } },
+          }),
+        });
+      case "ARCHIVE":
+        if (!policy.canArchive) {
+          throw new DomainConflictError("ACCOUNT_ALREADY_ARCHIVED", "This account is already archived.");
+        }
+        return this.persistAccountManagementMutation({
+          account,
+          command,
+          commandFingerprint,
+          requiredArchived: false,
+          archived: true,
+          audit: accountManagementAudit({
+            actorUserId: actor.userId,
+            workspaceId: command.workspaceId,
+            accountId: account.id,
+            action: "ARCHIVED",
+            commandFingerprint,
+            idempotencyKey: command.idempotencyKey,
+            metadata: { before: { status: "ACTIVE" }, after: { status: "ARCHIVED" } },
+          }),
+        });
+      case "RESTORE":
+        if (!policy.canRestore) {
+          throw new DomainConflictError("ACCOUNT_NOT_ARCHIVED", "This account is not archived.");
+        }
+        return this.persistAccountManagementMutation({
+          account,
+          command,
+          commandFingerprint,
+          requiredArchived: true,
+          archived: false,
+          audit: accountManagementAudit({
+            actorUserId: actor.userId,
+            workspaceId: command.workspaceId,
+            accountId: account.id,
+            action: "RESTORED",
+            commandFingerprint,
+            idempotencyKey: command.idempotencyKey,
+            metadata: { before: { status: "ARCHIVED" }, after: { status: "ACTIVE" } },
+          }),
+        });
+    }
   }
 
   async createCategory(
@@ -235,21 +392,25 @@ export class LedgerService {
     options: { readonly enforceSpendability?: boolean } = {},
   ): Promise<LedgerTransactionRecord> {
     const prepared = await this.prepareCanonicalTransaction(actor, workspaceId, parsed);
-    if (options.enforceSpendability) {
-      const spendabilityGuard = prepared.debitAccount
-        ? debitSpendabilityGuard(prepared.debitAccount, prepared.transaction.amountMinor)
-        : null;
-      const result = await this.repository.createTransactionWithSpendability({
-        transaction: prepared.transaction,
-        merchantToCreate: prepared.merchant,
-        spendabilityGuard,
-      });
-      if (result.outcome === "INSUFFICIENT_FUNDS") throw new InsufficientFundsError(result.spendability);
-      return result.transaction;
+    // All real-time writes go through the account-locking repository command.
+    // Import paths may opt out of a debit floor, never out of active-account
+    // validation or the atomic account lock.
+    const spendabilityGuard = options.enforceSpendability && prepared.debitAccount
+      ? debitSpendabilityGuard(prepared.debitAccount, prepared.transaction.amountMinor)
+      : null;
+    const result = await this.repository.createTransactionWithSpendability({
+      transaction: prepared.transaction,
+      merchantToCreate: prepared.merchant,
+      spendabilityGuard,
+    });
+    if (result.outcome === "INSUFFICIENT_FUNDS") throw new InsufficientFundsError(result.spendability);
+    if (result.outcome === "ACCOUNT_UNAVAILABLE") {
+      throw new DomainConflictError(
+        "ACCOUNT_UNAVAILABLE",
+        "An archived account cannot accept new financial transactions.",
+      );
     }
-    return prepared.merchant
-      ? this.repository.createTransactionWithMerchant(prepared.transaction, prepared.merchant)
-      : this.repository.createTransaction(prepared.transaction);
+    return result.transaction;
   }
 
   private async prepareCanonicalTransaction(
@@ -461,6 +622,10 @@ export class LedgerService {
     if (!created) {
       const concurrentReplay = await this.repository.findTransactionByFingerprint(command.workspaceId, fingerprint);
       if (concurrentReplay) return this.resolveExistingRefund(command, commandFingerprint, concurrentReplay);
+      // A refund is new financial activity. Re-check its destination after an
+      // atomic candidate failure so an archive race returns ACCOUNT_UNAVAILABLE
+      // instead of a vague concurrency error.
+      await this.requireRefundAccount(command.workspaceId, destinationAccount.id);
       return this.resolveRefundSaveConflict(command, sourceExpense.id);
     }
 
@@ -549,7 +714,7 @@ export class LedgerService {
         "A corrected expense cannot be less than refunds already issued against it.",
       );
     }
-    await this.assertCorrectionReplacementAccounts(command.workspaceId, replacementInput);
+    await this.assertCorrectionReplacementAccounts(command.workspaceId, replacementInput, original);
     const replacement = await this.prepareCanonicalTransaction(actor, command.workspaceId, replacementInput);
     const spendabilityGuard = replacement.debitAccount
       ? debitSpendabilityGuard(replacement.debitAccount, replacement.transaction.amountMinor)
@@ -588,6 +753,9 @@ export class LedgerService {
         correction,
         reversal,
         replacement: replacement.transaction,
+        historicalAccountIds: [original.accountId, original.transferAccountId].filter(
+          (accountId): accountId is string => accountId !== null,
+        ),
         spendabilityGuard,
         merchantToCreate: replacement.merchant,
         audits,
@@ -619,6 +787,7 @@ export class LedgerService {
         idempotencyKey,
       );
       if (concurrentReplay) return this.resolveExistingCorrection(command, commandFingerprint, concurrentReplay);
+      await this.assertCorrectionReplacementAccounts(command.workspaceId, replacementInput, original);
       if (await this.repository.findTransactionCorrectionByOriginal(command.workspaceId, original.id)) {
         throw new DomainConflictError(
           "TRANSACTION_NOT_CURRENT",
@@ -1030,11 +1199,20 @@ export class LedgerService {
   private async assertCorrectionReplacementAccounts(
     workspaceId: string,
     replacement: CreateLedgerTransactionInput,
+    original: LedgerTransactionRecord,
   ): Promise<void> {
+    const historicalAccountIds = new Set([original.accountId, original.transferAccountId].filter(
+      (accountId): accountId is string => accountId !== null,
+    ));
     const assertAccount = async (accountId: string, label: string) => {
       const account = await this.repository.findAccount(workspaceId, accountId);
       if (account) {
-        if (account.archivedAt) throw new ConflictError("Archived accounts cannot accept new transactions.");
+        // A correction may retain an archived account from the original
+        // record, because it is repairing historical truth. It may never
+        // introduce a newly selected archived account.
+        if (account.archivedAt && !historicalAccountIds.has(account.id)) {
+          throw new ConflictError("Archived accounts cannot accept new transactions.");
+        }
         return account;
       }
       if (await this.repository.findAccountById(accountId)) {
@@ -1294,6 +1472,108 @@ export class LedgerService {
     if (!(await this.workspaces.findMembership(workspaceId, userId))) {
       throw new AuthorizationError(message);
     }
+  }
+
+  private async persistAccountManagementMutation(
+    input: {
+      readonly account: LedgerAccountRecord;
+      readonly command: ManageAccountCommand;
+      readonly commandFingerprint: string;
+      readonly requiredArchived: boolean | undefined;
+      readonly name?: string;
+      readonly type?: LedgerAccountRecord["type"];
+      readonly archived?: boolean;
+      readonly audit: CreateLedgerAccountAuditRecord;
+    },
+  ): Promise<LedgerAccountRecord> {
+    const mutation: MutateLedgerAccountRecord = {
+      workspaceId: input.command.workspaceId,
+      accountId: input.account.id,
+      expectedUpdatedAt: input.command.expectedUpdatedAt,
+      requiredArchived: input.requiredArchived,
+      requireNoFinancialActivity: input.command.action === "CHANGE_TYPE",
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.type !== undefined ? { type: input.type } : {}),
+      ...(input.archived !== undefined ? { archived: input.archived } : {}),
+      audit: input.audit,
+    };
+
+    let updated: LedgerAccountRecord | null;
+    try {
+      updated = await this.repository.mutateAccount(mutation);
+    } catch (error) {
+      const replay = await this.repository.findAccountAuditByIdempotencyKey(
+        input.command.workspaceId,
+        input.audit.actorUserId,
+        input.command.idempotencyKey,
+      );
+      if (replay) {
+        if (
+          replay.accountId !== input.account.id
+          || replay.commandFingerprint !== input.commandFingerprint
+          || replay.action !== input.audit.action
+        ) {
+          throw new DomainConflictError(
+            "ACCOUNT_MANAGEMENT_IDEMPOTENCY_CONFLICT",
+            "This idempotency key has already been used for another account management command.",
+          );
+        }
+        return this.requireManagedAccount(input.command.workspaceId, input.account.id);
+      }
+      if (isSerializationFailure(error)) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "The account changed while this management command was being saved. Retry the operation.",
+        );
+      }
+      throw error;
+    }
+    if (updated) return updated;
+
+    const current = await this.requireManagedAccount(input.command.workspaceId, input.account.id);
+    if (
+      input.command.expectedUpdatedAt
+      && current.updatedAt.getTime() !== input.command.expectedUpdatedAt.getTime()
+    ) {
+      throw new DomainConflictError(
+        "CONCURRENT_MODIFICATION",
+        "This account changed since it was loaded. Refresh it before managing the account.",
+      );
+    }
+    if (input.command.action === "CHANGE_TYPE" && await this.repository.hasFinancialActivity(
+      input.command.workspaceId,
+      input.account.id,
+    )) {
+      throw new DomainConflictError(
+        "ACCOUNT_HAS_FINANCIAL_ACTIVITY",
+        "Account type is locked after the account has financial activity.",
+      );
+    }
+    if (input.command.action === "ARCHIVE" && current.archivedAt) {
+      throw new DomainConflictError("ACCOUNT_ALREADY_ARCHIVED", "This account is already archived.");
+    }
+    if (input.command.action === "RESTORE" && !current.archivedAt) {
+      throw new DomainConflictError("ACCOUNT_NOT_ARCHIVED", "This account is not archived.");
+    }
+    throw new DomainConflictError(
+      "CONCURRENT_MODIFICATION",
+      "The account changed while this management command was being saved. Retry the operation.",
+    );
+  }
+
+  private async requireManagedAccount(
+    workspaceId: string,
+    accountId: string,
+  ): Promise<LedgerAccountRecord> {
+    const account = await this.repository.findAccount(workspaceId, accountId);
+    if (account) return account;
+    if (await this.repository.findAccountById(accountId)) {
+      throw new DomainConflictError(
+        "ACCOUNT_WORKSPACE_MISMATCH",
+        "Account does not belong to this workspace.",
+      );
+    }
+    throw new NotFoundError("Account not found in this workspace.");
   }
 
   private async requireAccount(
@@ -1564,6 +1844,32 @@ function refundIdempotencyFingerprint(actorUserId: string, idempotencyKey: strin
     .update(`${actorUserId}:${idempotencyKey}`)
     .digest("hex");
   return `refund:${digest}`;
+}
+
+function accountManagementCommandFingerprint(command: ManageAccountCommand): string {
+  return createHash("sha256")
+    .update(stableJson({
+      workspaceId: command.workspaceId,
+      accountId: command.accountId,
+      action: command.action,
+      ...(command.action === "RENAME" ? { name: command.name } : {}),
+      ...(command.action === "CHANGE_TYPE" ? { type: command.type } : {}),
+      expectedUpdatedAt: command.expectedUpdatedAt?.toISOString() ?? null,
+    }))
+    .digest("hex");
+}
+
+function accountAuditAction(action: ManageAccountCommand["action"]): CreateLedgerAccountAuditRecord["action"] {
+  switch (action) {
+    case "RENAME": return "RENAMED";
+    case "CHANGE_TYPE": return "TYPE_CHANGED";
+    case "ARCHIVE": return "ARCHIVED";
+    case "RESTORE": return "RESTORED";
+  }
+}
+
+function accountManagementAudit(input: Omit<CreateLedgerAccountAuditRecord, "id">): CreateLedgerAccountAuditRecord {
+  return { id: randomUUID(), ...input };
 }
 
 function refundCommandFingerprint(command: CreateRefundCommand): string {

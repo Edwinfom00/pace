@@ -104,6 +104,9 @@ function refundValidationErrorCode(error: z.ZodError): CreateRefundErrorCode {
 
 function refundErrorCode(error: unknown): CreateRefundErrorCode {
   if (error instanceof AuthorizationError) return "WORKSPACE_FORBIDDEN";
+  if (error instanceof DomainConflictError && error.code === "ACCOUNT_UNAVAILABLE") {
+    return "ACCOUNT_UNAVAILABLE";
+  }
   if (error instanceof NotFoundError) {
     if (error.message.startsWith("Transaction")) return "TRANSACTION_NOT_FOUND";
     if (/account/i.test(error.message)) return "ACCOUNT_NOT_FOUND";

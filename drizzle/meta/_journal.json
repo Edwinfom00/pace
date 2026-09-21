@@ -162,6 +162,13 @@
       "when": 1789917702201,
       "tag": "0022_steady_caretaker",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790000000000,
+      "tag": "0023_account_management_policy",
+      "breakpoints": true
     }
   ]
 }

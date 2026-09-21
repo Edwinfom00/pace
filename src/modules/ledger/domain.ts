@@ -28,6 +28,21 @@ export interface LedgerAccountRecord {
   updatedAt: Date;
 }
 
+export const LEDGER_ACCOUNT_AUDIT_ACTIONS = ["RENAMED", "TYPE_CHANGED", "ARCHIVED", "RESTORED"] as const;
+export type LedgerAccountAuditAction = (typeof LEDGER_ACCOUNT_AUDIT_ACTIONS)[number];
+
+export interface LedgerAccountAuditRecord {
+  id: string;
+  workspaceId: string;
+  accountId: string;
+  actorUserId: string;
+  action: LedgerAccountAuditAction;
+  commandFingerprint: string;
+  idempotencyKey: string;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+}
+
 /** The authoritative, unformatted current balance of one ledger account. */
 export interface LedgerAccountBalance {
   accountId: string;

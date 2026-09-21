@@ -14,7 +14,10 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import { LEDGER_ACCOUNT_TYPES } from "@/modules/ledger/domain";
+import {
+  LEDGER_ACCOUNT_AUDIT_ACTIONS,
+  LEDGER_ACCOUNT_TYPES,
+} from "@/modules/ledger/domain";
 
 import { users } from "./auth";
 import { workspaces } from "./workspaces";
@@ -28,6 +31,7 @@ export const ledgerTransactionKind = pgEnum("ledger_transaction_kind", [
 ]);
 export const ledgerTransactionStatus = pgEnum("ledger_transaction_status", ["PENDING", "POSTED"]);
 export const ledgerAccountType = pgEnum("ledger_account_type", LEDGER_ACCOUNT_TYPES);
+export const ledgerAccountAuditAction = pgEnum("ledger_account_audit_action", LEDGER_ACCOUNT_AUDIT_ACTIONS);
 
 export const ledgerAccounts = pgTable(
   "ledger_account",
@@ -99,6 +103,39 @@ export const ledgerCategories = pgTable(
         AND ${table.createdByUserId} IS NOT NULL
         AND ${table.systemKey} IS NULL
       )`,
+    ),
+  ],
+);
+
+
+export const ledgerAccountAudits = pgTable(
+  "ledger_account_audit",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => ledgerAccounts.id, { onDelete: "restrict" }),
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    action: ledgerAccountAuditAction("action").notNull(),
+    commandFingerprint: varchar("command_fingerprint", { length: 128 }).notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("ledger_account_audit_workspace_created_idx").on(table.workspaceId, table.createdAt),
+    index("ledger_account_audit_account_created_idx").on(table.accountId, table.createdAt),
+    uniqueIndex("ledger_account_audit_workspace_actor_key_unique").on(
+      table.workspaceId,
+      table.actorUserId,
+      table.idempotencyKey,
     ),
   ],
 );
@@ -181,6 +218,13 @@ export const ledgerTransactions = pgTable(
     index("ledger_transaction_workspace_status_transfer_account_idx").on(
       table.workspaceId,
       table.status,
+      table.transferAccountId,
+    ),
+    // Used by the account-management EXISTS check; status is deliberately not
+    // part of the key because pending records also lock the account type.
+    index("ledger_transaction_workspace_account_idx").on(table.workspaceId, table.accountId),
+    index("ledger_transaction_workspace_transfer_account_idx").on(
+      table.workspaceId,
       table.transferAccountId,
     ),
     index("ledger_transaction_workspace_category_idx").on(table.workspaceId, table.categoryId),

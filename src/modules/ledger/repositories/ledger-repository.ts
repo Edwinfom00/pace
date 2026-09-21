@@ -19,6 +19,7 @@ import { db, neonSql } from "@/db/client";
 import { toCurrencyCode } from "@/money/currency";
 import {
   ledgerAccounts,
+  ledgerAccountAudits,
   ledgerCategories,
   ledgerMerchants,
   ledgerTransactionAudits,
@@ -33,6 +34,7 @@ import {
 
 import type {
   LedgerAccountBalance,
+  LedgerAccountAuditRecord,
   LedgerAccountRecord,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
@@ -49,6 +51,22 @@ export type CreateLedgerAccountRecord = Omit<
   LedgerAccountRecord,
   "archivedAt" | "createdAt" | "updatedAt"
 >;
+export type CreateLedgerAccountAuditRecord = Omit<LedgerAccountAuditRecord, "createdAt">;
+
+export type MutateLedgerAccountRecord = {
+  readonly workspaceId: string;
+  readonly accountId: string;
+  readonly expectedUpdatedAt: Date | undefined;
+  /** When supplied, enforces the lifecycle state observed by the command. */
+  readonly requiredArchived: boolean | undefined;
+  /** Type changes must re-check the ledger while holding the account lock. */
+  readonly requireNoFinancialActivity: boolean;
+  readonly name?: string;
+  readonly type?: LedgerAccountRecord["type"];
+  /** Undefined preserves lifecycle state; true archives, false restores. */
+  readonly archived?: boolean;
+  readonly audit: CreateLedgerAccountAuditRecord;
+};
 export type CreateLedgerCategoryRecord = Omit<LedgerCategoryRecord, "createdAt" | "updatedAt">;
 export type CreateLedgerMerchantRecord = Omit<LedgerMerchantRecord, "createdAt" | "updatedAt">;
 export type CreateLedgerTransactionRecord = Omit<
@@ -68,6 +86,8 @@ export interface CreateLedgerFinancialCorrectionRecord {
   correction: CreateLedgerTransactionCorrectionRecord;
   reversal: CreateLedgerTransactionRecord;
   replacement: CreateLedgerTransactionRecord;
+  /** Archived accounts may be retained only when they belong to the original history. */
+  historicalAccountIds: readonly string[];
   /** Applied after the reversal, inside this same atomic financial transition. */
   spendabilityGuard: DebitSpendabilityGuard | null;
   /** Created inside the same all-or-nothing correction write when needed. */
@@ -87,7 +107,8 @@ export interface CreateLedgerSpendableTransactionRecord {
 
 export type LedgerSpendableTransactionWriteResult =
   | { readonly outcome: "CREATED"; readonly transaction: LedgerTransactionRecord }
-  | { readonly outcome: "INSUFFICIENT_FUNDS"; readonly spendability: AccountSpendability };
+  | { readonly outcome: "INSUFFICIENT_FUNDS"; readonly spendability: AccountSpendability }
+  | { readonly outcome: "ACCOUNT_UNAVAILABLE" };
 
 export type LedgerFinancialCorrectionWriteResult =
   | { readonly outcome: "CREATED"; readonly correction: LedgerTransactionCorrectionRecord }
@@ -177,6 +198,9 @@ export interface LedgerRepository {
   createAccount(input: CreateLedgerAccountRecord): Promise<LedgerAccountRecord>;
   listAccounts(workspaceId: string): Promise<LedgerAccountRecord[]>;
   findAccount(workspaceId: string, accountId: string): Promise<LedgerAccountRecord | null>;
+  /** Efficient authoritative EXISTS check across both canonical account legs. */
+  hasFinancialActivity(workspaceId: string, accountId: string): Promise<boolean>;
+
   /**
    * Canonical current-balance reads. Implementations aggregate the complete
    * posted ledger; callers must never reconstruct balances from list UI state.
@@ -185,6 +209,14 @@ export interface LedgerRepository {
   getWorkspaceAccountBalances(workspaceId: string): Promise<readonly LedgerAccountBalance[]>;
   /** Internal correction validation only; never exposed to an untrusted caller. */
   findAccountById(accountId: string): Promise<LedgerAccountRecord | null>;
+  findAccountAuditByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<LedgerAccountAuditRecord | null>;
+  /** Atomically checks lifecycle/version state, updates metadata, and writes its audit. */
+  mutateAccount(input: MutateLedgerAccountRecord): Promise<LedgerAccountRecord | null>;
+  listAccountAudit(workspaceId: string, accountId: string): Promise<readonly LedgerAccountAuditRecord[]>;
 
   createCategory(input: CreateLedgerCategoryRecord): Promise<LedgerCategoryRecord>;
   listCategories(workspaceId: string): Promise<LedgerCategoryRecord[]>;
@@ -246,6 +278,7 @@ export interface LedgerRepository {
   createFinancialCorrection(
     input: CreateLedgerFinancialCorrectionRecord,
   ): Promise<LedgerFinancialCorrectionWriteResult>;
+
   /**
    * Writes a standalone reversal and both audit rows atomically. A null result
    * means the original stopped being the current effective transaction.
@@ -307,6 +340,26 @@ export class DatabaseLedgerRepository implements LedgerRepository {
       .where(and(eq(ledgerAccounts.workspaceId, workspaceId), eq(ledgerAccounts.id, accountId)))
       .limit(1);
     return record ?? null;
+  }
+
+  async hasFinancialActivity(workspaceId: string, accountId: string): Promise<boolean> {
+    // This stays an indexed EXISTS query rather than materializing a ledger
+    // history in application memory. Pending rows count too: type changes must
+    // not reinterpret a financial operation that has already been recorded.
+    const [record] = await db
+      .select({ id: ledgerTransactions.id })
+      .from(ledgerTransactions)
+      .where(
+        and(
+          eq(ledgerTransactions.workspaceId, workspaceId),
+          or(
+            eq(ledgerTransactions.accountId, accountId),
+            eq(ledgerTransactions.transferAccountId, accountId),
+          ),
+        ),
+      )
+      .limit(1);
+    return Boolean(record);
   }
 
   async getAccountBalance(
@@ -565,6 +618,113 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return record ?? null;
   }
 
+  async findAccountAuditByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<LedgerAccountAuditRecord | null> {
+    const [record] = await db
+      .select()
+      .from(ledgerAccountAudits)
+      .where(
+        and(
+          eq(ledgerAccountAudits.workspaceId, workspaceId),
+          eq(ledgerAccountAudits.actorUserId, actorUserId),
+          eq(ledgerAccountAudits.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+    return record ? { ...record, action: record.action as LedgerAccountAuditRecord["action"] } : null;
+  }
+
+  async mutateAccount(input: MutateLedgerAccountRecord): Promise<LedgerAccountRecord | null> {
+    // The candidate lock makes a lifecycle state change and the audit insert a
+    // single atomic transition. `updated_at` doubles as the optimistic token.
+    const [rows] = await neonSql.transaction(
+      (transaction) => [transaction`
+      WITH candidate AS (
+        SELECT id
+        FROM ledger_account
+        WHERE workspace_id = ${input.workspaceId}
+          AND id = ${input.accountId}
+          AND (
+            ${input.requiredArchived === undefined}
+            OR (archived_at IS NULL) = ${input.requiredArchived === false}
+          )
+          AND (
+            ${!input.requireNoFinancialActivity}
+            OR NOT EXISTS (
+              SELECT 1
+              FROM ledger_transaction
+              WHERE workspace_id = ${input.workspaceId}
+                AND (account_id = ${input.accountId} OR transfer_account_id = ${input.accountId})
+            )
+          )
+          AND (
+            ${input.expectedUpdatedAt ?? null}::timestamptz IS NULL
+            OR date_trunc('milliseconds', updated_at) = ${input.expectedUpdatedAt ?? null}
+          )
+        FOR UPDATE
+      ),
+      updated AS (
+        UPDATE ledger_account AS account
+        SET
+          name = CASE WHEN ${input.name !== undefined} THEN ${input.name ?? null} ELSE account.name END,
+          type = CASE WHEN ${input.type !== undefined} THEN ${input.type ?? null}::ledger_account_type ELSE account.type END,
+          archived_at = CASE
+            WHEN ${input.archived === true} THEN clock_timestamp()
+            WHEN ${input.archived === false} THEN NULL
+            ELSE account.archived_at
+          END,
+          updated_at = greatest(clock_timestamp(), account.updated_at + interval '1 millisecond')
+        FROM candidate
+        WHERE account.id = candidate.id
+        RETURNING account.id, account.workspace_id AS "workspaceId", account.name,
+          account.type::text AS type, account.currency,
+          account.opening_balance_minor AS "openingBalanceMinor",
+          account.created_by_user_id AS "createdByUserId",
+          account.archived_at AS "archivedAt", account.created_at AS "createdAt",
+          account.updated_at AS "updatedAt"
+      ),
+      audited AS (
+        INSERT INTO ledger_account_audit (
+          id, workspace_id, account_id, actor_user_id, action,
+          command_fingerprint, idempotency_key, metadata
+        )
+        SELECT ${input.audit.id}, ${input.audit.workspaceId}, updated.id,
+          ${input.audit.actorUserId}, ${input.audit.action},
+          ${input.audit.commandFingerprint}, ${input.audit.idempotencyKey},
+          ${JSON.stringify(input.audit.metadata)}::jsonb
+        FROM updated
+      )
+      SELECT * FROM updated;
+    `],
+      { isolationLevel: "Serializable" },
+    );
+    const record = (rows as unknown as readonly RawLedgerAccount[])[0];
+    return record ? mapLedgerAccount(record) : null;
+  }
+
+  async listAccountAudit(
+    workspaceId: string,
+    accountId: string,
+  ): Promise<readonly LedgerAccountAuditRecord[]> {
+    const records = await db
+      .select()
+      .from(ledgerAccountAudits)
+      .where(
+        and(
+          eq(ledgerAccountAudits.workspaceId, workspaceId),
+          eq(ledgerAccountAudits.accountId, accountId),
+        ),
+      )
+      .orderBy(asc(ledgerAccountAudits.createdAt), asc(ledgerAccountAudits.id));
+    return records.map((record) => ({
+      ...record,
+      action: record.action as LedgerAccountAuditRecord["action"],
+    }));
+  }
+
  
   private async queryAccountBalances(
     workspaceId: string,
@@ -724,6 +884,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
           FROM ledger_account AS account
           INNER JOIN affected_account_ids AS affected ON affected.id = account.id
           WHERE account.workspace_id = ${record.workspaceId}
+            AND account.archived_at IS NULL
           ORDER BY account.id
           FOR UPDATE
         ),
@@ -803,6 +964,12 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         WHERE ${guard !== null}
           AND "currentBalanceMinor" - ${guard?.requestedDebitMinor ?? 0n}
             < ${guard?.minimumAllowedBalanceMinor ?? 0n}
+          AND NOT EXISTS (SELECT 1 FROM created)
+        UNION ALL
+        SELECT 'ACCOUNT_UNAVAILABLE'::text AS outcome, NULL::text AS "transactionId",
+          NULL::text AS "accountId", NULL::text AS "accountType", NULL::text AS currency,
+          NULL::bigint AS "availableBalanceMinor"
+        WHERE (SELECT COUNT(*) FROM locked_accounts) <> (SELECT COUNT(*) FROM affected_account_ids)
           AND NOT EXISTS (SELECT 1 FROM created);
       `],
       { isolationLevel: "Serializable" },
@@ -815,6 +982,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
       if (!created) throw new Error("Financial transaction was not found after its atomic write.");
       return { outcome: "CREATED", transaction: created };
     }
+    if (result.outcome === "ACCOUNT_UNAVAILABLE") return { outcome: "ACCOUNT_UNAVAILABLE" };
     if (!guard || !result.accountId || !result.accountType || !result.currency || result.availableBalanceMinor === null) {
       throw new Error("Spendability rejection did not contain its authoritative balance.");
     }
@@ -1031,12 +1199,21 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         WHERE id IS NOT NULL
       ),
       locked_accounts AS (
-        SELECT account.id, account.type, account.currency, account.opening_balance_minor
+        SELECT account.id, account.type, account.currency, account.opening_balance_minor, account.archived_at
         FROM ledger_account AS account
         INNER JOIN affected_account_ids AS affected ON affected.id = account.id
         WHERE account.workspace_id = ${input.workspaceId}
         ORDER BY account.id
         FOR UPDATE
+      ),
+      active_replacement_accounts AS (
+        SELECT account.id
+        FROM locked_accounts AS account
+        WHERE (
+            account.archived_at IS NULL
+            OR account.id IN (${input.historicalAccountIds[0] ?? null}, ${input.historicalAccountIds[1] ?? null})
+          )
+          AND account.id IN (${input.replacement.accountId}, ${input.replacement.transferAccountId ?? null})
       ),
       current_guard_balance AS (
         SELECT account.id AS "accountId", account.type::text AS "accountType", account.currency,
@@ -1125,6 +1302,11 @@ export class DatabaseLedgerRepository implements LedgerRepository {
           )
           AND EXISTS (SELECT 1 FROM spendability_eligible)
           AND (SELECT COUNT(*) FROM locked_accounts) = (SELECT COUNT(*) FROM affected_account_ids)
+          AND (SELECT COUNT(*) FROM active_replacement_accounts) = (
+            SELECT COUNT(DISTINCT id)
+            FROM (VALUES (${input.replacement.accountId}::text), (${input.replacement.transferAccountId ?? null}::text)) AS replacements(id)
+            WHERE id IS NOT NULL
+          )
         FOR UPDATE
       ),
       merchant_to_upsert AS (
@@ -1341,7 +1523,15 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     const [sourceAudit, refundAudit] = input.audits;
     const [rows] = await neonSql.transaction(
       (transaction) => [transaction`
-        WITH RECURSIVE source_expense AS (
+        WITH RECURSIVE destination_account AS (
+          SELECT id
+          FROM ledger_account
+          WHERE workspace_id = ${input.workspaceId}
+            AND id = ${input.refund.accountId}
+            AND archived_at IS NULL
+          FOR UPDATE
+        ),
+        source_expense AS (
           SELECT id, amount_minor, currency
           FROM ledger_transaction
           WHERE workspace_id = ${input.workspaceId}
@@ -1379,6 +1569,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         refundable AS (
           SELECT source_expense.id
           FROM source_expense
+          CROSS JOIN destination_account
           CROSS JOIN (
             SELECT COALESCE(SUM(refund.amount_minor), 0) AS refunded_minor
             FROM ledger_transaction AS refund
@@ -1656,7 +1847,7 @@ type RawLedgerTransaction = Omit<
 };
 
 type RawSpendabilityWriteResult = {
-  outcome: "CREATED" | "INSUFFICIENT_FUNDS";
+  outcome: "CREATED" | "INSUFFICIENT_FUNDS" | "ACCOUNT_UNAVAILABLE";
   transactionId: string | null;
   accountId: string | null;
   accountType: LedgerAccountRecord["type"] | null;
@@ -1678,6 +1869,16 @@ type RawLedgerAccountBalance = {
   accountType: LedgerAccountRecord["type"];
   currency: string;
   currentBalanceMinor: bigint | string;
+};
+
+type RawLedgerAccount = Omit<
+  LedgerAccountRecord,
+  "openingBalanceMinor" | "archivedAt" | "createdAt" | "updatedAt"
+> & {
+  openingBalanceMinor: bigint | string | number;
+  archivedAt: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 };
 
 type RawAccountDetailMovementSummary = {
@@ -1719,6 +1920,16 @@ function mapLedgerAccountBalance(record: RawLedgerAccountBalance): LedgerAccount
     currentBalanceMinor,
     availableBalanceMinor: spendability.availableBalanceMinor,
     spendabilityMode: spendability.mode,
+  };
+}
+
+function mapLedgerAccount(record: RawLedgerAccount): LedgerAccountRecord {
+  return {
+    ...record,
+    openingBalanceMinor: toBigInt(record.openingBalanceMinor),
+    archivedAt: record.archivedAt === null ? null : new Date(record.archivedAt),
+    createdAt: new Date(record.createdAt),
+    updatedAt: new Date(record.updatedAt),
   };
 }
 

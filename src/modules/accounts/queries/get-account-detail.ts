@@ -40,7 +40,7 @@ export async function getAccountDetail(input: GetAccountDetailInput): Promise<Ac
   const now = input.now ?? new Date();
   const summaryPeriod = calendarMonthPeriod(now, input.timeZone);
   const chartPeriod = accountDetailChartPeriod(input.chartRange, now, input.timeZone);
-  const [balance, summary, balanceDeltas, categoryTotals, recentRows] = await Promise.all([
+  const [balance, summary, balanceDeltas, categoryTotals, recentRows, capabilities] = await Promise.all([
     getLedgerService().getAccountBalance(input.actor, {
       workspaceId: input.workspaceId,
       accountId: input.accountId,
@@ -66,6 +66,7 @@ export async function getAccountDetail(input: GetAccountDetailInput): Promise<Ac
       limit: 5,
     }),
     repository.listAccountDetailRecentTransactions(input.workspaceId, input.accountId, 5),
+    getLedgerService().getAccountActionPolicy(input.actor, input.workspaceId, input.accountId),
   ]);
 
   if (balance.currency !== account.currency) {
@@ -83,7 +84,9 @@ export async function getAccountDetail(input: GetAccountDetailInput): Promise<Ac
       currency: account.currency,
       status: account.archivedAt ? "ARCHIVED" : "ACTIVE",
       createdAt: account.createdAt.toISOString(),
+      updatedAt: account.updatedAt.toISOString(),
     },
+    capabilities,
     currentBalanceMinor: balance.currentBalanceMinor.toString(),
     availableBalanceMinor: balance.availableBalanceMinor.toString(),
     summary: {

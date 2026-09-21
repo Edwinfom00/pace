@@ -145,6 +145,7 @@ function transferLedgerErrorCode(error: unknown): CreateTransferErrorCode {
     }
     if (error.code === "IDEMPOTENCY_KEY_REUSED") return "IDEMPOTENCY_KEY_REUSED";
     if (error.code === "CONCURRENT_MODIFICATION") return "CONCURRENT_MODIFICATION";
+    if (error.code === "ACCOUNT_UNAVAILABLE") return "ACCOUNT_UNAVAILABLE";
   }
   if (error instanceof NotFoundError) {
     if (error.message.startsWith("From account")) return "FROM_ACCOUNT_NOT_FOUND";

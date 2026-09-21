@@ -279,6 +279,9 @@ function manualLedgerError(error: unknown): Extract<CreateManualTransactionResul
   if (error instanceof DomainConflictError && error.code === "CONCURRENT_MODIFICATION") {
     return { ok: false, code: "CONCURRENT_MODIFICATION" };
   }
+  if (error instanceof DomainConflictError && error.code === "ACCOUNT_UNAVAILABLE") {
+    return { ok: false, code: "ACCOUNT_UNAVAILABLE" };
+  }
   if (error instanceof DomainConflictError && error.code === "IDEMPOTENCY_KEY_REUSED") {
     return { ok: false, code: "IDEMPOTENCY_KEY_REUSED" };
   }

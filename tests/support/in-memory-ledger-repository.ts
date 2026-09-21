@@ -1,5 +1,6 @@
 import type {
   LedgerAccountBalance,
+  LedgerAccountAuditRecord,
   LedgerAccountRecord,
   LedgerCategoryRecord,
   LedgerMerchantRecord,
@@ -26,6 +27,7 @@ import type {
   CreateLedgerSpendableTransactionRecord,
   LedgerSpendableTransactionWriteResult,
   LedgerRepository,
+  MutateLedgerAccountRecord,
   UpdateLedgerTransactionDetailsRecord,
 } from "@/modules/ledger/repositories/ledger-repository";
 
@@ -41,6 +43,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   readonly merchants = new Map<string, LedgerMerchantRecord>();
   readonly transactions = new Map<string, LedgerTransactionRecord>();
   readonly transactionAudits = new Map<string, LedgerTransactionAuditRecord>();
+  readonly accountAudits = new Map<string, LedgerAccountAuditRecord>();
   readonly transactionCorrections = new Map<string, LedgerTransactionCorrectionRecord>();
   accountBalanceReadCount = 0;
   workspaceAccountBalancesReadCount = 0;
@@ -123,6 +126,14 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   async findAccount(workspaceId: string, accountId: string): Promise<LedgerAccountRecord | null> {
     const account = this.accounts.get(accountId);
     return account?.workspaceId === workspaceId ? account : null;
+  }
+
+  async hasFinancialActivity(workspaceId: string, accountId: string): Promise<boolean> {
+    return [...this.transactions.values()].some(
+      (transaction) =>
+        transaction.workspaceId === workspaceId
+        && (transaction.accountId === accountId || transaction.transferAccountId === accountId),
+    );
   }
 
   async getAccountBalance(
@@ -216,6 +227,15 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     input: CreateLedgerSpendableTransactionRecord,
   ): Promise<LedgerSpendableTransactionWriteResult> {
     const { transaction, merchantToCreate, spendabilityGuard } = input;
+    const affectedAccountIds = [transaction.accountId, transaction.transferAccountId].filter(
+      (accountId): accountId is string => accountId !== null,
+    );
+    if (affectedAccountIds.some((accountId) => {
+      const account = this.accounts.get(accountId);
+      return !account || account.workspaceId !== transaction.workspaceId || account.archivedAt !== null;
+    })) {
+      return { outcome: "ACCOUNT_UNAVAILABLE" };
+    }
     if (spendabilityGuard) {
       const account = this.accounts.get(spendabilityGuard.accountId);
       if (!account || account.workspaceId !== transaction.workspaceId) {
@@ -337,6 +357,56 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     return this.accounts.get(accountId) ?? null;
   }
 
+  async findAccountAuditByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<LedgerAccountAuditRecord | null> {
+    return [...this.accountAudits.values()].find(
+      (audit) =>
+        audit.workspaceId === workspaceId
+        && audit.actorUserId === actorUserId
+        && audit.idempotencyKey === idempotencyKey,
+    ) ?? null;
+  }
+
+  async mutateAccount(input: MutateLedgerAccountRecord): Promise<LedgerAccountRecord | null> {
+    const account = await this.findAccount(input.workspaceId, input.accountId);
+    if (
+      !account
+      || (input.requiredArchived !== undefined && (account.archivedAt !== null) !== input.requiredArchived)
+      || (input.expectedUpdatedAt && account.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
+      || (input.requireNoFinancialActivity && await this.hasFinancialActivity(input.workspaceId, input.accountId))
+    ) {
+      return null;
+    }
+    const duplicate = await this.findAccountAuditByIdempotencyKey(
+      input.workspaceId,
+      input.audit.actorUserId,
+      input.audit.idempotencyKey,
+    );
+    if (duplicate) throw new Error("Account management idempotency key already exists.");
+
+    const now = new Date(Math.max(Date.now(), account.updatedAt.getTime() + 1));
+    const updated: LedgerAccountRecord = {
+      ...account,
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.type !== undefined ? { type: input.type } : {}),
+      ...(input.archived === true ? { archivedAt: now } : {}),
+      ...(input.archived === false ? { archivedAt: null } : {}),
+      updatedAt: now,
+    };
+    this.accounts.set(updated.id, updated);
+    this.accountAudits.set(input.audit.id, { ...input.audit, accountId: updated.id, createdAt: now });
+    return updated;
+  }
+
+  async listAccountAudit(workspaceId: string, accountId: string): Promise<readonly LedgerAccountAuditRecord[]> {
+    return [...this.accountAudits.values()]
+      .filter((audit) => audit.workspaceId === workspaceId && audit.accountId === accountId)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+  }
+
   async findTransactionCorrectionByOriginal(
     workspaceId: string,
     originalTransactionId: string,
@@ -443,6 +513,17 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       )
       || replacementFallsBelowRefunds
     ) {
+      return { outcome: "CONFLICT" };
+    }
+    const replacementAccountIds = [input.replacement.accountId, input.replacement.transferAccountId].filter(
+      (accountId): accountId is string => accountId !== null,
+    );
+    if (replacementAccountIds.some((accountId) => {
+      const account = this.accounts.get(accountId);
+      return !account
+        || account.workspaceId !== input.workspaceId
+        || (account.archivedAt !== null && !input.historicalAccountIds.includes(accountId));
+    })) {
       return { outcome: "CONFLICT" };
     }
     if ([...this.transactionCorrections.values()].some(
@@ -586,6 +667,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
           || correction.replacementTransactionId === input.sourceExpenseId
         ),
     ) ?? null;
+    const destination = input.refund.accountId ? this.accounts.get(input.refund.accountId) : null;
     if (
       !source
       || source.kind !== "EXPENSE"
@@ -593,6 +675,9 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       || outgoing
       || reversal
       || enclosing?.reversalTransactionId === source.id
+      || !destination
+      || destination.workspaceId !== input.workspaceId
+      || destination.archivedAt !== null
     ) {
       return null;
     }

@@ -1,5 +1,6 @@
 import { localDateForInstant, localDateKey, periodForLocalDates, type Period } from "@/money/period";
 import type { LedgerAccountType, LedgerTransactionKind, LedgerTransactionStatus } from "@/modules/ledger/domain";
+import type { AccountActionPolicy } from "@/modules/ledger/account-action-policy";
 
 export const ACCOUNT_DETAIL_CHART_RANGES = ["7d", "30d", "3m", "1y"] as const;
 
@@ -41,7 +42,10 @@ export type AccountDetail = {
     readonly currency: string;
     readonly status: AccountDetailStatus;
     readonly createdAt: string;
+    /** Optimistic concurrency token for future account-management surfaces. */
+    readonly updatedAt: string;
   };
+  readonly capabilities: AccountActionPolicy;
   readonly currentBalanceMinor: string;
   readonly availableBalanceMinor: string;
   readonly summary: {

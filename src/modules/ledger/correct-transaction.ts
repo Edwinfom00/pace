@@ -112,6 +112,7 @@ function correctionErrorCode(error: unknown): CorrectTransactionErrorCode {
   if (error instanceof AuthorizationError) return "WORKSPACE_FORBIDDEN";
   if (error instanceof InsufficientFundsError) return "INSUFFICIENT_FUNDS";
   if (error instanceof AccountSpendabilityUnsupportedError) return "ACCOUNT_SPENDABILITY_UNSUPPORTED";
+  if (error instanceof DomainConflictError && error.code === "ACCOUNT_UNAVAILABLE") return "ACCOUNT_UNAVAILABLE";
   if (error instanceof NotFoundError) {
     if (error.message.startsWith("Transaction")) return "TRANSACTION_NOT_FOUND";
     if (/account/i.test(error.message)) return "ACCOUNT_NOT_FOUND";
