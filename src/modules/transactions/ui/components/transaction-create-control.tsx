@@ -883,7 +883,7 @@ export function TransactionCreateControl({
               errors={createAccountErrors}
               formError={createAccountFormError}
               isSubmitting={isCreatingAccount}
-              labels={labels}
+                      labels={labels.createAccountForm}
               language={language}
               onCancel={returnToTransaction}
               onDraftChange={updateCreateAccountDraft}

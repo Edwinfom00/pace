@@ -18,6 +18,7 @@ export const pacePageContextSchema = z.discriminatedUnion("page", [
   z.object({ page: z.literal("inbox"), selectedInboxItemId: z.string().uuid().optional() }).strict(),
   z.object({ page: z.literal("plans"), selectedPlanId: z.string().uuid().optional() }).strict(),
   z.object({ page: z.literal("insights"), selectedInsightId: z.string().uuid().optional() }).strict(),
+  z.object({ page: z.literal("accounts") }).strict(),
 ]);
 
 export type PacePageContext = z.infer<typeof pacePageContextSchema>;

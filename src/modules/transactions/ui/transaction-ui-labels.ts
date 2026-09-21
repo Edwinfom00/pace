@@ -1,4 +1,5 @@
 import type { DashboardLabels } from "@/i18n/dashboard-messages";
+import type { CreateAccountUiLabels } from "@/modules/ledger/ui/components/create-account-labels";
 import type { TransactionFormValidationErrorCode } from "../schemas/transaction-form.schema";
 
 export type TransactionUiLabels = {
@@ -173,6 +174,7 @@ export type TransactionUiLabels = {
   readonly accountTypeMobileMoneyDescription: string;
   readonly accountTypeOther: string;
   readonly accountTypeOtherDescription: string;
+  readonly createAccountForm: CreateAccountUiLabels;
 };
 
 export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLabels {
@@ -369,5 +371,37 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     accountTypeMobileMoneyDescription: labels["accounts.type.mobileMoney.description"],
     accountTypeOther: labels["accounts.type.other.label"],
     accountTypeOtherDescription: labels["accounts.type.other.description"],
+    createAccountForm: {
+      create: labels["accounts.actions.create"],
+      pending: labels["accounts.create.pending"],
+      cancel: labels["accounts.actions.cancel"],
+      name: labels["accounts.fields.name"],
+      namePlaceholder: labels["accounts.fields.namePlaceholder"],
+      type: labels["accounts.fields.type"],
+      typePlaceholder: labels["accounts.fields.typePlaceholder"],
+      typeSearch: labels["accounts.fields.typeSearch"],
+      typeEmpty: labels["accounts.fields.typeEmpty"],
+      currency: labels["accounts.fields.currency"],
+      currencyPlaceholder: labels["accounts.fields.currencyPlaceholder"],
+      currencyEmpty: labels["transactions.form.currencyEmpty"],
+      currencySearch: labels["transactions.form.currencySearch"],
+      openingBalance: labels["accounts.fields.openingBalance"],
+      openingBalanceOptional: labels["accounts.fields.openingBalanceOptional"],
+      openingBalanceHelper: labels["accounts.fields.openingBalanceHelper"],
+      errors: {
+        name: labels["accounts.create.errorName"],
+        type: labels["accounts.create.errorType"],
+        currency: labels["accounts.create.errorCurrency"],
+        openingBalance: labels["accounts.create.errorOpeningBalance"],
+      },
+      accountTypes: {
+        CASH: { label: labels["accounts.type.cash.label"], description: labels["accounts.type.cash.description"] },
+        CHECKING: { label: labels["accounts.type.checking.label"], description: labels["accounts.type.checking.description"] },
+        SAVINGS: { label: labels["accounts.type.savings.label"], description: labels["accounts.type.savings.description"] },
+        CREDIT_CARD: { label: labels["accounts.type.creditCard.label"], description: labels["accounts.type.creditCard.description"] },
+        MOBILE_MONEY: { label: labels["accounts.type.mobileMoney.label"], description: labels["accounts.type.mobileMoney.description"] },
+        OTHER: { label: labels["accounts.type.other.label"], description: labels["accounts.type.other.description"] },
+      },
+    },
   };
 }
