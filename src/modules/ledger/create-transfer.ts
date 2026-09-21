@@ -17,6 +17,11 @@ import {
 import type { LedgerTransactionRecord } from "./domain";
 import { getLedgerService } from "./server";
 import {
+  AccountSpendabilityUnsupportedError,
+  insufficientFundsDetails,
+  InsufficientFundsError,
+} from "./spendability-policy";
+import {
   manualTransactionCommandFingerprint,
   manualTransactionFingerprint,
   parseManualTransactionAmount,
@@ -106,6 +111,9 @@ export async function createTransferForActor(
     );
     return { ok: true, transfer: toCreatedTransferDTO(transaction) };
   } catch (error) {
+    if (error instanceof InsufficientFundsError) {
+      return { ok: false, code: "INSUFFICIENT_FUNDS", details: insufficientFundsDetails(error.spendability) };
+    }
     return { ok: false, code: transferLedgerErrorCode(error) };
   }
 }
@@ -128,12 +136,15 @@ function transferValidationErrorCode(
 
 function transferLedgerErrorCode(error: unknown): CreateTransferErrorCode {
   if (error instanceof AuthorizationError) return "WORKSPACE_FORBIDDEN";
+  if (error instanceof InsufficientFundsError) return "INSUFFICIENT_FUNDS";
+  if (error instanceof AccountSpendabilityUnsupportedError) return "ACCOUNT_SPENDABILITY_UNSUPPORTED";
   if (error instanceof DomainConflictError) {
     if (error.code === "SAME_TRANSFER_ACCOUNT") return "SAME_TRANSFER_ACCOUNT";
     if (error.code === "CROSS_CURRENCY_TRANSFER_UNSUPPORTED") {
       return "CROSS_CURRENCY_TRANSFER_UNSUPPORTED";
     }
     if (error.code === "IDEMPOTENCY_KEY_REUSED") return "IDEMPOTENCY_KEY_REUSED";
+    if (error.code === "CONCURRENT_MODIFICATION") return "CONCURRENT_MODIFICATION";
   }
   if (error instanceof NotFoundError) {
     if (error.message.startsWith("From account")) return "FROM_ACCOUNT_NOT_FOUND";

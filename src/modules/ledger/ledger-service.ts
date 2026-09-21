@@ -26,6 +26,10 @@ import type {
   LedgerTransactionRecord,
 } from "./domain";
 import { normalizeMerchantName } from "./domain";
+import {
+  debitSpendabilityGuard,
+  InsufficientFundsError,
+} from "./spendability-policy";
 import type {
   CreateLedgerMerchantRecord,
   CreateLedgerTransactionRecord,
@@ -207,13 +211,19 @@ export class LedgerService {
     if (existing) return existing;
 
     try {
-      const created = await this.persistTransaction(actor, workspaceId, parsed);
+      const created = await this.persistTransaction(actor, workspaceId, parsed, { enforceSpendability: true });
       const persisted = await this.repository.findTransaction(workspaceId, created.id);
       if (!persisted) throw new Error("Financial transaction was not found after persistence.");
       return persisted;
     } catch (error) {
       const persisted = await this.repository.findTransactionByFingerprint(workspaceId, fingerprint);
       if (persisted) return persisted;
+      if (isSerializationFailure(error)) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "The account changed while this financial operation was being saved. Retry the operation.",
+        );
+      }
       throw error;
     }
   }
@@ -222,8 +232,21 @@ export class LedgerService {
     actor: AuthenticatedActor,
     workspaceId: string,
     parsed: CreateLedgerTransactionInput,
+    options: { readonly enforceSpendability?: boolean } = {},
   ): Promise<LedgerTransactionRecord> {
     const prepared = await this.prepareCanonicalTransaction(actor, workspaceId, parsed);
+    if (options.enforceSpendability) {
+      const spendabilityGuard = prepared.debitAccount
+        ? debitSpendabilityGuard(prepared.debitAccount, prepared.transaction.amountMinor)
+        : null;
+      const result = await this.repository.createTransactionWithSpendability({
+        transaction: prepared.transaction,
+        merchantToCreate: prepared.merchant,
+        spendabilityGuard,
+      });
+      if (result.outcome === "INSUFFICIENT_FUNDS") throw new InsufficientFundsError(result.spendability);
+      return result.transaction;
+    }
     return prepared.merchant
       ? this.repository.createTransactionWithMerchant(prepared.transaction, prepared.merchant)
       : this.repository.createTransaction(prepared.transaction);
@@ -236,6 +259,8 @@ export class LedgerService {
   ): Promise<{
     transaction: CreateLedgerTransactionRecord;
     merchant: CreateLedgerMerchantRecord | null;
+    /** Present only for new voluntary Expense and Transfer debit legs. */
+    debitAccount: LedgerAccountRecord | null;
   }> {
 
     const paidByUserId = parsed.paidByUserId ?? actor.userId;
@@ -282,7 +307,7 @@ export class LedgerService {
         transferGroupId: parsed.transferGroupId ?? randomUUID(),
         refundedTransactionId: null,
         reversalOfTransactionId: null,
-      }, merchant: null };
+      }, merchant: null, debitAccount: fromAccount };
     }
 
     const account = await this.requireAccount(workspaceId, parsed.accountId);
@@ -313,6 +338,7 @@ export class LedgerService {
     return {
       transaction: { ...transaction, reversalOfTransactionId: null },
       merchant: merchant.record,
+      debitAccount: parsed.kind === "EXPENSE" ? account : null,
     };
   }
 
@@ -525,6 +551,9 @@ export class LedgerService {
     }
     await this.assertCorrectionReplacementAccounts(command.workspaceId, replacementInput);
     const replacement = await this.prepareCanonicalTransaction(actor, command.workspaceId, replacementInput);
+    const spendabilityGuard = replacement.debitAccount
+      ? debitSpendabilityGuard(replacement.debitAccount, replacement.transaction.amountMinor)
+      : null;
     const reversal = createTransactionReversal(original, {
       actorUserId: actor.userId,
       purpose: "CORRECTION",
@@ -559,6 +588,7 @@ export class LedgerService {
         correction,
         reversal,
         replacement: replacement.transaction,
+        spendabilityGuard,
         merchantToCreate: replacement.merchant,
         audits,
       });
@@ -569,10 +599,20 @@ export class LedgerService {
         idempotencyKey,
       );
       if (concurrentReplay) return this.resolveExistingCorrection(command, commandFingerprint, concurrentReplay);
+      if (isSerializationFailure(error)) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "The account changed while this correction was being saved. Retry the correction.",
+        );
+      }
       throw error;
     }
 
-    if (!created) {
+    if (created.outcome === "INSUFFICIENT_FUNDS") {
+      throw new InsufficientFundsError(created.spendability);
+    }
+
+    if (created.outcome === "CONFLICT") {
       const concurrentReplay = await this.repository.findTransactionCorrectionByIdempotencyKey(
         command.workspaceId,
         actor.userId,
@@ -606,7 +646,7 @@ export class LedgerService {
       );
     }
 
-    const result = await this.hydrateCorrection(created);
+    const result = await this.hydrateCorrection(created.correction);
     assertVerifiedFinancialCorrection(result, original, replacement.transaction, replacement.merchant !== null);
     const persistedAuditIds = new Set(
       (await Promise.all([

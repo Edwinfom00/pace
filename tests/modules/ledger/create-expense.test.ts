@@ -224,7 +224,7 @@ test("a repository write failure leaves a new merchant and expense together or n
   const { command, dependencies, records } = await fixture();
   const merchantCount = records.merchants.size;
   const transactionCount = records.transactions.size;
-  records.createTransactionWithMerchant = async () => {
+  records.createTransactionWithSpendability = async () => {
     throw new Error("database write failed");
   };
 

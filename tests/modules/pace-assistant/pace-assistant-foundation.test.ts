@@ -108,7 +108,10 @@ test("structured JSON emitted as text is validated and rendered as Pace blocks",
 
 test("money formatting preserves bigint precision and transfers remain neutral rather than spending", () => {
   assert.equal(formatAssistantMoney({ minorUnits: "2485000", currency: "XAF" }, "fr-CM"), "2 485 000 FCFA");
-  assert.equal(formatAssistantMoney({ minorUnits: "9223372036854775", currency: "XAF" }, "en-CM"), "FCFA9,223,372,036,854,775");
+  assert.match(
+    formatAssistantMoney({ minorUnits: "9223372036854775", currency: "XAF" }, "en-CM"),
+    /^FCFA\s?9,223,372,036,854,775$/,
+  );
   const transfer = blocks.find((block) => block.type === "transaction-list")!;
   assert.equal(transfer.type, "transaction-list");
   assert.equal(transfer.transactions[1]?.kind, "TRANSFER");

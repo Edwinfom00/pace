@@ -60,7 +60,11 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
       const result = await createTransfer(command);
       if (!result.ok) {
         return Response.json(
-          { error: "Transfer creation failed.", code: result.code },
+          {
+            error: "Transfer creation failed.",
+            code: result.code,
+            ...("details" in result ? { details: result.details } : {}),
+          },
           { status: canonicalManualCreationStatus(result.code) },
         );
       }
@@ -84,7 +88,11 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
       const result = await createExpense(command);
       if (!result.ok) {
         return Response.json(
-          { error: "Expense creation failed.", code: result.code },
+          {
+            error: "Expense creation failed.",
+            code: result.code,
+            ...("details" in result ? { details: result.details } : {}),
+          },
           { status: canonicalManualCreationStatus(result.code) },
         );
       }
@@ -147,10 +155,13 @@ function canonicalManualCreationStatus(code: string): number {
   if (code === "WORKSPACE_FORBIDDEN") return 403;
   if (
     code === "ACCOUNT_UNAVAILABLE"
+    || code === "ACCOUNT_SPENDABILITY_UNSUPPORTED"
+    || code === "INSUFFICIENT_FUNDS"
     || code === "CURRENCY_MISMATCH"
     || code === "SAME_TRANSFER_ACCOUNT"
     || code === "CROSS_CURRENCY_TRANSFER_UNSUPPORTED"
     || code === "IDEMPOTENCY_KEY_REUSED"
+    || code === "CONCURRENT_MODIFICATION"
   ) {
     return 409;
   }

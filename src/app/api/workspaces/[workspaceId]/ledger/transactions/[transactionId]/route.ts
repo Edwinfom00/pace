@@ -43,7 +43,11 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
   if (result.ok) return Response.json({ correction: result.correction });
 
   return Response.json(
-    { error: "Transaction correction failed.", code: result.code },
+    {
+      error: "Transaction correction failed.",
+      code: result.code,
+      ...("details" in result ? { details: result.details } : {}),
+    },
     { status: correctionTransactionStatus(result.code) },
   );
 }
@@ -72,6 +76,8 @@ function correctionTransactionStatus(code: string): number {
     || code === "CONCURRENT_MODIFICATION"
     || code === "CORRECTED_AMOUNT_BELOW_REFUNDED_TOTAL"
     || code === "CORRECTION_ALREADY_PROCESSED"
+    || code === "ACCOUNT_SPENDABILITY_UNSUPPORTED"
+    || code === "INSUFFICIENT_FUNDS"
   ) {
     return 409;
   }

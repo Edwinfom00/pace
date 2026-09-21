@@ -148,26 +148,32 @@ test("transfers change both account balances, balances stay per currency, and th
     accountId: from.id,
     currency: toCurrencyCode("XAF"),
     currentBalanceMinor: 700n,
+    availableBalanceMinor: 700n,
+    spendabilityMode: "ZERO_FLOOR",
   });
   assert.deepEqual(byId.get(to.id), {
     accountId: to.id,
     currency: toCurrencyCode("XAF"),
     currentBalanceMinor: 800n,
+    availableBalanceMinor: 800n,
+    spendabilityMode: "ZERO_FLOOR",
   });
   assert.deepEqual(byId.get(euro.id), {
     accountId: euro.id,
     currency: toCurrencyCode("EUR"),
     currentBalanceMinor: 200n,
+    availableBalanceMinor: 200n,
+    spendabilityMode: "ZERO_FLOOR",
   });
   assert.equal(Object.hasOwn(byId.get(euro.id)!, "totalBalance"), false);
 });
 
 test("corrections and manual reversals leave only the effective account impact, including both transfer legs", async () => {
   const { ledger } = await fixture();
-  const corrected = await createAccount(ledger, { name: "Corrected" });
-  const replacement = await createAccount(ledger, { name: "Replacement" });
-  const chained = await createAccount(ledger, { name: "Chained" });
-  const reversal = await createAccount(ledger, { name: "Reversal" });
+  const corrected = await createAccount(ledger, { name: "Corrected", openingBalanceMinor: 1_000n });
+  const replacement = await createAccount(ledger, { name: "Replacement", openingBalanceMinor: 1_000n });
+  const chained = await createAccount(ledger, { name: "Chained", openingBalanceMinor: 1_000n });
+  const reversal = await createAccount(ledger, { name: "Reversal", openingBalanceMinor: 1_000n });
   const transferFrom = await createAccount(ledger, { name: "Transfer from", openingBalanceMinor: 1_000n });
   const transferTo = await createAccount(ledger, { name: "Transfer to", openingBalanceMinor: 500n });
 
@@ -228,10 +234,10 @@ test("corrections and manual reversals leave only the effective account impact, 
     });
   }
 
-  assert.equal((await balance(ledger, corrected.id)).currentBalanceMinor, -90n);
-  assert.equal((await balance(ledger, replacement.id)).currentBalanceMinor, -100n);
-  assert.equal((await balance(ledger, chained.id)).currentBalanceMinor, -75n);
-  assert.equal((await balance(ledger, reversal.id)).currentBalanceMinor, 0n);
+  assert.equal((await balance(ledger, corrected.id)).currentBalanceMinor, 910n);
+  assert.equal((await balance(ledger, replacement.id)).currentBalanceMinor, 900n);
+  assert.equal((await balance(ledger, chained.id)).currentBalanceMinor, 925n);
+  assert.equal((await balance(ledger, reversal.id)).currentBalanceMinor, 1_000n);
   assert.equal((await balance(ledger, transferFrom.id)).currentBalanceMinor, 1_000n);
   assert.equal((await balance(ledger, transferTo.id)).currentBalanceMinor, 500n);
 });

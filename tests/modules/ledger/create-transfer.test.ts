@@ -65,7 +65,7 @@ async function fixture() {
     name: "Cash",
     type: "CASH",
     currency: "XAF",
-    openingBalanceMinor: "100",
+    openingBalanceMinor: "50000",
   });
   const toAccount = await ledger.createAccount(owner, workspaceOne, {
     name: "Savings",
@@ -150,9 +150,8 @@ test("the canonical Transfer command persists M2's single grouped transfer with 
   assert.match(persisted?.deduplicationFingerprint ?? "", /^manual:[a-f0-9]{64}$/);
   assert.equal(records.transactions.size, 1);
 
-  // M2 derives balances from its ledger and permits a transfer above the small
-  // opening balance; this command never mutates account opening balances.
-  assert.equal(records.accounts.get(fromAccount.id)?.openingBalanceMinor, 100n);
+  // Balance stays ledger-derived; the canonical write never mutates opening balance.
+  assert.equal(records.accounts.get(fromAccount.id)?.openingBalanceMinor, 50_000n);
   assert.equal(records.accounts.get(toAccount.id)?.openingBalanceMinor, 200n);
   assert.deepEqual(calculateIncomeAndSpendingTotals([...records.transactions.values()], "XAF"), {
     incomeMinor: 0n,
@@ -258,7 +257,7 @@ test("Transfer uses the shared civil date-time policy and no floating-point fina
 test("a failed M2 transfer insert leaves no partial transfer because source and destination share one row", async () => {
   const { command, dependencies, records } = await fixture();
   const transactionCount = records.transactions.size;
-  records.createTransaction = async () => {
+  records.createTransactionWithSpendability = async () => {
     throw new Error("database write failed");
   };
 

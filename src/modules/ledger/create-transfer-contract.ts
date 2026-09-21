@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { CurrencyCode } from "@/money/currency";
 
 import type { LedgerTransactionStatus } from "./domain";
+import type { InsufficientFundsDetails } from "./spendability-policy";
 import {
   manualTransactionCommonCommandFields,
   manualTransactionEntityId,
@@ -41,6 +42,8 @@ export type CreateTransferErrorCode =
   | "FROM_ACCOUNT_NOT_FOUND"
   | "TO_ACCOUNT_NOT_FOUND"
   | "ACCOUNT_UNAVAILABLE"
+  | "ACCOUNT_SPENDABILITY_UNSUPPORTED"
+  | "INSUFFICIENT_FUNDS"
   | "SAME_TRANSFER_ACCOUNT"
   | "INVALID_AMOUNT"
   | "INVALID_CURRENCY"
@@ -49,8 +52,9 @@ export type CreateTransferErrorCode =
   | "INVALID_OCCURRED_AT"
   | "INVALID_NOTE"
   | "IDEMPOTENCY_KEY_REUSED"
+  | "CONCURRENT_MODIFICATION"
   | "TRANSFER_CREATE_FAILED";
 
 export type CreateTransferResult =
   | { readonly ok: true; readonly transfer: CreatedTransferDTO }
-  | { readonly ok: false; readonly code: CreateTransferErrorCode };
+  | { readonly ok: false; readonly code: CreateTransferErrorCode; readonly details?: InsufficientFundsDetails };

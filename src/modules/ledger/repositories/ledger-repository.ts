@@ -25,6 +25,11 @@ import {
   ledgerTransactionCorrections,
   ledgerTransactions,
 } from "@/db/schema";
+import {
+  getAccountSpendability,
+  type AccountSpendability,
+  type DebitSpendabilityGuard,
+} from "../spendability-policy";
 
 import type {
   LedgerAccountBalance,
@@ -63,6 +68,8 @@ export interface CreateLedgerFinancialCorrectionRecord {
   correction: CreateLedgerTransactionCorrectionRecord;
   reversal: CreateLedgerTransactionRecord;
   replacement: CreateLedgerTransactionRecord;
+  /** Applied after the reversal, inside this same atomic financial transition. */
+  spendabilityGuard: DebitSpendabilityGuard | null;
   /** Created inside the same all-or-nothing correction write when needed. */
   merchantToCreate: CreateLedgerMerchantRecord | null;
   audits: readonly [
@@ -71,6 +78,21 @@ export interface CreateLedgerFinancialCorrectionRecord {
     CreateLedgerTransactionAuditRecord,
   ];
 }
+
+export interface CreateLedgerSpendableTransactionRecord {
+  transaction: CreateLedgerTransactionRecord;
+  merchantToCreate: CreateLedgerMerchantRecord | null;
+  spendabilityGuard: DebitSpendabilityGuard | null;
+}
+
+export type LedgerSpendableTransactionWriteResult =
+  | { readonly outcome: "CREATED"; readonly transaction: LedgerTransactionRecord }
+  | { readonly outcome: "INSUFFICIENT_FUNDS"; readonly spendability: AccountSpendability };
+
+export type LedgerFinancialCorrectionWriteResult =
+  | { readonly outcome: "CREATED"; readonly correction: LedgerTransactionCorrectionRecord }
+  | { readonly outcome: "INSUFFICIENT_FUNDS"; readonly spendability: AccountSpendability }
+  | { readonly outcome: "CONFLICT" };
 
 export interface CreateLedgerFinancialRefundRecord {
   workspaceId: string;
@@ -131,6 +153,10 @@ export interface LedgerRepository {
     input: CreateLedgerTransactionRecord,
     merchant: CreateLedgerMerchantRecord,
   ): Promise<LedgerTransactionRecord>;
+
+  createTransactionWithSpendability(
+    input: CreateLedgerSpendableTransactionRecord,
+  ): Promise<LedgerSpendableTransactionWriteResult>;
   updateTransactionDetails(
     input: UpdateLedgerTransactionDetailsRecord,
   ): Promise<LedgerTransactionRecord | null>;
@@ -168,7 +194,7 @@ export interface LedgerRepository {
   /** Returns null when the optimistic candidate is no longer current. */
   createFinancialCorrection(
     input: CreateLedgerFinancialCorrectionRecord,
-  ): Promise<LedgerTransactionCorrectionRecord | null>;
+  ): Promise<LedgerFinancialCorrectionWriteResult>;
   /**
    * Writes a standalone reversal and both audit rows atomically. A null result
    * means the original stopped being the current effective transaction.
@@ -265,7 +291,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     const accountId = requestedAccountId ?? null;
     const records = await neonSql`
       WITH scoped_accounts AS (
-        SELECT id, currency, opening_balance_minor
+        SELECT id, type, currency, opening_balance_minor
         FROM ledger_account
         WHERE workspace_id = ${workspaceId}
           AND (${accountId}::text IS NULL OR id = ${accountId})
@@ -303,6 +329,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
         GROUP BY account_id
       )
       SELECT account.id AS "accountId",
+        account.type AS "accountType",
         account.currency AS currency,
         account.opening_balance_minor + COALESCE(total.movement_minor, 0) AS "currentBalanceMinor"
       FROM scoped_accounts AS account
@@ -393,6 +420,132 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     const [record] = transactions;
     if (!record) throw new Error("Failed to create ledger transaction.");
     return record;
+  }
+
+  async createTransactionWithSpendability(
+    input: CreateLedgerSpendableTransactionRecord,
+  ): Promise<LedgerSpendableTransactionWriteResult> {
+    const { transaction: record, merchantToCreate: merchant, spendabilityGuard: guard } = input;
+    // Every canonical real-time account write locks its affected account rows
+    // and runs at SERIALIZABLE isolation. A concurrent debit therefore either
+    // observes the committed first write or is retried by its command boundary;
+    // it can never insert after a stale balance check.
+    const [rows] = await neonSql.transaction(
+      (databaseTransaction) => [databaseTransaction`
+        WITH affected_account_ids(id) AS (
+          SELECT DISTINCT id
+          FROM (VALUES (${record.accountId}::text), (${record.transferAccountId ?? null}::text)) AS ids(id)
+          WHERE id IS NOT NULL
+        ),
+        locked_accounts AS (
+          SELECT account.id, account.type, account.currency, account.opening_balance_minor
+          FROM ledger_account AS account
+          INNER JOIN affected_account_ids AS affected ON affected.id = account.id
+          WHERE account.workspace_id = ${record.workspaceId}
+          ORDER BY account.id
+          FOR UPDATE
+        ),
+        current_guard_balance AS (
+          SELECT account.id AS "accountId", account.type::text AS "accountType", account.currency,
+            account.opening_balance_minor + COALESCE((
+              SELECT SUM(
+                CASE
+                  WHEN entry.kind = 'TRANSFER' AND entry.account_id = account.id THEN -entry.amount_minor
+                  WHEN entry.kind = 'TRANSFER' AND entry.transfer_account_id = account.id THEN entry.amount_minor
+                  WHEN entry.kind = 'EXPENSE' AND entry.reversal_of_transaction_id IS NULL THEN -entry.amount_minor
+                  WHEN entry.kind = 'EXPENSE' THEN entry.amount_minor
+                  WHEN entry.kind IN ('INCOME', 'REFUND') AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
+                  WHEN entry.kind IN ('INCOME', 'REFUND') THEN -entry.amount_minor
+                  ELSE 0::bigint
+                END
+              )
+              FROM ledger_transaction AS entry
+              WHERE entry.workspace_id = ${record.workspaceId}
+                AND entry.status = 'POSTED'
+                AND (entry.account_id = account.id OR entry.transfer_account_id = account.id)
+            ), 0) AS "currentBalanceMinor"
+          FROM locked_accounts AS account
+          WHERE ${guard?.accountId ?? null}::text IS NOT NULL
+            AND account.id = ${guard?.accountId ?? null}
+        ),
+        eligible AS (
+          SELECT 1
+          WHERE (SELECT COUNT(*) FROM locked_accounts) = (SELECT COUNT(*) FROM affected_account_ids)
+            AND (
+              ${guard === null}
+              OR EXISTS (
+                SELECT 1
+                FROM current_guard_balance
+                WHERE currency = ${guard?.currency ?? null}
+                  AND "currentBalanceMinor" - ${guard?.requestedDebitMinor ?? 0n}
+                    >= ${guard?.minimumAllowedBalanceMinor ?? 0n}
+              )
+            )
+        ),
+        merchant_to_upsert AS (
+          INSERT INTO ledger_merchant (id, workspace_id, name, normalized_name, created_by_user_id)
+          SELECT ${merchant?.id ?? null}, ${merchant?.workspaceId ?? null}, ${merchant?.name ?? null},
+            ${merchant?.normalizedName ?? null}, ${merchant?.createdByUserId ?? null}
+          FROM eligible
+          WHERE ${merchant !== null}
+          ON CONFLICT (workspace_id, normalized_name)
+            DO UPDATE SET normalized_name = EXCLUDED.normalized_name
+          RETURNING id
+        ),
+        created AS (
+          INSERT INTO ledger_transaction (
+            id, workspace_id, kind, status, amount_minor, currency, occurred_at,
+            account_id, transfer_account_id, category_id, merchant_id,
+            created_by_user_id, paid_by_user_id, transfer_group_id,
+            refunded_transaction_id, reversal_of_transaction_id, source,
+            deduplication_fingerprint, note
+          )
+          SELECT ${record.id}, ${record.workspaceId}, ${record.kind}, ${record.status},
+            ${record.amountMinor}, ${record.currency}, ${record.occurredAt},
+            ${record.accountId}, ${record.transferAccountId}, ${record.categoryId},
+            COALESCE((SELECT id FROM merchant_to_upsert), ${record.merchantId}),
+            ${record.createdByUserId}, ${record.paidByUserId}, ${record.transferGroupId},
+            ${record.refundedTransactionId}, ${record.reversalOfTransactionId},
+            ${JSON.stringify(record.source)}::jsonb, ${record.deduplicationFingerprint}, ${record.note}
+          FROM eligible
+          RETURNING id
+        )
+        SELECT 'CREATED'::text AS outcome, id AS "transactionId",
+          NULL::text AS "accountId", NULL::text AS "accountType", NULL::text AS currency,
+          NULL::bigint AS "availableBalanceMinor"
+        FROM created
+        UNION ALL
+        SELECT 'INSUFFICIENT_FUNDS'::text AS outcome, NULL::text AS "transactionId",
+          "accountId", "accountType", currency, "currentBalanceMinor" AS "availableBalanceMinor"
+        FROM current_guard_balance
+        WHERE ${guard !== null}
+          AND "currentBalanceMinor" - ${guard?.requestedDebitMinor ?? 0n}
+            < ${guard?.minimumAllowedBalanceMinor ?? 0n}
+          AND NOT EXISTS (SELECT 1 FROM created);
+      `],
+      { isolationLevel: "Serializable" },
+    );
+    const result = (rows as unknown as readonly RawSpendabilityWriteResult[])[0];
+    if (!result) throw new Error("Canonical transaction write did not produce a result.");
+    if (result.outcome === "CREATED") {
+      if (!result.transactionId) throw new Error("Atomic transaction write did not return an ID.");
+      const created = await this.findTransaction(record.workspaceId, result.transactionId);
+      if (!created) throw new Error("Financial transaction was not found after its atomic write.");
+      return { outcome: "CREATED", transaction: created };
+    }
+    if (!guard || !result.accountId || !result.accountType || !result.currency || result.availableBalanceMinor === null) {
+      throw new Error("Spendability rejection did not contain its authoritative balance.");
+    }
+    return {
+      outcome: "INSUFFICIENT_FUNDS",
+      spendability: getAccountSpendability({
+        accountId: result.accountId,
+        accountType: result.accountType,
+        currency: toCurrencyCode(result.currency),
+        currentBalanceMinor: BigInt(result.availableBalanceMinor),
+        requestedDebitMinor: guard.requestedDebitMinor,
+      }),
+    };
   }
 
   async updateTransactionDetails(
@@ -583,11 +736,72 @@ export class DatabaseLedgerRepository implements LedgerRepository {
 
   async createFinancialCorrection(
     input: CreateLedgerFinancialCorrectionRecord,
-  ): Promise<LedgerTransactionCorrectionRecord | null> {
+  ): Promise<LedgerFinancialCorrectionWriteResult> {
     const merchant = input.merchantToCreate;
+    const guard = input.spendabilityGuard;
     const [originalAudit, reversalAudit, replacementAudit] = input.audits;
-    const rows = await neonSql`
-      WITH RECURSIVE lineage(id) AS (
+    const [rows] = await neonSql.transaction(
+      (databaseTransaction) => [databaseTransaction`
+      WITH RECURSIVE affected_account_ids(id) AS (
+        SELECT DISTINCT id
+        FROM (VALUES (${input.reversal.accountId}::text), (${input.reversal.transferAccountId ?? null}::text),
+          (${input.replacement.accountId}::text), (${input.replacement.transferAccountId ?? null}::text)) AS ids(id)
+        WHERE id IS NOT NULL
+      ),
+      locked_accounts AS (
+        SELECT account.id, account.type, account.currency, account.opening_balance_minor
+        FROM ledger_account AS account
+        INNER JOIN affected_account_ids AS affected ON affected.id = account.id
+        WHERE account.workspace_id = ${input.workspaceId}
+        ORDER BY account.id
+        FOR UPDATE
+      ),
+      current_guard_balance AS (
+        SELECT account.id AS "accountId", account.type::text AS "accountType", account.currency,
+          account.opening_balance_minor + COALESCE((
+            SELECT SUM(
+              CASE
+                WHEN entry.kind = 'TRANSFER' AND entry.account_id = account.id THEN -entry.amount_minor
+                WHEN entry.kind = 'TRANSFER' AND entry.transfer_account_id = account.id THEN entry.amount_minor
+                WHEN entry.kind = 'EXPENSE' AND entry.reversal_of_transaction_id IS NULL THEN -entry.amount_minor
+                WHEN entry.kind = 'EXPENSE' THEN entry.amount_minor
+                WHEN entry.kind IN ('INCOME', 'REFUND') AND entry.reversal_of_transaction_id IS NULL THEN entry.amount_minor
+                WHEN entry.kind IN ('INCOME', 'REFUND') THEN -entry.amount_minor
+                ELSE 0::bigint
+              END
+            )
+            FROM ledger_transaction AS entry
+            WHERE entry.workspace_id = ${input.workspaceId}
+              AND entry.status = 'POSTED'
+              AND (entry.account_id = account.id OR entry.transfer_account_id = account.id)
+          ), 0)
+          + CASE
+            WHEN ${input.reversal.kind} = 'TRANSFER' AND ${input.reversal.accountId} = account.id
+              THEN -${input.reversal.amountMinor}
+            WHEN ${input.reversal.kind} = 'TRANSFER' AND ${input.reversal.transferAccountId ?? null} = account.id
+              THEN ${input.reversal.amountMinor}
+            WHEN ${input.reversal.kind} = 'EXPENSE' AND ${input.reversal.accountId} = account.id
+              THEN ${input.reversal.amountMinor}
+            WHEN ${input.reversal.kind} = 'INCOME' AND ${input.reversal.accountId} = account.id
+              THEN -${input.reversal.amountMinor}
+            ELSE 0::bigint
+          END AS "postReversalBalanceMinor"
+        FROM locked_accounts AS account
+        WHERE ${guard?.accountId ?? null}::text IS NOT NULL
+          AND account.id = ${guard?.accountId ?? null}
+      ),
+      spendability_eligible AS (
+        SELECT 1
+        WHERE ${guard === null}
+          OR EXISTS (
+            SELECT 1
+            FROM current_guard_balance
+            WHERE currency = ${guard?.currency ?? null}
+              AND "postReversalBalanceMinor" - ${guard?.requestedDebitMinor ?? 0n}
+                >= ${guard?.minimumAllowedBalanceMinor ?? 0n}
+          )
+      ),
+      lineage(id) AS (
         SELECT ${input.originalTransactionId}::text
         UNION
         SELECT correction.original_transaction_id
@@ -627,6 +841,8 @@ export class DatabaseLedgerRepository implements LedgerRepository {
                 AND refund.refunded_transaction_id IN (SELECT id FROM lineage)
             ), 0) <= ${input.replacement.amountMinor}
           )
+          AND EXISTS (SELECT 1 FROM spendability_eligible)
+          AND (SELECT COUNT(*) FROM locked_accounts) = (SELECT COUNT(*) FROM affected_account_ids)
         FOR UPDATE
       ),
       merchant_to_upsert AS (
@@ -709,10 +925,40 @@ export class DatabaseLedgerRepository implements LedgerRepository {
           ${replacementAudit.actorUserId}, ${replacementAudit.action}, ${JSON.stringify(replacementAudit.metadata)}::jsonb
         WHERE EXISTS (SELECT 1 FROM correction)
       )
-      SELECT id FROM correction;
-    ` as unknown as readonly { id: string }[];
-    if (!rows[0]) return null;
-    return this.findTransactionCorrectionByOriginal(input.workspaceId, input.originalTransactionId);
+      SELECT 'CREATED'::text AS outcome, id AS "correctionId", NULL::text AS "accountId",
+        NULL::text AS "accountType", NULL::text AS currency, NULL::bigint AS "availableBalanceMinor"
+      FROM correction
+      UNION ALL
+      SELECT 'INSUFFICIENT_FUNDS'::text AS outcome, NULL::text AS "correctionId", "accountId",
+        "accountType", currency, "postReversalBalanceMinor" AS "availableBalanceMinor"
+      FROM current_guard_balance
+      WHERE ${guard !== null}
+        AND "postReversalBalanceMinor" - ${guard?.requestedDebitMinor ?? 0n}
+          < ${guard?.minimumAllowedBalanceMinor ?? 0n}
+        AND NOT EXISTS (SELECT 1 FROM correction);
+    `],
+      { isolationLevel: "Serializable" },
+    );
+    const result = (rows as unknown as readonly RawCorrectionSpendabilityWriteResult[])[0];
+    if (!result) return { outcome: "CONFLICT" };
+    if (result.outcome === "CREATED") {
+      const correction = await this.findTransactionCorrectionByOriginal(input.workspaceId, input.originalTransactionId);
+      if (!correction) throw new Error("Financial correction was not found after its atomic write.");
+      return { outcome: "CREATED", correction };
+    }
+    if (!guard || !result.accountId || !result.accountType || !result.currency || result.availableBalanceMinor === null) {
+      throw new Error("Correction spendability rejection did not contain its authoritative balance.");
+    }
+    return {
+      outcome: "INSUFFICIENT_FUNDS",
+      spendability: getAccountSpendability({
+        accountId: result.accountId,
+        accountType: result.accountType,
+        currency: toCurrencyCode(result.currency),
+        currentBalanceMinor: BigInt(result.availableBalanceMinor),
+        requestedDebitMinor: guard.requestedDebitMinor,
+      }),
+    };
   }
 
   async createFinancialReversal(
@@ -1120,19 +1366,49 @@ type RawLedgerTransaction = Omit<
   source: Record<string, unknown> | string;
 };
 
+type RawSpendabilityWriteResult = {
+  outcome: "CREATED" | "INSUFFICIENT_FUNDS";
+  transactionId: string | null;
+  accountId: string | null;
+  accountType: LedgerAccountRecord["type"] | null;
+  currency: string | null;
+  availableBalanceMinor: bigint | string | null;
+};
+
+type RawCorrectionSpendabilityWriteResult = {
+  outcome: "CREATED" | "INSUFFICIENT_FUNDS";
+  correctionId: string | null;
+  accountId: string | null;
+  accountType: LedgerAccountRecord["type"] | null;
+  currency: string | null;
+  availableBalanceMinor: bigint | string | null;
+};
+
 type RawLedgerAccountBalance = {
   accountId: string;
+  accountType: LedgerAccountRecord["type"];
   currency: string;
   currentBalanceMinor: bigint | string;
 };
 
 function mapLedgerAccountBalance(record: RawLedgerAccountBalance): LedgerAccountBalance {
+  const currency = toCurrencyCode(record.currency);
+  const currentBalanceMinor = typeof record.currentBalanceMinor === "bigint"
+    ? record.currentBalanceMinor
+    : BigInt(record.currentBalanceMinor);
+  const spendability = getAccountSpendability({
+    accountId: record.accountId,
+    accountType: record.accountType,
+    currency,
+    currentBalanceMinor,
+    requestedDebitMinor: 0n,
+  });
   return {
     accountId: record.accountId,
-    currency: toCurrencyCode(record.currency),
-    currentBalanceMinor: typeof record.currentBalanceMinor === "bigint"
-      ? record.currentBalanceMinor
-      : BigInt(record.currentBalanceMinor),
+    currency,
+    currentBalanceMinor,
+    availableBalanceMinor: spendability.availableBalanceMinor,
+    spendabilityMode: spendability.mode,
   };
 }
 

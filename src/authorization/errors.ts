@@ -48,6 +48,7 @@ export class DomainConflictError extends ConflictError {
   constructor(
     readonly code: string,
     message: string,
+    readonly details?: Record<string, string>,
   ) {
     super(message);
     this.name = "DomainConflictError";

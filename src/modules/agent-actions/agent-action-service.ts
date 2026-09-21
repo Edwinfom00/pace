@@ -403,7 +403,7 @@ export class AgentActionService {
       let transaction = await this.ledgerRecords.findTransactionByFingerprint(workspaceId, fingerprint);
       if (!transaction) {
         try {
-          transaction = await this.ledger.createTransaction(
+          transaction = await this.ledger.createTransactionIdempotently(
             actor,
             workspaceId,
             await this.toLedgerInput(actor, workspaceId, action),

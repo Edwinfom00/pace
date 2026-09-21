@@ -12,6 +12,7 @@ import type {
   LedgerTransactionRecord,
 } from "@/modules/ledger/domain";
 import { toCurrencyCode } from "@/money/currency";
+import { getAccountSpendability } from "@/modules/ledger/spendability-policy";
 import type {
   CreateLedgerAccountRecord,
   CreateLedgerCategoryRecord,
@@ -20,7 +21,10 @@ import type {
   CreateLedgerFinancialCorrectionRecord,
   CreateLedgerFinancialReversalRecord,
   CreateLedgerFinancialRefundRecord,
+  LedgerFinancialCorrectionWriteResult,
   CreateLedgerTransactionRecord,
+  CreateLedgerSpendableTransactionRecord,
+  LedgerSpendableTransactionWriteResult,
   LedgerRepository,
   UpdateLedgerTransactionDetailsRecord,
 } from "@/modules/ledger/repositories/ledger-repository";
@@ -208,6 +212,55 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     return transactionRecord;
   }
 
+  async createTransactionWithSpendability(
+    input: CreateLedgerSpendableTransactionRecord,
+  ): Promise<LedgerSpendableTransactionWriteResult> {
+    const { transaction, merchantToCreate, spendabilityGuard } = input;
+    if (spendabilityGuard) {
+      const account = this.accounts.get(spendabilityGuard.accountId);
+      if (!account || account.workspaceId !== transaction.workspaceId) {
+        throw new Error("Spendability guard account was not found in this workspace.");
+      }
+      const [balance] = this.queryAccountBalances(transaction.workspaceId, account.id);
+      if (!balance) throw new Error("Spendability guard balance was not found.");
+      const spendability = getAccountSpendability({
+        accountId: account.id,
+        accountType: account.type,
+        currency: balance.currency,
+        currentBalanceMinor: balance.currentBalanceMinor,
+        requestedDebitMinor: spendabilityGuard.requestedDebitMinor,
+      });
+      if (!spendability.canDebit) {
+        if (spendability.reason !== "INSUFFICIENT_FUNDS") {
+          throw new Error("Unsupported account policy reached a guarded debit write.");
+        }
+        return { outcome: "INSUFFICIENT_FUNDS", spendability };
+      }
+    }
+
+    // Do not await between the balance decision and map commit. This is the
+    // test double's equivalent of production's one serializable CTE.
+    this.assertTransactionFingerprintAvailable(transaction);
+    const now = new Date();
+    let merchantId = transaction.merchantId;
+    if (merchantToCreate) {
+      const existing = [...this.merchants.values()].find(
+        (candidate) =>
+          candidate.workspaceId === merchantToCreate.workspaceId
+          && candidate.normalizedName === merchantToCreate.normalizedName,
+      );
+      if (existing) {
+        merchantId = existing.id;
+      } else {
+        this.merchants.set(merchantToCreate.id, { ...merchantToCreate, createdAt: now, updatedAt: now });
+        merchantId = merchantToCreate.id;
+      }
+    }
+    const created: LedgerTransactionRecord = { ...transaction, merchantId, createdAt: now, updatedAt: now };
+    this.transactions.set(created.id, created);
+    return { outcome: "CREATED", transaction: created };
+  }
+
   async updateTransactionDetails(
     input: UpdateLedgerTransactionDetailsRecord,
   ): Promise<LedgerTransactionRecord | null> {
@@ -343,7 +396,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
 
   async createFinancialCorrection(
     input: CreateLedgerFinancialCorrectionRecord,
-  ): Promise<LedgerTransactionCorrectionRecord | null> {
+  ): Promise<LedgerFinancialCorrectionWriteResult> {
     // Keep this preflight synchronous: async test callers can race exactly as
     // HTTP callers do, while one atomic in-memory commit still has one winner.
     const candidate = this.transactions.get(input.originalTransactionId);
@@ -390,7 +443,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       )
       || replacementFallsBelowRefunds
     ) {
-      return null;
+      return { outcome: "CONFLICT" };
     }
     if ([...this.transactionCorrections.values()].some(
       (correction) =>
@@ -399,6 +452,27 @@ export class InMemoryLedgerRepository implements LedgerRepository {
         && correction.idempotencyKey === input.correction.idempotencyKey,
     )) {
       throw new Error("Correction idempotency key already exists.");
+    }
+    if (input.spendabilityGuard) {
+      const account = this.accounts.get(input.spendabilityGuard.accountId);
+      if (!account || account.workspaceId !== input.workspaceId) {
+        throw new Error("Correction spendability guard account was not found in this workspace.");
+      }
+      const [balance] = this.queryAccountBalances(input.workspaceId, account.id);
+      if (!balance) throw new Error("Correction spendability guard balance was not found.");
+      const spendability = getAccountSpendability({
+        accountId: account.id,
+        accountType: account.type,
+        currency: balance.currency,
+        currentBalanceMinor: balance.currentBalanceMinor + accountMovementDelta(input.reversal, account.id),
+        requestedDebitMinor: input.spendabilityGuard.requestedDebitMinor,
+      });
+      if (!spendability.canDebit) {
+        if (spendability.reason !== "INSUFFICIENT_FUNDS") {
+          throw new Error("Unsupported account policy reached a guarded correction write.");
+        }
+        return { outcome: "INSUFFICIENT_FUNDS", spendability };
+      }
     }
     if (this.failCorrectionStage === "reversal") throw new Error("Reversal write failed.");
     if (this.failCorrectionStage === "replacement") throw new Error("Replacement write failed.");
@@ -424,7 +498,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     this.transactions.set(replacement.id, replacement);
     this.transactionCorrections.set(correction.id, correction);
     for (const audit of input.audits) this.createTransactionAudit(audit, now);
-    return correction;
+    return { outcome: "CREATED", correction };
   }
 
   async createFinancialReversal(
@@ -697,11 +771,24 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     return [...this.accounts.values()]
       .filter((account) => balances.has(account.id))
       .sort((left, right) => left.id.localeCompare(right.id))
-      .map((account) => ({
-        accountId: account.id,
-        currency: toCurrencyCode(account.currency),
-        currentBalanceMinor: balances.get(account.id)!,
-      }));
+      .map((account) => {
+        const currency = toCurrencyCode(account.currency);
+        const currentBalanceMinor = balances.get(account.id)!;
+        const spendability = getAccountSpendability({
+          accountId: account.id,
+          accountType: account.type,
+          currency,
+          currentBalanceMinor,
+          requestedDebitMinor: 0n,
+        });
+        return {
+          accountId: account.id,
+          currency,
+          currentBalanceMinor,
+          availableBalanceMinor: spendability.availableBalanceMinor,
+          spendabilityMode: spendability.mode,
+        };
+      });
   }
 
   private transactionListRows(
@@ -783,4 +870,17 @@ function compareRows(left: LedgerTransactionListRow, right: LedgerTransactionLis
 function compareBigints(left: bigint, right: bigint): number {
   if (left === right) return 0;
   return left > right ? 1 : -1;
+}
+
+/** Mirrors the balance repository's ledger-leg rules for correction projection. */
+function accountMovementDelta(transaction: CreateLedgerTransactionRecord, accountId: string): bigint {
+  if (transaction.kind === "TRANSFER") {
+    if (transaction.accountId === accountId) return -transaction.amountMinor;
+    if (transaction.transferAccountId === accountId) return transaction.amountMinor;
+    return 0n;
+  }
+  if (transaction.accountId !== accountId) return 0n;
+  const normalDirection = transaction.kind === "EXPENSE" ? -1n : 1n;
+  const direction = transaction.reversalOfTransactionId === null ? normalDirection : -normalDirection;
+  return direction * transaction.amountMinor;
 }

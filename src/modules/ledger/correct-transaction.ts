@@ -18,6 +18,11 @@ import {
 import type { LedgerTransactionRecord } from "./domain";
 import { LedgerService, type LedgerFinancialCorrectionResult } from "./ledger-service";
 import { DatabaseLedgerRepository } from "./repositories/ledger-repository";
+import {
+  AccountSpendabilityUnsupportedError,
+  insufficientFundsDetails,
+  InsufficientFundsError,
+} from "./spendability-policy";
 
 export {
   correctTransactionSchema,
@@ -53,6 +58,9 @@ export async function correctTransactionForActor(
     const result = await dependencies.ledger.correctTransaction(actor, parsed.data);
     return { ok: true, correction: presentCorrection(result) };
   } catch (error) {
+    if (error instanceof InsufficientFundsError) {
+      return { ok: false, code: "INSUFFICIENT_FUNDS", details: insufficientFundsDetails(error.spendability) };
+    }
     return { ok: false, code: correctionErrorCode(error) };
   }
 }
@@ -102,6 +110,8 @@ function correctionValidationErrorCode(error: z.ZodError): CorrectTransactionErr
 
 function correctionErrorCode(error: unknown): CorrectTransactionErrorCode {
   if (error instanceof AuthorizationError) return "WORKSPACE_FORBIDDEN";
+  if (error instanceof InsufficientFundsError) return "INSUFFICIENT_FUNDS";
+  if (error instanceof AccountSpendabilityUnsupportedError) return "ACCOUNT_SPENDABILITY_UNSUPPORTED";
   if (error instanceof NotFoundError) {
     if (error.message.startsWith("Transaction")) return "TRANSACTION_NOT_FOUND";
     if (/account/i.test(error.message)) return "ACCOUNT_NOT_FOUND";
@@ -127,6 +137,8 @@ function isCorrectionErrorCode(value: string): value is Extract<
   | "INVALID_COUNTERPARTY"
   | "INVALID_OCCURRED_AT"
   | "ACCOUNT_WORKSPACE_MISMATCH"
+  | "ACCOUNT_SPENDABILITY_UNSUPPORTED"
+  | "INSUFFICIENT_FUNDS"
   | "SAME_TRANSFER_ACCOUNT"
   | "CROSS_CURRENCY_TRANSFER_UNSUPPORTED"
   | "CONCURRENT_MODIFICATION"
@@ -144,6 +156,8 @@ function isCorrectionErrorCode(value: string): value is Extract<
     "INVALID_COUNTERPARTY",
     "INVALID_OCCURRED_AT",
     "ACCOUNT_WORKSPACE_MISMATCH",
+    "ACCOUNT_SPENDABILITY_UNSUPPORTED",
+    "INSUFFICIENT_FUNDS",
     "SAME_TRANSFER_ACCOUNT",
     "CROSS_CURRENCY_TRANSFER_UNSUPPORTED",
     "CONCURRENT_MODIFICATION",

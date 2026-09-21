@@ -33,6 +33,8 @@ export interface LedgerAccountBalance {
   accountId: string;
   currency: CurrencyCode;
   currentBalanceMinor: bigint;
+  availableBalanceMinor: bigint;
+  spendabilityMode: import("./spendability-policy").LedgerSpendabilityMode;
 }
 
 export interface LedgerCategoryRecord {

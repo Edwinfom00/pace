@@ -49,6 +49,9 @@ export async function createExpenseForActor(
     kind: "EXPENSE",
   }, dependencies);
   if (result.ok) return { ok: true, expense: result.transaction };
+  if (result.code === "INSUFFICIENT_FUNDS" && result.details) {
+    return { ok: false, code: "INSUFFICIENT_FUNDS", details: result.details };
+  }
   return { ok: false, code: expenseErrorCode(result.code) };
 }
 

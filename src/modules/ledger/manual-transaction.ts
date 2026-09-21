@@ -15,6 +15,12 @@ import type { WorkspaceRepository } from "@/modules/workspaces/repositories/work
 import type { LedgerService } from "./ledger-service";
 import type { LedgerTransactionRecord } from "./domain";
 import { normalizeMerchantName } from "./domain";
+import {
+  AccountSpendabilityUnsupportedError,
+  insufficientFundsDetails,
+  InsufficientFundsError,
+  type InsufficientFundsDetails,
+} from "./spendability-policy";
 import type {
   CreatedManualTransactionDTO,
   ManualTransactionErrorCode,
@@ -43,7 +49,12 @@ export type CreateManualTransactionDependencies = {
 
 export type CreateManualTransactionResult<Kind extends ManualTransactionKind> =
   | { readonly ok: true; readonly transaction: CreatedManualTransactionDTO<Kind> }
-  | { readonly ok: false; readonly code: ManualTransactionErrorCode };
+  | {
+      readonly ok: false;
+      readonly code: ManualTransactionErrorCode;
+      /** Only present for a safe, typed insufficient-funds rejection. */
+      readonly details?: InsufficientFundsDetails;
+    };
 
 
 export async function createManualTransactionForActor<Kind extends ManualTransactionKind>(
@@ -104,7 +115,7 @@ export async function createManualTransactionForActor<Kind extends ManualTransac
     );
     return { ok: true, transaction: toCreatedManualTransactionDTO(transaction, input.kind) };
   } catch (error) {
-    return { ok: false, code: manualLedgerErrorCode(error) };
+    return manualLedgerError(error);
   }
 }
 
@@ -259,19 +270,26 @@ export function manualValidationErrorCode(
   return "TRANSACTION_CREATE_FAILED";
 }
 
-function manualLedgerErrorCode(error: unknown): ManualTransactionErrorCode {
-  if (error instanceof AuthorizationError) return "WORKSPACE_FORBIDDEN";
+function manualLedgerError(error: unknown): Extract<CreateManualTransactionResult<ManualTransactionKind>, { ok: false }> {
+  if (error instanceof AuthorizationError) return { ok: false, code: "WORKSPACE_FORBIDDEN" };
+  if (error instanceof InsufficientFundsError) {
+    return { ok: false, code: "INSUFFICIENT_FUNDS", details: insufficientFundsDetails(error.spendability) };
+  }
+  if (error instanceof AccountSpendabilityUnsupportedError) return { ok: false, code: "ACCOUNT_SPENDABILITY_UNSUPPORTED" };
+  if (error instanceof DomainConflictError && error.code === "CONCURRENT_MODIFICATION") {
+    return { ok: false, code: "CONCURRENT_MODIFICATION" };
+  }
   if (error instanceof DomainConflictError && error.code === "IDEMPOTENCY_KEY_REUSED") {
-    return "IDEMPOTENCY_KEY_REUSED";
+    return { ok: false, code: "IDEMPOTENCY_KEY_REUSED" };
   }
   if (error instanceof NotFoundError) {
-    if (error.message.startsWith("Account")) return "ACCOUNT_NOT_FOUND";
-    if (error.message.startsWith("Category")) return "CATEGORY_NOT_ALLOWED";
-    if (error.message.startsWith("Merchant")) return "INVALID_COUNTERPARTY";
+    if (error.message.startsWith("Account")) return { ok: false, code: "ACCOUNT_NOT_FOUND" };
+    if (error.message.startsWith("Category")) return { ok: false, code: "CATEGORY_NOT_ALLOWED" };
+    if (error.message.startsWith("Merchant")) return { ok: false, code: "INVALID_COUNTERPARTY" };
   }
   if (error instanceof ConflictError) {
-    if (error.message.startsWith("Archived accounts")) return "ACCOUNT_UNAVAILABLE";
-    if (error.message.startsWith("Transaction currency")) return "CURRENCY_MISMATCH";
+    if (error.message.startsWith("Archived accounts")) return { ok: false, code: "ACCOUNT_UNAVAILABLE" };
+    if (error.message.startsWith("Transaction currency")) return { ok: false, code: "CURRENCY_MISMATCH" };
   }
-  return "TRANSACTION_CREATE_FAILED";
+  return { ok: false, code: "TRANSACTION_CREATE_FAILED" };
 }

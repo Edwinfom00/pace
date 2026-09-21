@@ -233,7 +233,7 @@ test("Income writes are atomic and do not alter the established Expense command"
   const { command, dependencies, records } = await fixture();
   const merchantCount = records.merchants.size;
   const transactionCount = records.transactions.size;
-  records.createTransactionWithMerchant = async () => {
+  records.createTransactionWithSpendability = async () => {
     throw new Error("database write failed");
   };
 
@@ -245,7 +245,7 @@ test("Income writes are atomic and do not alter the established Expense command"
   assert.equal(records.transactions.size, transactionCount);
 
   // Reset only the failing repository method before asserting Expense behavior.
-  records.createTransactionWithMerchant = InMemoryLedgerRepository.prototype.createTransactionWithMerchant;
+  records.createTransactionWithSpendability = InMemoryLedgerRepository.prototype.createTransactionWithSpendability;
   const expense = await createExpenseForActor(owner, command({ merchant: "Corner shop" }), dependencies);
   assert.equal(expense.ok, true);
   if (expense.ok) assert.equal(records.transactions.get(expense.expense.id)?.kind, "EXPENSE");

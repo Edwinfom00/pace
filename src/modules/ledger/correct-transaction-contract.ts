@@ -5,6 +5,7 @@ import {
   incomeTransactionDetailsPatchSchema,
   transferTransactionDetailsPatchSchema,
 } from "./update-transaction-details-contract";
+import type { InsufficientFundsDetails } from "./spendability-policy";
 
 const entityId = z.string().trim().uuid();
 const workspaceId = z.string().trim().min(1).max(255);
@@ -110,6 +111,8 @@ export type CorrectTransactionErrorCode =
   | "INVALID_OCCURRED_AT"
   | "ACCOUNT_NOT_FOUND"
   | "ACCOUNT_UNAVAILABLE"
+  | "ACCOUNT_SPENDABILITY_UNSUPPORTED"
+  | "INSUFFICIENT_FUNDS"
   | "ACCOUNT_WORKSPACE_MISMATCH"
   | "CURRENCY_MISMATCH"
   | "SAME_TRANSFER_ACCOUNT"
@@ -129,4 +132,4 @@ export type CorrectTransactionResult =
         readonly replacementTransaction: CorrectedTransactionDTO;
       };
     }
-  | { readonly ok: false; readonly code: CorrectTransactionErrorCode };
+  | { readonly ok: false; readonly code: CorrectTransactionErrorCode; readonly details?: InsufficientFundsDetails };

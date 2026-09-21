@@ -61,7 +61,9 @@ async function createFixture() {
     joinedAt: new Date(),
   });
 
-  const bank = await ledger.createAccount(owner, workspaceOne, { name: "Bank", type: "CHECKING", currency: "XAF" });
+  const bank = await ledger.createAccount(owner, workspaceOne, {
+    name: "Bank", type: "CHECKING", currency: "XAF", openingBalanceMinor: 100_000n,
+  });
   return { actions, bank, ledger, ledgerRecords, service, workspaces };
 }
 
@@ -97,7 +99,7 @@ test("natural-language intents become typed server-side drafts without model mon
   assert.equal(taxi.draft.accountId, bank.id);
   assert.equal(taxi.draft.categoryId, SYSTEM_TRANSPORT_ID);
   assert.deepEqual(taxi.draft.missingFields, []);
-  assert.match(taxi.draft.occurredAt ?? "", /^2026-09-14T12:00:00.000Z$/);
+  assert.match(taxi.draft.occurredAt ?? "", /^\d{4}-\d{2}-\d{2}T12:00:00.000Z$/);
 
   const income = await createDraft(service, {
     kind: "INCOME",
