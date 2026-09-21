@@ -6,6 +6,7 @@ export type TransactionFormFooterProps = {
   readonly cancelLabel: string;
   readonly formError?: string | null;
   readonly isPending?: boolean;
+  readonly isSubmitDisabled?: boolean;
   readonly onCancel: () => void;
   readonly onPrimaryAction: () => void;
   readonly primaryActionLabel: string;
@@ -15,6 +16,7 @@ export function TransactionFormFooter({
   cancelLabel,
   formError,
   isPending = false,
+  isSubmitDisabled = false,
   onCancel,
   onPrimaryAction,
   primaryActionLabel,
@@ -36,7 +38,7 @@ export function TransactionFormFooter({
       <Button
         aria-busy={isPending || undefined}
         className="h-9 rounded-[8px] bg-[#2563eb] px-3.5 text-[13px] font-medium text-white shadow-none hover:bg-[#1e55d1] focus-visible:ring-[#2563eb]/30"
-        disabled={isPending}
+        disabled={isPending || isSubmitDisabled}
         onClick={onPrimaryAction}
         type="button"
       >

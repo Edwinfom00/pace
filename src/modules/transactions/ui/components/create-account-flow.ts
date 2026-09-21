@@ -17,6 +17,7 @@ export {
 export type AccountCreationTarget =
   | "EXPENSE_ACCOUNT"
   | "INCOME_ACCOUNT"
+  | "TRANSFER"
   | "TRANSFER_FROM"
   | "TRANSFER_TO";
 
@@ -50,6 +51,7 @@ export function selectCreatedAccountForTarget(
   if (target === "TRANSFER_FROM") {
     return { ...draft, transfer: { ...draft.transfer, fromAccount: account.id, currency: account.currency } };
   }
+  if (target === "TRANSFER") return draft;
 
   const fromAccount = accounts.find((candidate) => candidate.id === draft.transfer.fromAccount);
   return {

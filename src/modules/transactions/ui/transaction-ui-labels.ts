@@ -132,6 +132,8 @@ export type TransactionUiLabels = {
   readonly incomeCreateErrorGeneric: string;
   readonly transferCreated: string;
   readonly transferCreateErrorGeneric: string;
+  readonly transferRequiresTwoAccounts: string;
+  readonly transferAddAnotherAccount: string;
   readonly accountsEmptyTitle: string;
   readonly accountsEmptyDescription: string;
   readonly accountsCreate: string;
@@ -329,6 +331,8 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     incomeCreateErrorGeneric: labels["transactions.errors.incomeCreateFailed"],
     transferCreated: labels["transactions.feedback.transferCreated"],
     transferCreateErrorGeneric: labels["transactions.errors.transferCreateFailed"],
+    transferRequiresTwoAccounts: labels["transactions.transfer.requiresTwoAccounts"],
+    transferAddAnotherAccount: labels["transactions.transfer.addAnotherAccount"],
     accountsEmptyTitle: labels["accounts.empty.title"],
     accountsEmptyDescription: labels["accounts.empty.description"],
     accountsCreate: labels["accounts.actions.create"],

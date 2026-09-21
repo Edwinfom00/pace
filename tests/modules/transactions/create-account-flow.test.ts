@@ -88,6 +88,15 @@ test("Transfer From and To account creation preserve the transfer and use real a
   assert.equal(to.transfer.time, "11:30");
 });
 
+test("the generic Transfer blocked-state action refreshes canonically without guessing a direction", () => {
+  const draft = transactionDraft();
+  const unchanged = selectCreatedAccountForTarget(draft, "TRANSFER", createdAccount, []);
+
+  assert.equal(unchanged.transfer.fromAccount, "");
+  assert.equal(unchanged.transfer.toAccount, "");
+  assert.equal(unchanged.transfer.amount, "25");
+});
+
 test("the created persisted DTO bridges the selector only until the authoritative account query catches up", () => {
   const initial = [{ id: "db-account-from", name: "Everyday", currency: toCurrencyCode("USD") }];
   const bridged = reconcileTransactionAccountOptions(initial, createdAccount);

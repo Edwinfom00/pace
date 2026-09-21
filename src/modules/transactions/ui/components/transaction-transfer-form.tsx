@@ -3,6 +3,7 @@
 import type { ReactNode, RefObject } from "react";
 import { FiArrowDown } from "react-icons/fi";
 
+import { Button } from "@/components/ui/button";
 import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
 import {
   getTransferDisabledAccountIds,
@@ -68,7 +69,7 @@ export function TransactionTransferForm({
   readonly labels: TransactionUiLabels;
   readonly language: OnboardingLanguage;
   readonly locale: string;
-  readonly onCreateAccount: (target: "FROM" | "TO") => void;
+  readonly onCreateAccount: (target: "FROM" | "TO" | "TRANSFER") => void;
   readonly onDraftChange: (update: Partial<TransferTransactionFormDraft>) => void;
   readonly onRetryAccounts: () => void;
   readonly noteTextAreaRef?: RefObject<HTMLTextAreaElement | null>;
@@ -77,6 +78,7 @@ export function TransactionTransferForm({
   readonly toAccountTriggerRef: RefObject<HTMLButtonElement | null>;
   readonly toAccountHelper?: ReactNode;
 }) {
+  const needsAnotherAccount = accountAvailability === "ready" && accounts.length < 2;
   const fromAccount = accounts.find((account) => account.id === draft.fromAccount);
   const toAccount = accounts.find((account) => account.id === draft.toAccount);
 
@@ -91,6 +93,27 @@ export function TransactionTransferForm({
       [field]: accountId,
       currency: nextFrom?.currency ?? nextTo?.currency ?? draft.currency,
     });
+  }
+
+  if (needsAnotherAccount) {
+    return (
+      <section
+        aria-live="polite"
+        className="rounded-[10px] border border-[#d9e1ec] bg-[#f8faff] px-4 py-5 text-center"
+        role="status"
+      >
+        <p className="text-[13px] font-medium text-[#263550]">{labels.transferRequiresTwoAccounts}</p>
+        <Button
+          aria-label={labels.transferAddAnotherAccount}
+          className="mt-4 h-9 rounded-[7px] bg-[#edf3ff] px-3 text-[12px] font-medium text-[#2f67e9] shadow-none hover:bg-[#e4eeff] focus-visible:ring-[#5e8fe8]/30"
+          onClick={() => onCreateAccount("TRANSFER")}
+          type="button"
+          variant="secondary"
+        >
+          {labels.transferAddAnotherAccount}
+        </Button>
+      </section>
+    );
   }
 
   return (

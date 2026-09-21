@@ -93,6 +93,10 @@ type SubmittedTransactionFormKinds = Record<TransactionFormKind, boolean>;
 type LocalizedTransactionFormErrors = Partial<Record<TransactionFormField, string>>;
 type TransactionFormMessagesByKind = Record<TransactionFormKind, string | null>;
 type TransactionBalanceFeedbackByKind = Record<TransactionFormKind, InsufficientFundsDetails | null>;
+type PendingTransactionKindSelection = {
+  readonly from: TransactionFormKind;
+  readonly to: TransactionFormKind;
+};
 
 type ManualTransactionMutationResult =
   | { readonly ok: true }
@@ -258,6 +262,58 @@ export function clearUnavailableTransactionAccountSelections(
   };
 }
 
+/** Applies the one-account convenience only to the active account transaction kind. */
+export function autoSelectSoleEligibleTransactionAccount(
+  draft: TransactionFormDraft,
+  accounts: readonly TransactionAccountOption[],
+): TransactionFormDraft {
+  if (accounts.length !== 1) return draft;
+
+  const account = accounts[0]!;
+  if (draft.kind === "EXPENSE" && !draft.expense.account) {
+    return { ...draft, expense: { ...draft.expense, account: account.id, currency: account.currency } };
+  }
+  if (draft.kind === "INCOME" && !draft.income.account) {
+    return { ...draft, income: { ...draft.income, account: account.id, currency: account.currency } };
+  }
+  return draft;
+}
+
+/**
+ * Keeps an explicit Expense/Income account through a compatible kind switch,
+ * then applies the one-account convenience only if that destination is blank.
+ * Transfers deliberately never inherit or infer a direction.
+ */
+export function changeTransactionFormKind(
+  draft: TransactionFormDraft,
+  fromKind: TransactionFormKind,
+  toKind: TransactionFormKind,
+  accounts: readonly TransactionAccountOption[],
+): TransactionFormDraft {
+  const reconciledDraft = clearUnavailableTransactionAccountSelections(draft, accounts);
+  const nextDraft = { ...reconciledDraft, kind: toKind };
+  if (toKind === "TRANSFER") return nextDraft;
+
+  const destinationAccount = toKind === "EXPENSE"
+    ? reconciledDraft.expense.account
+    : reconciledDraft.income.account;
+  if (destinationAccount) return nextDraft;
+
+  const sourceAccount = fromKind === "EXPENSE"
+    ? reconciledDraft.expense.account
+    : fromKind === "INCOME"
+      ? reconciledDraft.income.account
+      : "";
+  const selectedSource = accounts.find((account) => account.id === sourceAccount);
+  if (selectedSource) {
+    return toKind === "EXPENSE"
+      ? { ...nextDraft, expense: { ...nextDraft.expense, account: selectedSource.id, currency: selectedSource.currency } }
+      : { ...nextDraft, income: { ...nextDraft.income, account: selectedSource.id, currency: selectedSource.currency } };
+  }
+
+  return autoSelectSoleEligibleTransactionAccount(nextDraft, accounts);
+}
+
 /** Removes category IDs that are no longer compatible with the current workspace projection. */
 export function clearUnavailableTransactionCategorySelections(
   draft: TransactionFormDraft,
@@ -326,6 +382,8 @@ export function TransactionCreateControl({
   const noteTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const workspaceIdRef = useRef(workspaceId);
   const pendingTransactionKindRef = useRef<TransactionFormKind | null>(null);
+  const pendingFreshDraftInitializationRef = useRef(false);
+  const pendingTransactionKindSelectionRef = useRef<PendingTransactionKindSelection | null>(null);
   const manualTransactionRetryKeysRef = useRef<Partial<Record<TransactionFormKind, ManualTransactionRetryKey>>>({});
   const kind = formDraft.kind;
   const activeAccountDraft = kind === "INCOME" ? formDraft.income : formDraft.expense;
@@ -337,6 +395,7 @@ export function TransactionCreateControl({
   const activeErrors = validationErrors[kind];
   const activeDisplayErrors = localizeTransactionFormErrors(labels, activeErrors);
   const isTransactionPending = pendingTransactionKind !== null;
+  const isTransferBlocked = kind === "TRANSFER" && accountAvailability === "ready" && authoritativeAccounts.length < 2;
   const selectedExpenseOrIncomeAccount = accounts.find((account) => account.id === activeAccountDraft.account);
   const selectedTransferFromAccount = accounts.find((account) => account.id === formDraft.transfer.fromAccount);
   const selectedTransferToAccount = accounts.find((account) => account.id === formDraft.transfer.toAccount);
@@ -377,12 +436,88 @@ export function TransactionCreateControl({
       : undefined;
 
   useEffect(() => {
+    const didWorkspaceChange = workspaceIdRef.current !== workspaceId;
     workspaceIdRef.current = workspaceId;
-  }, [workspaceId]);
+    if (!didWorkspaceChange) return;
+
+    pendingTransactionKindSelectionRef.current = null;
+    pendingFreshDraftInitializationRef.current = open;
+    setFormDraft(createTransactionFormDraft(defaultCurrency, timeZone));
+    setView("transaction");
+    setCreateAccountTarget("EXPENSE_ACCOUNT");
+    setCreateAccountDraft(createEmptyCreateAccountFormDraft(defaultCurrency));
+    setCreateAccountErrors({});
+    setCreateAccountFormError(null);
+    setCreateAccountAnnouncement("");
+    setValidationErrors(emptyTransactionFormErrors());
+    setSubmittedKinds(emptySubmittedTransactionFormKinds());
+    setTransactionFormErrors(emptyTransactionFormMessages());
+    setTransactionAnnouncements(emptyTransactionFormMessages());
+    setTransactionBalanceFeedback(emptyTransactionBalanceFeedback());
+  }, [defaultCurrency, open, timeZone, workspaceId]);
 
   useEffect(() => {
-    setTransactionBalanceFeedback(emptyTransactionBalanceFeedback());
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setTransactionBalanceFeedback(emptyTransactionBalanceFeedback());
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [authoritativeAccounts]);
+
+  useEffect(() => {
+    if (accountAvailability !== "ready") return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setFormDraft((current) => clearUnavailableTransactionAccountSelections(current, authoritativeAccounts));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountAvailability, authoritativeAccounts]);
+
+  useEffect(() => {
+    if (!open || !pendingFreshDraftInitializationRef.current || accountAvailability !== "ready") return;
+
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled && pendingFreshDraftInitializationRef.current) {
+        pendingFreshDraftInitializationRef.current = false;
+        setFormDraft((current) => autoSelectSoleEligibleTransactionAccount(current, authoritativeAccounts));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountAvailability, authoritativeAccounts, open]);
+
+  useEffect(() => {
+    const pendingSelection = pendingTransactionKindSelectionRef.current;
+    if (!pendingSelection || accountAvailability !== "ready") return;
+    if (!open) {
+      pendingTransactionKindSelectionRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled && pendingTransactionKindSelectionRef.current === pendingSelection) {
+        pendingTransactionKindSelectionRef.current = null;
+        setFormDraft((current) => changeTransactionFormKind(
+          current,
+          pendingSelection.from,
+          pendingSelection.to,
+          authoritativeAccounts,
+        ));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountAvailability, authoritativeAccounts, open]);
 
   function focusFirstInvalidField(kindToFocus: TransactionFormKind, errors: TransactionFormErrors) {
     const field = getFirstInvalidTransactionFormField(kindToFocus, errors);
@@ -448,6 +583,7 @@ export function TransactionCreateControl({
   }
 
   function handlePrimaryAction() {
+    if (isTransferBlocked) return;
     const result = validateActiveTransactionDraft();
     if (!result.isValid) return;
     if (kind === "EXPENSE") void submitExpense();
@@ -474,8 +610,20 @@ export function TransactionCreateControl({
   }
 
   function handleKindChange(nextKind: TransactionFormKind) {
-    if (pendingTransactionKindRef.current) return;
-    setFormDraft({ ...formDraft, kind: nextKind });
+    if (pendingTransactionKindRef.current || nextKind === formDraft.kind) return;
+
+    if (accountAvailability !== "ready") {
+      pendingTransactionKindSelectionRef.current = { from: formDraft.kind, to: nextKind };
+      commitTransactionDraft({ ...formDraft, kind: nextKind });
+      return;
+    }
+
+    commitTransactionDraft(changeTransactionFormKind(
+      formDraft,
+      formDraft.kind,
+      nextKind,
+      authoritativeAccounts,
+    ));
   }
 
   function handleCreateAccountRequest(target: AccountCreationTarget) {
@@ -505,11 +653,28 @@ export function TransactionCreateControl({
     });
   }
 
+  function openFreshTransactionForm() {
+    pendingTransactionKindSelectionRef.current = null;
+    pendingFreshDraftInitializationRef.current = true;
+    setFormDraft(createTransactionFormDraft(defaultCurrency, timeZone));
+    setView("transaction");
+    setValidationErrors(emptyTransactionFormErrors());
+    setSubmittedKinds(emptySubmittedTransactionFormKinds());
+    setTransactionFormErrors(emptyTransactionFormMessages());
+    setTransactionAnnouncements(emptyTransactionFormMessages());
+    setTransactionBalanceFeedback(emptyTransactionBalanceFeedback());
+    setOpen(true);
+  }
+
   function handleOpenChange(nextOpen: boolean) {
+    if (nextOpen) {
+      openFreshTransactionForm();
+      return;
+    }
     if (!nextOpen && (isCreatingAccount || pendingTransactionKindRef.current)) return;
     setOpen(nextOpen);
-    if (nextOpen) return;
-
+    pendingFreshDraftInitializationRef.current = false;
+    pendingTransactionKindSelectionRef.current = null;
     setView("transaction");
     setCreateAccountTarget("EXPENSE_ACCOUNT");
     setCreateAccountErrors({});
@@ -601,8 +766,10 @@ export function TransactionCreateControl({
           ? fromAccountTriggerRef
           : requestTarget === "TRANSFER_TO"
             ? toAccountTriggerRef
-            : accountTriggerRef;
-        trigger.current?.focus();
+            : requestTarget === "TRANSFER"
+              ? null
+              : accountTriggerRef;
+        trigger?.current?.focus();
       });
       router.refresh();
     } catch {
@@ -832,7 +999,7 @@ export function TransactionCreateControl({
         aria-expanded={open}
         aria-haspopup="dialog"
         className="h-9 rounded-[8px] bg-[#2563eb] px-3.5 text-[13px] font-medium text-white shadow-none hover:bg-[#1e55d1] focus-visible:ring-[#2563eb]/30"
-        onClick={() => setOpen(true)}
+        onClick={openFreshTransactionForm}
         type="button"
       >
         <FiPlus aria-hidden="true" className="size-4" />
@@ -841,7 +1008,7 @@ export function TransactionCreateControl({
 
       <TransactionFormDialog
         createAccountHeader={{
-          backLabel: createAccountTarget === "TRANSFER_FROM" || createAccountTarget === "TRANSFER_TO" ? labels.accountCreateBackToTransfer : labels.accountCreateBackToExpense,
+          backLabel: createAccountTarget === "TRANSFER" || createAccountTarget === "TRANSFER_FROM" || createAccountTarget === "TRANSFER_TO" ? labels.accountCreateBackToTransfer : labels.accountCreateBackToExpense,
           description: labels.accountCreateSubtitle,
           title: labels.accountCreateTitle,
         }}
@@ -850,6 +1017,7 @@ export function TransactionCreateControl({
             cancelLabel={labels.actionCancel}
             formError={transactionFormErrors[kind]}
             isPending={pendingTransactionKind === kind}
+            isSubmitDisabled={isTransferBlocked}
             onCancel={() => handleOpenChange(false)}
             onPrimaryAction={handlePrimaryAction}
             primaryActionLabel={kind === "EXPENSE" && pendingTransactionKind === "EXPENSE" ? labels.actionSavingExpense : kind === "INCOME" && pendingTransactionKind === "INCOME" ? labels.actionSavingIncome : kind === "TRANSFER" && pendingTransactionKind === "TRANSFER" ? labels.actionTransferring : kind === "TRANSFER" ? labels.actionTransferMoney : kind === "INCOME" ? labels.actionAddIncome : labels.actionAddExpense}
@@ -919,7 +1087,9 @@ export function TransactionCreateControl({
             labels={labels}
             language={language}
             locale={locale}
-            onCreateAccount={(target) => handleCreateAccountRequest(target === "FROM" ? "TRANSFER_FROM" : "TRANSFER_TO")}
+            onCreateAccount={(target) => handleCreateAccountRequest(
+              target === "FROM" ? "TRANSFER_FROM" : target === "TO" ? "TRANSFER_TO" : "TRANSFER",
+            )}
             onDraftChange={(update) => commitTransactionDraft({
               ...formDraft,
               transfer: { ...formDraft.transfer, ...update },
