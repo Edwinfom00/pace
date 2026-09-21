@@ -27,6 +27,17 @@ const systemCategoryMessageKeys = {
   "income:other": "categories.system.income.other",
 } as const;
 
+/** Shared system-category localization used wherever a ledger category is presented. */
+export function formatSystemCategory(
+  labels: DashboardLabels,
+  category: { readonly name: string; readonly systemKey: string | null },
+): string {
+  const key = category.systemKey
+    ? systemCategoryMessageKeys[category.systemKey as keyof typeof systemCategoryMessageKeys]
+    : undefined;
+  return key ? labels[key] : category.name;
+}
+
 export type TransactionDetailLabels = {
   readonly back: string;
   readonly title: string;
@@ -287,9 +298,6 @@ export function getTransactionDetailLabels(labels: DashboardLabels): Transaction
     },
     loading: labels["transactions.detail.loading"],
     errorTitle: labels["transactions.detail.error.title"],
-    systemCategory: (category) => {
-      const key = category.systemKey ? systemCategoryMessageKeys[category.systemKey as keyof typeof systemCategoryMessageKeys] : undefined;
-      return key ? labels[key] : category.name;
-    },
+    systemCategory: (category) => formatSystemCategory(labels, category),
   };
 }

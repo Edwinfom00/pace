@@ -50,6 +50,8 @@ function recurring(id: string, overrides: Partial<RecurringPaymentView> = {}): R
   return {
     id,
     normalizedMerchant: "netflix",
+    accountId: null,
+    categoryId: null,
     status: "CONFIRMED",
     cadenceDays: 30,
     typicalAmountMinor: "5700",

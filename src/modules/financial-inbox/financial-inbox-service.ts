@@ -70,6 +70,8 @@ export interface FinancialInboxPreviewView {
 export interface RecurringPaymentView {
   id: string;
   normalizedMerchant: string;
+  accountId: string | null;
+  categoryId: string | null;
   status: RecurringPaymentRecord["status"];
   cadenceDays: number;
   typicalAmountMinor: string;
@@ -538,6 +540,8 @@ export class FinancialInboxService {
     return {
       id: payment.id,
       normalizedMerchant: payment.normalizedMerchant,
+      accountId: payment.accountId,
+      categoryId: payment.categoryId,
       status: payment.status,
       cadenceDays: payment.cadenceDays,
       typicalAmountMinor: payment.typicalAmountMinor.toString(),
