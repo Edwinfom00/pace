@@ -14,6 +14,7 @@ import type {
   CreateRecurringPaymentInput,
   CreateTransactionClassificationInput,
   FinancialInboxRepository,
+  MutateRecurringPaymentInput,
   TransitionRecurringPaymentInput,
 } from "@/modules/financial-inbox/repositories/financial-inbox-repository";
 
@@ -254,6 +255,37 @@ export class InMemoryFinancialInboxRepository implements FinancialInboxRepositor
       confirmedAt: input.confirmedAt,
       ignoredByUserId: input.ignoredByUserId,
       ignoredAt: input.ignoredAt,
+      updatedAt: now,
+    };
+    this.recurring.set(record.id, record);
+    await this.createAudit({ ...input.audit, recurringPaymentId: record.id });
+    return record;
+  }
+
+  async mutateRecurringPayment(
+    input: MutateRecurringPaymentInput,
+  ): Promise<RecurringPaymentRecord | null> {
+    // Synchronous compare-and-set mirrors the production row lock for tests.
+    const current = this.recurring.get(input.recurringPaymentId);
+    if (
+      !current
+      || current.workspaceId !== input.workspaceId
+      || current.status !== input.expectedStatus
+      || current.lifecycle !== input.expectedLifecycle
+      || (input.expectedUpdatedAt && current.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
+    ) {
+      return null;
+    }
+    const now = new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1));
+    const record: RecurringPaymentRecord = {
+      ...current,
+      displayName: input.displayName,
+      typicalAmountMinor: input.typicalAmountMinor,
+      cadenceDays: input.cadenceDays,
+      nextOccurrenceAt: input.nextOccurrenceAt,
+      accountId: input.accountId,
+      categoryId: input.categoryId,
+      lifecycle: input.lifecycle,
       updatedAt: now,
     };
     this.recurring.set(record.id, record);

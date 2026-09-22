@@ -56,6 +56,7 @@ function recurring(id: string, overrides: Partial<RecurringPaymentView> = {}): R
     accountId: null,
     categoryId: null,
     status: "CONFIRMED",
+    lifecycle: "ACTIVE",
     cadenceDays: 30,
     typicalAmountMinor: "5700",
     currency: "XAF",

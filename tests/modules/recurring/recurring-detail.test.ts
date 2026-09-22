@@ -43,6 +43,7 @@ function recurring(overrides: Partial<RecurringPaymentView> = {}): RecurringPaym
     accountId: "account-a",
     categoryId: "category-a",
     status: "CONFIRMED",
+    lifecycle: "ACTIVE",
     cadenceDays: 30,
     typicalAmountMinor: "6500",
     currency: "XAF",

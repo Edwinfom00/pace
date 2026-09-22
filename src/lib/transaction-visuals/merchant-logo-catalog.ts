@@ -1151,6 +1151,201 @@ export const MERCHANT_LOGO_CATALOG = [
       "guinness cameroon",
       "guinness"
     ]
+  },
+  {
+    "key": "prime-video",
+    "label": "Prime Video",
+    "path": "/merchant-logos/prime-video.svg",
+    "aliases": [
+      "prime video",
+      "primevideo",
+      "amazon prime video"
+    ]
+  },
+  {
+    "key": "apple-tv",
+    "label": "Apple TV",
+    "path": "/merchant-logos/apple-tv.svg",
+    "aliases": [
+      "apple tv",
+      "appletv"
+    ]
+  },
+  {
+    "key": "audible",
+    "label": "Audible",
+    "path": "/merchant-logos/audible.svg",
+    "aliases": [
+      "audible",
+      "audible com"
+    ]
+  },
+  {
+    "key": "crunchyroll",
+    "label": "Crunchyroll",
+    "path": "/merchant-logos/crunchyroll.svg",
+    "aliases": [
+      "crunchyroll",
+      "crunchy roll"
+    ]
+  },
+  {
+    "key": "duolingo",
+    "label": "Duolingo",
+    "path": "/merchant-logos/duolingo.svg",
+    "aliases": [
+      "duolingo",
+      "duolingo plus",
+      "duolingo super"
+    ]
+  },
+  {
+    "key": "expressvpn",
+    "label": "ExpressVPN",
+    "path": "/merchant-logos/expressvpn.svg",
+    "aliases": [
+      "expressvpn",
+      "express vpn"
+    ]
+  },
+  {
+    "key": "headspace",
+    "label": "Headspace",
+    "path": "/merchant-logos/headspace.svg",
+    "aliases": [
+      "headspace"
+    ]
+  },
+  {
+    "key": "hbo-max",
+    "label": "HBO Max",
+    "path": "/merchant-logos/hbo-max.svg",
+    "aliases": [
+      "hbo max",
+      "hbomax",
+      "max streaming"
+    ]
+  },
+  {
+    "key": "icloud",
+    "label": "iCloud",
+    "path": "/merchant-logos/icloud.svg",
+    "aliases": [
+      "icloud",
+      "i cloud"
+    ]
+  },
+  {
+    "key": "lastpass",
+    "label": "LastPass",
+    "path": "/merchant-logos/lastpass.svg",
+    "aliases": [
+      "lastpass",
+      "last pass"
+    ]
+  },
+  {
+    "key": "nordvpn",
+    "label": "NordVPN",
+    "path": "/merchant-logos/nordvpn.svg",
+    "aliases": [
+      "nordvpn",
+      "nord vpn"
+    ]
+  },
+  {
+    "key": "paramount-plus",
+    "label": "Paramount+",
+    "path": "/merchant-logos/paramount-plus.svg",
+    "aliases": [
+      "paramount plus",
+      "paramount+",
+      "paramountplus"
+    ]
+  },
+  {
+    "key": "patreon",
+    "label": "Patreon",
+    "path": "/merchant-logos/patreon.svg",
+    "aliases": [
+      "patreon"
+    ]
+  },
+  {
+    "key": "peloton",
+    "label": "Peloton",
+    "path": "/merchant-logos/peloton.svg",
+    "aliases": [
+      "peloton"
+    ]
+  },
+  {
+    "key": "plex",
+    "label": "Plex",
+    "path": "/merchant-logos/plex.svg",
+    "aliases": [
+      "plex"
+    ]
+  },
+  {
+    "key": "proton-vpn",
+    "label": "Proton VPN",
+    "path": "/merchant-logos/proton-vpn.svg",
+    "aliases": [
+      "proton vpn",
+      "protonvpn"
+    ]
+  },
+  {
+    "key": "soundcloud",
+    "label": "SoundCloud",
+    "path": "/merchant-logos/soundcloud.svg",
+    "aliases": [
+      "soundcloud",
+      "sound cloud"
+    ]
+  },
+  {
+    "key": "strava",
+    "label": "Strava",
+    "path": "/merchant-logos/strava.svg",
+    "aliases": [
+      "strava"
+    ]
+  },
+  {
+    "key": "substack",
+    "label": "Substack",
+    "path": "/merchant-logos/substack.svg",
+    "aliases": [
+      "substack"
+    ]
+  },
+  {
+    "key": "tidal",
+    "label": "TIDAL",
+    "path": "/merchant-logos/tidal.svg",
+    "aliases": [
+      "tidal"
+    ]
+  },
+  {
+    "key": "twitch",
+    "label": "Twitch",
+    "path": "/merchant-logos/twitch.svg",
+    "aliases": [
+      "twitch",
+      "twitch tv"
+    ]
+  },
+  {
+    "key": "youtube-music",
+    "label": "YouTube Music",
+    "path": "/merchant-logos/youtube-music.svg",
+    "aliases": [
+      "youtube music",
+      "youtubemusic"
+    ]
   }
 ] as const satisfies readonly MerchantLogoDefinition[];
 

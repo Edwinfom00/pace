@@ -14,6 +14,12 @@ const expectedUpdatedAt = z
   .refine((value) => !Number.isNaN(value.getTime()), "Expected version must be a valid timestamp.")
   .optional();
 
+const requiredExpectedUpdatedAt = z
+  .string()
+  .datetime({ offset: true })
+  .transform((value) => new Date(value))
+  .refine((value) => !Number.isNaN(value.getTime()), "Expected version must be a valid timestamp.");
+
 const recurringReviewSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("CONFIRM"),
@@ -31,6 +37,30 @@ const recurringReviewSchema = z.discriminatedUnion("action", [
     expectedUpdatedAt,
     idempotencyKey: z.string().trim().min(1).max(180),
   }).strict(),
+  z.object({
+    action: z.literal("UPDATE"),
+    name: z.string().optional(),
+    amountMinor: z.string().trim().regex(/^[1-9]\d*$/, "Amount must be positive integer minor units.")
+      .transform((value) => BigInt(value))
+      .refine((value) => value <= 9_223_372_036_854_775_807n, "Amount must fit PostgreSQL bigint.")
+      .optional(),
+    cadenceDays: z.number().int().optional(),
+    nextOccurrenceAt: z.coerce.date().optional(),
+    accountId: z.string().trim().min(1).max(160).nullable().optional(),
+    categoryId: z.string().trim().min(1).max(160).nullable().optional(),
+    expectedUpdatedAt: requiredExpectedUpdatedAt,
+    idempotencyKey: z.string().trim().min(1).max(180),
+  }).strict(),
+  z.object({
+    action: z.literal("PAUSE"),
+    expectedUpdatedAt: requiredExpectedUpdatedAt,
+    idempotencyKey: z.string().trim().min(1).max(180),
+  }).strict(),
+  z.object({
+    action: z.literal("RESUME"),
+    expectedUpdatedAt: requiredExpectedUpdatedAt,
+    idempotencyKey: z.string().trim().min(1).max(180),
+  }).strict(),
 ]);
 
 
@@ -46,7 +76,13 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
       ? await service.confirmRecurring(actor, { workspaceId, recurringId, ...input })
       : input.action === "IGNORE"
         ? await service.ignoreRecurring(actor, { workspaceId, recurringId, ...input })
-        : await service.restoreRecurring(actor, { workspaceId, recurringId, ...input });
+        : input.action === "RESTORE"
+          ? await service.restoreRecurring(actor, { workspaceId, recurringId, ...input })
+          : input.action === "UPDATE"
+            ? await service.updateRecurring(actor, { workspaceId, recurringId, ...input })
+            : input.action === "PAUSE"
+              ? await service.pauseRecurring(actor, { workspaceId, recurringId, ...input })
+              : await service.resumeRecurring(actor, { workspaceId, recurringId, ...input });
     return Response.json({ payment });
   } catch (error) {
     return jsonError(error);

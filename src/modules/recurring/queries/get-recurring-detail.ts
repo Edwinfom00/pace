@@ -140,7 +140,7 @@ export function buildRecurringDetail({
     transaction: relatedTransactions[index]!,
   }));
   const lastOccurrenceAt = history[0]?.date ?? (payment.origin === "MANUAL" ? null : payment.lastOccurredAt);
-  const upcomingDates = payment.status === "IGNORED"
+  const upcomingDates = payment.status === "IGNORED" || payment.lifecycle === "PAUSED"
     ? []
     : projectRecurringPaymentOccurrences(payment, now, timeZone, 12);
   const account = payment.accountId ? accountById.get(payment.accountId) ?? null : null;
@@ -151,6 +151,7 @@ export function buildRecurringDetail({
     title: payment.displayName ?? merchant?.name ?? payment.normalizedMerchant ?? "Recurring payment",
     direction: payment.direction === "INCOME" ? "INFLOW" : "OUTFLOW",
     status: payment.status,
+    lifecycle: payment.lifecycle,
     reviewState: payment.status === "CANDIDATE" ? "NEEDS_REVIEW" : null,
     capabilities: getRecurringCapabilities({ recurring: payment, workspaceRole }),
     amount: { minor: payment.typicalAmountMinor, currency: payment.currency, kind: "TYPICAL" },

@@ -103,7 +103,7 @@ export function buildOverviewUpcomingBills(
 ): readonly OverviewUpcomingBill[] {
   const previewLimit = Math.min(Math.max(Math.floor(limit), 1), 12);
   return payments
-    .filter((payment) => payment.status === "CONFIRMED")
+    .filter((payment) => payment.status === "CONFIRMED" && payment.lifecycle === "ACTIVE")
     .map((payment) => {
       const merchantName = displayRecurringName(payment);
       return {

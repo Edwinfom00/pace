@@ -15,6 +15,7 @@ import type {
   FinancialInboxItemRecord,
   InboxItemStatus,
   InboxReason,
+  RecurringPaymentLifecycle,
   RecurringPaymentRecord,
   RecurringPaymentStatus,
   TransactionClassificationRecord,
@@ -64,6 +65,28 @@ export type TransitionRecurringPaymentInput = {
   readonly confirmedAt: Date | null;
   readonly ignoredByUserId: string | null;
   readonly ignoredAt: Date | null;
+  readonly audit: CreateFinancialInboxAuditInput & {
+    readonly recurringPaymentId: string;
+    readonly actorUserId: string;
+    readonly commandFingerprint: string;
+    readonly idempotencyKey: string;
+  };
+};
+
+/** A future-only recurring mutation and its audit are inseparable. */
+export type MutateRecurringPaymentInput = {
+  readonly workspaceId: string;
+  readonly recurringPaymentId: string;
+  readonly expectedStatus: RecurringPaymentStatus;
+  readonly expectedLifecycle: RecurringPaymentLifecycle;
+  readonly expectedUpdatedAt?: Date;
+  readonly displayName: string | null;
+  readonly typicalAmountMinor: bigint;
+  readonly cadenceDays: number;
+  readonly nextOccurrenceAt: Date | null;
+  readonly accountId: string | null;
+  readonly categoryId: string | null;
+  readonly lifecycle: RecurringPaymentLifecycle;
   readonly audit: CreateFinancialInboxAuditInput & {
     readonly recurringPaymentId: string;
     readonly actorUserId: string;
@@ -157,6 +180,8 @@ export interface FinancialInboxRepository {
   createRecurringPayment(input: CreateRecurringPaymentInput): Promise<RecurringPaymentRecord>;
   /** Atomically applies a policy-approved review transition and writes its audit. */
   transitionRecurringPayment(input: TransitionRecurringPaymentInput): Promise<RecurringPaymentRecord | null>;
+  /** Atomically applies a policy-approved future-only mutation and writes its audit. */
+  mutateRecurringPayment(input: MutateRecurringPaymentInput): Promise<RecurringPaymentRecord | null>;
   updateRecurringPayment(
     workspaceId: string,
     recurringPaymentId: string,
@@ -525,6 +550,90 @@ export class DatabaseFinancialInboxRepository implements FinancialInboxRepositor
             payment.next_occurrence_at AS "nextOccurrenceAt",
             payment.sample_transaction_ids AS "sampleTransactionIds",
             payment.status::text AS status,
+            payment.lifecycle::text AS lifecycle,
+            payment.created_by_user_id AS "createdByUserId",
+            payment.idempotency_key AS "idempotencyKey",
+            payment.command_fingerprint AS "commandFingerprint",
+            payment.confirmed_by_user_id AS "confirmedByUserId",
+            payment.confirmed_at AS "confirmedAt",
+            payment.ignored_by_user_id AS "ignoredByUserId",
+            payment.ignored_at AS "ignoredAt",
+            payment.created_at AS "createdAt",
+            payment.updated_at AS "updatedAt"
+        ),
+        audited AS (
+          INSERT INTO financial_inbox_audit (
+            id, workspace_id, inbox_item_id, classification_id, recurring_payment_id,
+            actor_user_id, event, command_fingerprint, idempotency_key, metadata
+          )
+          SELECT
+            ${input.audit.id}, ${input.audit.workspaceId}, ${input.audit.inboxItemId ?? null},
+            ${input.audit.classificationId ?? null}, updated.id, ${input.audit.actorUserId},
+            ${input.audit.event}, ${input.audit.commandFingerprint}, ${input.audit.idempotencyKey},
+            ${JSON.stringify(input.audit.metadata)}::jsonb
+          FROM updated
+        )
+        SELECT * FROM updated;
+      `],
+      { isolationLevel: "Serializable" },
+    );
+    const record = (rows as unknown as readonly RawRecurringPayment[])[0];
+    return record ? mapRecurringPayment(record) : null;
+  }
+
+  async mutateRecurringPayment(
+    input: MutateRecurringPaymentInput,
+  ): Promise<RecurringPaymentRecord | null> {
+    // This statement intentionally reads and writes recurring_payment plus its
+    // audit only. It cannot alter transactions, balances, or ledger reporting.
+    const [rows] = await neonSql.transaction(
+      (transaction) => [transaction`
+        WITH candidate AS (
+          SELECT id
+          FROM recurring_payment
+          WHERE workspace_id = ${input.workspaceId}
+            AND id = ${input.recurringPaymentId}
+            AND status = ${input.expectedStatus}::recurring_payment_status
+            AND lifecycle = ${input.expectedLifecycle}::recurring_payment_lifecycle
+            AND (
+              ${input.expectedUpdatedAt ?? null}::timestamptz IS NULL
+              OR date_trunc('milliseconds', updated_at) = ${input.expectedUpdatedAt ?? null}
+            )
+          FOR UPDATE
+        ),
+        updated AS (
+          UPDATE recurring_payment AS payment
+          SET
+            display_name = ${input.displayName},
+            typical_amount_minor = ${input.typicalAmountMinor},
+            cadence_days = ${input.cadenceDays},
+            next_occurrence_at = ${input.nextOccurrenceAt},
+            account_id = ${input.accountId},
+            category_id = ${input.categoryId},
+            lifecycle = ${input.lifecycle}::recurring_payment_lifecycle,
+            updated_at = greatest(clock_timestamp(), payment.updated_at + interval '1 millisecond')
+          FROM candidate
+          WHERE payment.id = candidate.id
+          RETURNING
+            payment.id,
+            payment.workspace_id AS "workspaceId",
+            payment.detection_key AS "detectionKey",
+            payment.normalized_merchant AS "normalizedMerchant",
+            payment.display_name AS "displayName",
+            payment.origin::text AS origin,
+            payment.direction::text AS direction,
+            payment.account_id AS "accountId",
+            payment.category_id AS "categoryId",
+            payment.currency,
+            payment.typical_amount_minor AS "typicalAmountMinor",
+            payment.amount_tolerance_bps AS "amountToleranceBps",
+            payment.cadence_days AS "cadenceDays",
+            payment.first_occurred_at AS "firstOccurredAt",
+            payment.last_occurred_at AS "lastOccurredAt",
+            payment.next_occurrence_at AS "nextOccurrenceAt",
+            payment.sample_transaction_ids AS "sampleTransactionIds",
+            payment.status::text AS status,
+            payment.lifecycle::text AS lifecycle,
             payment.created_by_user_id AS "createdByUserId",
             payment.idempotency_key AS "idempotencyKey",
             payment.command_fingerprint AS "commandFingerprint",
@@ -624,6 +733,7 @@ type RawRecurringPayment = Omit<
   | "nextOccurrenceAt"
   | "sampleTransactionIds"
   | "status"
+  | "lifecycle"
   | "confirmedAt"
   | "ignoredAt"
   | "createdAt"
@@ -637,6 +747,7 @@ type RawRecurringPayment = Omit<
   nextOccurrenceAt: Date | string | null;
   sampleTransactionIds: string[] | string;
   status: string;
+  lifecycle: string;
   confirmedAt: Date | string | null;
   ignoredAt: Date | string | null;
   createdAt: Date | string;
@@ -662,6 +773,7 @@ function mapRecurringPayment(record: RawRecurringPayment): RecurringPaymentRecor
     nextOccurrenceAt: record.nextOccurrenceAt === null ? null : new Date(record.nextOccurrenceAt),
     sampleTransactionIds,
     status: record.status as RecurringPaymentRecord["status"],
+    lifecycle: record.lifecycle as RecurringPaymentRecord["lifecycle"],
     confirmedAt: record.confirmedAt === null ? null : new Date(record.confirmedAt),
     ignoredAt: record.ignoredAt === null ? null : new Date(record.ignoredAt),
     createdAt: new Date(record.createdAt),

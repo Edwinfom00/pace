@@ -1,18 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { RECURRING_PAYMENT_STATUSES, type RecurringPaymentRecord } from "@/modules/financial-inbox/domain";
+import {
+  RECURRING_PAYMENT_LIFECYCLES,
+  RECURRING_PAYMENT_STATUSES,
+  type RecurringPaymentRecord,
+} from "@/modules/financial-inbox/domain";
 import { getRecurringCapabilities } from "@/modules/recurring/domain/recurring-action-policy";
 
-function recurring(status: RecurringPaymentRecord["status"]): Pick<RecurringPaymentRecord, "origin" | "status"> {
-  return { origin: "DETECTED", status };
+function recurring(
+  status: RecurringPaymentRecord["status"],
+  lifecycle: RecurringPaymentRecord["lifecycle"] = "ACTIVE",
+): Pick<RecurringPaymentRecord, "origin" | "status" | "lifecycle"> {
+  return { origin: "DETECTED", status, lifecycle };
 }
 
-test("M9 recurring state remains a single detection review dimension", () => {
+test("M9.6 keeps review status and scheduling lifecycle as separate canonical dimensions", () => {
   assert.deepEqual(RECURRING_PAYMENT_STATUSES, ["CANDIDATE", "CONFIRMED", "IGNORED"]);
+  assert.deepEqual(RECURRING_PAYMENT_LIFECYCLES, ["ACTIVE", "PAUSED"]);
   const capabilities = getRecurringCapabilities({ recurring: recurring("CANDIDATE"), workspaceRole: "OWNER" });
-  assert.equal("canPause" in capabilities, false);
-  assert.equal("canResume" in capabilities, false);
+  assert.equal(capabilities.canPause, false);
+  assert.equal(capabilities.canResume, false);
   assert.equal(capabilities.canRestore, false);
 });
 
@@ -25,11 +33,11 @@ test("candidate detection can be confirmed or ignored by ledger managers without
   assert.equal(capabilities.canIgnore, true);
   assert.equal(capabilities.canRestore, false);
   assert.equal(capabilities.canEdit, false);
-  assert.equal(capabilities.reasons.edit, "EDIT_NOT_SUPPORTED");
+  assert.equal(capabilities.reasons.edit, "NOT_CONFIRMED");
   assert.deepEqual(candidate, before);
 });
 
-test("confirmed detection has no second confirm, edit, or disable lifecycle in M4", () => {
+test("confirmed patterns can edit and transition only between active and paused scheduling", () => {
   const capabilities = getRecurringCapabilities({ recurring: recurring("CONFIRMED"), workspaceRole: "ADMIN" });
 
   assert.equal(capabilities.canConfirm, false);
@@ -37,14 +45,17 @@ test("confirmed detection has no second confirm, edit, or disable lifecycle in M
   assert.equal(capabilities.canIgnore, false);
   assert.equal(capabilities.canRestore, false);
   assert.equal(capabilities.reasons.ignore, "NOT_CANDIDATE");
-  assert.equal(capabilities.canEdit, false);
+  assert.equal(capabilities.canEdit, true);
+  assert.equal(capabilities.canPause, true);
+  assert.equal(capabilities.canResume, false);
+  assert.equal(capabilities.reasons.resume, "NOT_PAUSED");
   assert.equal(capabilities.canDelete, false);
   assert.equal(capabilities.reasons.delete, "DELETE_NOT_SUPPORTED");
 });
 
-test("manual recurring patterns never inherit detected review actions", () => {
+test("manual recurring patterns retain their provenance while using the same scheduling policy", () => {
   const capabilities = getRecurringCapabilities({
-    recurring: { origin: "MANUAL", status: "CONFIRMED" },
+    recurring: { origin: "MANUAL", status: "CONFIRMED", lifecycle: "ACTIVE" },
     workspaceRole: "OWNER",
   });
 
@@ -54,6 +65,9 @@ test("manual recurring patterns never inherit detected review actions", () => {
   assert.equal(capabilities.reasons.confirm, "MANUAL_RECURRING");
   assert.equal(capabilities.reasons.ignore, "MANUAL_RECURRING");
   assert.equal(capabilities.reasons.restore, "MANUAL_RECURRING");
+  assert.equal(capabilities.canEdit, true);
+  assert.equal(capabilities.canPause, true);
+  assert.equal(capabilities.canResume, false);
 });
 
 test("ignored detection can be restored to review while history stays readable", () => {
@@ -77,12 +91,16 @@ test("viewers retain recurring history access but receive no mutation capability
   assert.equal(capabilities.canIgnore, false);
   assert.equal(capabilities.canRestore, false);
   assert.equal(capabilities.canEdit, false);
+  assert.equal(capabilities.canPause, false);
+  assert.equal(capabilities.canResume, false);
   assert.equal(capabilities.canDelete, false);
   assert.deepEqual(capabilities.reasons, {
     confirm: "READ_ONLY_ROLE",
     ignore: "READ_ONLY_ROLE",
     restore: "READ_ONLY_ROLE",
     edit: "READ_ONLY_ROLE",
+    pause: "READ_ONLY_ROLE",
+    resume: "READ_ONLY_ROLE",
     delete: "READ_ONLY_ROLE",
   });
 });

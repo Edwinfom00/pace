@@ -85,6 +85,7 @@ export interface RecurringPaymentView {
   accountId: string | null;
   categoryId: string | null;
   status: RecurringPaymentRecord["status"];
+  lifecycle: RecurringPaymentRecord["lifecycle"];
   cadenceDays: number;
   typicalAmountMinor: string;
   currency: string;
@@ -130,6 +131,24 @@ export interface IgnoreRecurringCommand extends ConfirmRecurringCommand {
 }
 
 export type RestoreRecurringCommand = ConfirmRecurringCommand;
+
+/**
+ * Changes the canonical future recurrence only. It deliberately has no
+ * transaction fields: past matched occurrences and ledger truth are immutable.
+ */
+export interface UpdateRecurringCommand extends ConfirmRecurringCommand {
+  readonly name?: string;
+  readonly amountMinor?: bigint;
+  readonly cadenceDays?: number;
+  readonly nextOccurrenceAt?: Date;
+  /** Undefined leaves the relation unchanged; null intentionally clears it. */
+  readonly accountId?: string | null;
+  /** Undefined leaves the relation unchanged; null intentionally clears it. */
+  readonly categoryId?: string | null;
+}
+
+export type PauseRecurringCommand = ConfirmRecurringCommand;
+export type ResumeRecurringCommand = ConfirmRecurringCommand;
 
 
 export class FinancialInboxService {
@@ -361,6 +380,7 @@ export class FinancialInboxService {
       nextOccurrenceAt: prepared.nextOccurrenceAt,
       sampleTransactionIds: [],
       status: "CONFIRMED" as const,
+      lifecycle: "ACTIVE" as const,
       createdByUserId: actor.userId,
       idempotencyKey: prepared.idempotencyKey,
       commandFingerprint,
@@ -438,6 +458,31 @@ export class FinancialInboxService {
     command: RestoreRecurringCommand,
   ): Promise<RecurringPaymentView> {
     return this.reviewRecurring(actor, command, "RESTORE");
+  }
+
+  /** Applies a policy-approved patch to future recurring behavior only. */
+  async updateRecurring(
+    actor: AuthenticatedActor,
+    command: UpdateRecurringCommand,
+  ): Promise<RecurringPaymentView> {
+    const prepared = prepareRecurringUpdateCommand(command);
+    return this.mutateRecurring(actor, command.workspaceId, prepared, "EDIT");
+  }
+
+  /** Stops informational future planning without cancelling anything externally. */
+  async pauseRecurring(
+    actor: AuthenticatedActor,
+    command: PauseRecurringCommand,
+  ): Promise<RecurringPaymentView> {
+    return this.mutateRecurring(actor, command.workspaceId, prepareRecurringLifecycleCommand(command, "PAUSE"), "PAUSE");
+  }
+
+  /** Restarts future informational planning without fabricating missed transactions. */
+  async resumeRecurring(
+    actor: AuthenticatedActor,
+    command: ResumeRecurringCommand,
+  ): Promise<RecurringPaymentView> {
+    return this.mutateRecurring(actor, command.workspaceId, prepareRecurringLifecycleCommand(command, "RESUME"), "RESUME");
   }
 
   async resolveInboxItem(
@@ -693,6 +738,136 @@ export class FinancialInboxService {
     );
   }
 
+  private async mutateRecurring(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    prepared: PreparedRecurringMutationCommand,
+    action: "EDIT" | "PAUSE" | "RESUME",
+  ): Promise<RecurringPaymentView> {
+    const workspaceRole = await this.requireWorkspaceRole(actor.userId, workspaceId);
+    const commandFingerprint = fingerprintRecurringMutationCommand(prepared, action);
+    const replay = await this.repository.findRecurringAuditByIdempotencyKey(
+      workspaceId,
+      actor.userId,
+      prepared.idempotencyKey,
+    );
+    if (replay) {
+      return this.resolveExistingRecurringMutationCommand(
+        workspaceId,
+        prepared.recurringId,
+        action,
+        commandFingerprint,
+        replay,
+      );
+    }
+
+    const payment = await this.repository.findRecurringPaymentById(workspaceId, prepared.recurringId);
+    if (!payment) throw new NotFoundError("Recurring payment not found in this workspace.");
+
+    const capabilities = getRecurringCapabilities({ recurring: payment, workspaceRole });
+    const allowed = action === "EDIT"
+      ? capabilities.canEdit
+      : action === "PAUSE"
+        ? capabilities.canPause
+        : capabilities.canResume;
+    if (!allowed) this.throwRecurringMutationNotAllowed(action, capabilities, workspaceRole);
+
+    const next = {
+      displayName: action === "EDIT" && prepared.name !== undefined ? prepared.name : payment.displayName,
+      typicalAmountMinor: action === "EDIT" && prepared.amountMinor !== undefined
+        ? prepared.amountMinor
+        : payment.typicalAmountMinor,
+      cadenceDays: action === "EDIT" && prepared.cadenceDays !== undefined
+        ? prepared.cadenceDays
+        : payment.cadenceDays,
+      nextOccurrenceAt: action === "EDIT" && prepared.nextOccurrenceAt !== undefined
+        ? prepared.nextOccurrenceAt
+        : payment.nextOccurrenceAt,
+      accountId: action === "EDIT" && prepared.accountId !== undefined ? prepared.accountId : payment.accountId,
+      categoryId: action === "EDIT" && prepared.categoryId !== undefined ? prepared.categoryId : payment.categoryId,
+      lifecycle: action === "PAUSE" ? "PAUSED" as const : action === "RESUME" ? "ACTIVE" as const : payment.lifecycle,
+    };
+
+    if (action === "EDIT") {
+      await this.validateRecurringFutureRelations(workspaceId, payment, next.accountId, next.categoryId);
+      if (recurringFutureDiff(payment, next).length === 0) {
+        throw new DomainConflictError(
+          "RECURRING_NO_CHANGES",
+          "The recurring update does not change any future scheduling fields.",
+        );
+      }
+    }
+
+    try {
+      const persisted = await this.repository.mutateRecurringPayment({
+        workspaceId,
+        recurringPaymentId: payment.id,
+        expectedStatus: payment.status,
+        expectedLifecycle: payment.lifecycle,
+        expectedUpdatedAt: prepared.expectedUpdatedAt,
+        ...next,
+        audit: {
+          id: randomUUID(),
+          workspaceId,
+          recurringPaymentId: payment.id,
+          actorUserId: actor.userId,
+          event: recurringMutationAuditEvent(action),
+          commandFingerprint,
+          idempotencyKey: prepared.idempotencyKey,
+          metadata: {
+            origin: payment.origin,
+            direction: payment.direction,
+            before: recurringMutationAuditState(payment),
+            after: recurringMutationAuditState({ ...payment, ...next }),
+            changes: recurringFutureDiff(payment, next),
+          },
+        },
+      });
+      if (persisted) return this.presentRecurring(persisted);
+    } catch (error) {
+      const concurrentReplay = await this.repository.findRecurringAuditByIdempotencyKey(
+        workspaceId,
+        actor.userId,
+        prepared.idempotencyKey,
+      );
+      if (concurrentReplay) {
+        return this.resolveExistingRecurringMutationCommand(
+          workspaceId,
+          prepared.recurringId,
+          action,
+          commandFingerprint,
+          concurrentReplay,
+        );
+      }
+      if (isSerializationFailure(error)) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "This recurring pattern changed while the mutation was being saved. Refresh and retry.",
+        );
+      }
+      throw error;
+    }
+
+    const concurrentReplay = await this.repository.findRecurringAuditByIdempotencyKey(
+      workspaceId,
+      actor.userId,
+      prepared.idempotencyKey,
+    );
+    if (concurrentReplay) {
+      return this.resolveExistingRecurringMutationCommand(
+        workspaceId,
+        prepared.recurringId,
+        action,
+        commandFingerprint,
+        concurrentReplay,
+      );
+    }
+    throw new DomainConflictError(
+      "CONCURRENT_MODIFICATION",
+      "This recurring pattern changed while the mutation was being saved. Refresh and retry.",
+    );
+  }
+
   private async detectAndPersistRecurringCandidate(
     actor: AuthenticatedActor,
     workspaceId: string,
@@ -750,6 +925,7 @@ export class FinancialInboxService {
       direction: "EXPENSE",
       nextOccurrenceAt: null,
       status: "CANDIDATE",
+      lifecycle: "ACTIVE",
       createdByUserId: actor.userId,
       idempotencyKey: null,
       commandFingerprint: null,
@@ -877,6 +1053,7 @@ export class FinancialInboxService {
       accountId: payment.accountId,
       categoryId: payment.categoryId,
       status: payment.status,
+      lifecycle: payment.lifecycle,
       cadenceDays: payment.cadenceDays,
       typicalAmountMinor: payment.typicalAmountMinor.toString(),
       currency: payment.currency,
@@ -911,6 +1088,61 @@ export class FinancialInboxService {
     return this.presentRecurring(payment);
   }
 
+  private async resolveExistingRecurringMutationCommand(
+    workspaceId: string,
+    recurringId: string,
+    action: "EDIT" | "PAUSE" | "RESUME",
+    commandFingerprint: string,
+    audit: import("./domain").FinancialInboxAuditRecord,
+  ): Promise<RecurringPaymentView> {
+    if (
+      audit.recurringPaymentId !== recurringId
+      || audit.event !== recurringMutationAuditEvent(action)
+      || audit.commandFingerprint !== commandFingerprint
+    ) {
+      throw new DomainConflictError(
+        "RECURRING_ACTION_ALREADY_PROCESSED",
+        "This idempotency key has already been used for another recurring mutation.",
+      );
+    }
+    const payment = await this.repository.findRecurringPaymentById(workspaceId, recurringId);
+    if (!payment) throw new NotFoundError("Recurring payment not found in this workspace.");
+    return this.presentRecurring(payment);
+  }
+
+  private async validateRecurringFutureRelations(
+    workspaceId: string,
+    payment: RecurringPaymentRecord,
+    accountId: string | null,
+    categoryId: string | null,
+  ): Promise<void> {
+    const [account, category] = await Promise.all([
+      accountId ? this.ledger.findAccount(workspaceId, accountId) : null,
+      categoryId ? this.ledger.findCategory(workspaceId, categoryId) : null,
+    ]);
+    if (accountId && !account) {
+      throw new DomainConflictError("ACCOUNT_NOT_FOUND", "The selected account was not found in this workspace.");
+    }
+    if (account?.archivedAt) {
+      throw new DomainConflictError("ACCOUNT_UNAVAILABLE", "The selected account is archived and cannot be used.");
+    }
+    if (account && account.currency !== payment.currency) {
+      throw new DomainConflictError(
+        "CURRENCY_MISMATCH",
+        "The recurring currency must match the selected account currency.",
+      );
+    }
+    if (categoryId && !category) {
+      throw new DomainConflictError("CATEGORY_NOT_FOUND", "The selected category was not found in this workspace.");
+    }
+    if (category && category.kind !== payment.direction) {
+      throw new DomainConflictError(
+        "INVALID_RECURRING_CATEGORY",
+        "The category does not match the recurring direction.",
+      );
+    }
+  }
+
   private throwRecurringActionNotAllowed(
     action: "CONFIRM" | "IGNORE" | "RESTORE",
     capabilities: ReturnType<typeof getRecurringCapabilities>,
@@ -942,6 +1174,30 @@ export class FinancialInboxService {
     throw new DomainConflictError(
       "RECURRING_ACTION_NOT_ALLOWED",
       "This recurring review action is not allowed in its current canonical state.",
+    );
+  }
+
+  private throwRecurringMutationNotAllowed(
+    action: "EDIT" | "PAUSE" | "RESUME",
+    capabilities: ReturnType<typeof getRecurringCapabilities>,
+    workspaceRole: WorkspaceRole,
+  ): never {
+    const reason = action === "EDIT"
+      ? capabilities.reasons.edit
+      : action === "PAUSE"
+        ? capabilities.reasons.pause
+        : capabilities.reasons.resume;
+    if (reason === "READ_ONLY_ROLE" || workspaceRole === "VIEWER") {
+      throw new AuthorizationError("You do not have permission to manage recurring patterns in this workspace.");
+    }
+    const code = action === "EDIT"
+      ? "RECURRING_EDIT_NOT_ALLOWED"
+      : action === "PAUSE"
+        ? "RECURRING_PAUSE_NOT_ALLOWED"
+        : "RECURRING_RESUME_NOT_ALLOWED";
+    throw new DomainConflictError(
+      code,
+      "This recurring mutation is not allowed in its current canonical state.",
     );
   }
 
@@ -1019,6 +1275,23 @@ type PreparedManualRecurringCommand = {
   readonly normalizedMerchant: string | null;
   readonly idempotencyKey: string;
 };
+
+type PreparedRecurringMutationCommand = {
+  readonly recurringId: string;
+  readonly expectedUpdatedAt: Date | undefined;
+  readonly idempotencyKey: string;
+  readonly name?: string;
+  readonly amountMinor?: bigint;
+  readonly cadenceDays?: number;
+  readonly nextOccurrenceAt?: Date;
+  readonly accountId?: string | null;
+  readonly categoryId?: string | null;
+};
+
+type RecurringFutureValues = Pick<
+  RecurringPaymentRecord,
+  "displayName" | "typicalAmountMinor" | "cadenceDays" | "nextOccurrenceAt" | "accountId" | "categoryId" | "lifecycle"
+>;
 
 type PreparedRecurringReviewCommand = {
   readonly action: "CONFIRM" | "IGNORE" | "RESTORE";
@@ -1126,6 +1399,120 @@ function normalizeOptionalMerchantOrSource(value: string | null | undefined): st
   return normalized;
 }
 
+function prepareRecurringUpdateCommand(command: UpdateRecurringCommand): PreparedRecurringMutationCommand {
+  const base = prepareRecurringMutationBase(command);
+  const name = command.name === undefined ? undefined : normalizeRecurringName(command.name);
+  const amountMinor = command.amountMinor === undefined
+    ? undefined
+    : validateRecurringAmount(command.amountMinor);
+  const cadenceDays = command.cadenceDays === undefined
+    ? undefined
+    : validateRecurringCadence(command.cadenceDays);
+  let nextOccurrenceAt: Date | undefined;
+  if (command.nextOccurrenceAt !== undefined) {
+    if (
+      !(command.nextOccurrenceAt instanceof Date)
+      || Number.isNaN(command.nextOccurrenceAt.getTime())
+      || command.nextOccurrenceAt.getTime() <= Date.now()
+    ) {
+      throw new DomainConflictError(
+        "INVALID_NEXT_OCCURRENCE",
+        "A recurring next occurrence must be a valid future date.",
+      );
+    }
+    nextOccurrenceAt = new Date(command.nextOccurrenceAt);
+  }
+  const accountId = optionalPatchIdentifier(command.accountId, "ACCOUNT_NOT_FOUND");
+  const categoryId = optionalPatchIdentifier(command.categoryId, "CATEGORY_NOT_FOUND");
+  if (
+    name === undefined
+    && amountMinor === undefined
+    && cadenceDays === undefined
+    && nextOccurrenceAt === undefined
+    && accountId === undefined
+    && categoryId === undefined
+  ) {
+    throw new DomainConflictError(
+      "RECURRING_NO_CHANGES",
+      "Provide at least one editable future recurring field.",
+    );
+  }
+  return { ...base, name, amountMinor, cadenceDays, nextOccurrenceAt, accountId, categoryId };
+}
+
+function prepareRecurringLifecycleCommand(
+  command: PauseRecurringCommand | ResumeRecurringCommand,
+  _action: "PAUSE" | "RESUME",
+): PreparedRecurringMutationCommand {
+  return prepareRecurringMutationBase(command);
+}
+
+function prepareRecurringMutationBase(
+  command: Pick<ConfirmRecurringCommand, "recurringId" | "expectedUpdatedAt" | "idempotencyKey">,
+): Pick<PreparedRecurringMutationCommand, "recurringId" | "expectedUpdatedAt" | "idempotencyKey"> {
+  if (typeof command.recurringId !== "string" || !command.recurringId.trim()) {
+    throw new DomainConflictError("RECURRING_ACTION_NOT_ALLOWED", "A recurring payment identifier is required.");
+  }
+  if (typeof command.idempotencyKey !== "string") {
+    throw new DomainConflictError("RECURRING_ACTION_NOT_ALLOWED", "An idempotency key is required.");
+  }
+  const idempotencyKey = command.idempotencyKey.trim();
+  if (!idempotencyKey || idempotencyKey.length > MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH) {
+    throw new DomainConflictError(
+      "RECURRING_ACTION_NOT_ALLOWED",
+      `An idempotency key must contain 1 to ${MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH} characters.`,
+    );
+  }
+  if (command.expectedUpdatedAt === undefined) {
+    throw new DomainConflictError(
+      "RECURRING_NOT_CURRENT",
+      "An expected recurring version is required for this mutation.",
+    );
+  }
+  if (!(command.expectedUpdatedAt instanceof Date) || Number.isNaN(command.expectedUpdatedAt.getTime())) {
+    throw new DomainConflictError("RECURRING_ACTION_NOT_ALLOWED", "Expected version must be a valid timestamp.");
+  }
+  return {
+    recurringId: command.recurringId.trim(),
+    expectedUpdatedAt: new Date(command.expectedUpdatedAt),
+    idempotencyKey,
+  };
+}
+
+function normalizeRecurringName(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new DomainConflictError("INVALID_RECURRING_NAME", "A recurring name must be text.");
+  }
+  const name = value.normalize("NFKC").trim().replaceAll(/\s+/g, " ");
+  if (!name || name.length > MAX_MANUAL_RECURRING_NAME_LENGTH) {
+    throw new DomainConflictError(
+      "INVALID_RECURRING_NAME",
+      `A recurring name must contain 1 to ${MAX_MANUAL_RECURRING_NAME_LENGTH} characters.`,
+    );
+  }
+  return name;
+}
+
+function validateRecurringAmount(value: unknown): bigint {
+  if (typeof value !== "bigint" || value <= 0n || value > MAX_POSTGRES_BIGINT_MINOR) {
+    throw new DomainConflictError(
+      "INVALID_RECURRING_AMOUNT",
+      "A recurring amount must be a positive bigint minor-unit value.",
+    );
+  }
+  return value;
+}
+
+function validateRecurringCadence(value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 7 || (value as number) > 400) {
+    throw new DomainConflictError(
+      "INVALID_RECURRING_FREQUENCY",
+      "The recurring cadence must use the canonical 7 to 400 day interval.",
+    );
+  }
+  return value as number;
+}
+
 function prepareRecurringReviewCommand(
   command: ConfirmRecurringCommand | IgnoreRecurringCommand | RestoreRecurringCommand,
   action: "CONFIRM" | "IGNORE" | "RESTORE",
@@ -1190,6 +1577,18 @@ function optionalIdentifier(
   return value.trim();
 }
 
+function optionalPatchIdentifier(
+  value: string | null | undefined,
+  code: "ACCOUNT_NOT_FOUND" | "CATEGORY_NOT_FOUND",
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new DomainConflictError(code, "A linked resource identifier must be non-empty text.");
+  }
+  return value.trim();
+}
+
 function fingerprintManualRecurringCommand(command: PreparedManualRecurringCommand): string {
   return createHash("sha256")
     .update(JSON.stringify({
@@ -1215,6 +1614,65 @@ function fingerprintRecurringReviewCommand(command: PreparedRecurringReviewComma
       reason: command.reason ?? null,
     }))
     .digest("hex");
+}
+
+function fingerprintRecurringMutationCommand(
+  command: PreparedRecurringMutationCommand,
+  action: "EDIT" | "PAUSE" | "RESUME",
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      action,
+      recurringId: command.recurringId,
+      expectedUpdatedAt: command.expectedUpdatedAt?.toISOString() ?? null,
+      name: command.name,
+      amountMinor: command.amountMinor?.toString(),
+      cadenceDays: command.cadenceDays,
+      nextOccurrenceAt: command.nextOccurrenceAt?.toISOString(),
+      accountId: command.accountId,
+      categoryId: command.categoryId,
+    }))
+    .digest("hex");
+}
+
+function recurringMutationAuditEvent(action: "EDIT" | "PAUSE" | "RESUME"): string {
+  switch (action) {
+    case "EDIT":
+      return "RECURRING_EDITED";
+    case "PAUSE":
+      return "RECURRING_PAUSED";
+    case "RESUME":
+      return "RECURRING_RESUMED";
+  }
+}
+
+function recurringMutationAuditState(
+  payment: Pick<
+    RecurringPaymentRecord,
+    "status" | "lifecycle" | "displayName" | "typicalAmountMinor" | "cadenceDays" | "nextOccurrenceAt" | "accountId" | "categoryId"
+  >,
+): Record<string, string | number | null> {
+  return {
+    status: payment.status,
+    lifecycle: payment.lifecycle,
+    name: payment.displayName,
+    amountMinor: payment.typicalAmountMinor.toString(),
+    cadenceDays: payment.cadenceDays,
+    nextOccurrenceAt: payment.nextOccurrenceAt?.toISOString() ?? null,
+    accountId: payment.accountId,
+    categoryId: payment.categoryId,
+  };
+}
+
+function recurringFutureDiff(
+  payment: RecurringPaymentRecord,
+  next: RecurringFutureValues,
+): readonly { readonly field: string; readonly before: string | number | null; readonly after: string | number | null }[] {
+  const before = recurringMutationAuditState(payment);
+  const after = recurringMutationAuditState({ ...payment, ...next });
+  return Object.keys(after)
+    .filter((field) => before[field] !== after[field])
+    .map((field) => ({ field, before: before[field]!, after: after[field]! }));
 }
 
 function recurringReviewAuditState(status: RecurringPaymentRecord["status"]): {

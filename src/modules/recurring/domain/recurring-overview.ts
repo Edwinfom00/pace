@@ -20,6 +20,7 @@ export type RecurringOverviewItem = {
   readonly currency: string;
   readonly cadenceDays: number;
   readonly status: RecurringPaymentStatus;
+  readonly lifecycle: RecurringPaymentView["lifecycle"];
   readonly reviewState: "NEEDS_REVIEW" | null;
   readonly capabilities: RecurringCapabilities;
   readonly account: { readonly id: string; readonly name: string } | null;
@@ -97,7 +98,7 @@ export function buildRecurringOverview({
     IGNORED: items.filter((item) => item.status === "IGNORED").length,
   } as const satisfies Readonly<Record<RecurringOverviewFilter, number>>;
 
-  const confirmed = items.filter((item) => item.status === "CONFIRMED");
+  const confirmed = items.filter((item) => item.status === "CONFIRMED" && item.lifecycle === "ACTIVE");
   const confirmedOutflows = confirmed.filter((item) => item.direction === "OUTFLOW");
   const upcomingCutoff = new Date(now.getTime() + 30 * 86_400_000);
   const upcoming = confirmed
@@ -145,13 +146,14 @@ function toOverviewItem(
     currency: payment.currency,
     cadenceDays: payment.cadenceDays,
     status: payment.status,
+    lifecycle: payment.lifecycle,
     reviewState: payment.status === "CANDIDATE" ? "NEEDS_REVIEW" : null,
     capabilities: getRecurringCapabilities({ recurring: payment, workspaceRole }),
     account: account ? { id: account.id, name: account.name } : null,
     category: category ? { id: category.id, name: category.name, systemKey: category.systemKey } : null,
     firstOccurredAt: payment.firstOccurredAt,
     lastOccurredAt: payment.lastOccurredAt,
-    nextExpectedAt: payment.status === "IGNORED"
+    nextExpectedAt: payment.status === "IGNORED" || payment.lifecycle === "PAUSED"
       ? null
       : nextRecurringProjectionDate(payment, now, timeZone),
     sampleCount: payment.sampleTransactionIds.length,

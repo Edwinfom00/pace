@@ -204,6 +204,13 @@
       "when": 1790073311660,
       "tag": "0028_material_valeria_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790073311661,
+      "tag": "0029_recurring_lifecycle",
+      "breakpoints": true
     }
   ]
 }

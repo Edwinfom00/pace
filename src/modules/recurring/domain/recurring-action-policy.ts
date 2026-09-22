@@ -12,20 +12,24 @@ export const RECURRING_ACTION_REASONS = [
   "NOT_RESTORABLE",
   "NOT_CANDIDATE",
   "MANUAL_RECURRING",
-  "EDIT_NOT_SUPPORTED",
+  "NOT_CONFIRMED",
+  "ALREADY_PAUSED",
+  "NOT_PAUSED",
   "DELETE_NOT_SUPPORTED",
 ] as const;
 
 export type RecurringActionReason = (typeof RECURRING_ACTION_REASONS)[number];
 
-type RecurringManagementAction = "confirm" | "ignore" | "restore" | "edit" | "delete";
+type RecurringManagementAction = "confirm" | "ignore" | "restore" | "edit" | "pause" | "resume" | "delete";
 
 
 export type RecurringCapabilities = {
   readonly canConfirm: boolean;
   readonly canIgnore: boolean;
   readonly canRestore: boolean;
-  readonly canEdit: false;
+  readonly canEdit: boolean;
+  readonly canPause: boolean;
+  readonly canResume: boolean;
   readonly canDelete: false;
   readonly canViewHistory: boolean;
   readonly canViewRelatedTransactions: boolean;
@@ -33,7 +37,7 @@ export type RecurringCapabilities = {
 };
 
 export type RecurringActionPolicyInput = {
-  readonly recurring: Pick<RecurringPaymentRecord, "origin" | "status">;
+  readonly recurring: Pick<RecurringPaymentRecord, "origin" | "status" | "lifecycle">;
   readonly workspaceRole: WorkspaceRole;
 };
 
@@ -50,6 +54,8 @@ export function getRecurringCapabilities({
       canIgnore: false,
       canRestore: false,
       canEdit: false,
+      canPause: false,
+      canResume: false,
       canDelete: false,
       canViewHistory: canRead,
       canViewRelatedTransactions: canRead,
@@ -58,6 +64,8 @@ export function getRecurringCapabilities({
         ignore: "READ_ONLY_ROLE",
         restore: "READ_ONLY_ROLE",
         edit: "READ_ONLY_ROLE",
+        pause: "READ_ONLY_ROLE",
+        resume: "READ_ONLY_ROLE",
         delete: "READ_ONLY_ROLE",
       },
     };
@@ -66,11 +74,16 @@ export function getRecurringCapabilities({
   // M9.4 manual patterns are intentional. They must never be put through the
   // detected-review workflow, even if a corrupted row claimed candidate state.
   if (recurring.origin === "MANUAL") {
+    const editReason = getEditReason(recurring.status);
+    const pauseReason = getPauseReason(recurring.status, recurring.lifecycle);
+    const resumeReason = getResumeReason(recurring.status, recurring.lifecycle);
     return {
       canConfirm: false,
       canIgnore: false,
       canRestore: false,
-      canEdit: false,
+      canEdit: editReason === null,
+      canPause: pauseReason === null,
+      canResume: resumeReason === null,
       canDelete: false,
       canViewHistory: canRead,
       canViewRelatedTransactions: canRead,
@@ -78,7 +91,9 @@ export function getRecurringCapabilities({
         confirm: "MANUAL_RECURRING",
         ignore: "MANUAL_RECURRING",
         restore: "MANUAL_RECURRING",
-        edit: "EDIT_NOT_SUPPORTED",
+        ...(editReason ? { edit: editReason } : {}),
+        ...(pauseReason ? { pause: pauseReason } : {}),
+        ...(resumeReason ? { resume: resumeReason } : {}),
         delete: "DELETE_NOT_SUPPORTED",
       },
     };
@@ -87,12 +102,17 @@ export function getRecurringCapabilities({
   const confirmReason = getConfirmReason(recurring.status);
   const ignoreReason = getIgnoreReason(recurring.status);
   const restoreReason = getRestoreReason(recurring.status);
+  const editReason = getEditReason(recurring.status);
+  const pauseReason = getPauseReason(recurring.status, recurring.lifecycle);
+  const resumeReason = getResumeReason(recurring.status, recurring.lifecycle);
 
   return {
     canConfirm: confirmReason === null,
     canIgnore: ignoreReason === null,
     canRestore: restoreReason === null,
-    canEdit: false,
+    canEdit: editReason === null,
+    canPause: pauseReason === null,
+    canResume: resumeReason === null,
     // Detected financial provenance is intentionally retained in V1.
     canDelete: false,
     canViewHistory: canRead,
@@ -101,10 +121,34 @@ export function getRecurringCapabilities({
       ...(confirmReason ? { confirm: confirmReason } : {}),
       ...(ignoreReason ? { ignore: ignoreReason } : {}),
       ...(restoreReason ? { restore: restoreReason } : {}),
-      edit: "EDIT_NOT_SUPPORTED",
+      ...(editReason ? { edit: editReason } : {}),
+      ...(pauseReason ? { pause: pauseReason } : {}),
+      ...(resumeReason ? { resume: resumeReason } : {}),
       delete: "DELETE_NOT_SUPPORTED",
     },
   };
+}
+
+function getEditReason(
+  status: RecurringActionPolicyInput["recurring"]["status"],
+): RecurringActionReason | null {
+  return status === "CONFIRMED" ? null : "NOT_CONFIRMED";
+}
+
+function getPauseReason(
+  status: RecurringActionPolicyInput["recurring"]["status"],
+  lifecycle: RecurringActionPolicyInput["recurring"]["lifecycle"],
+): RecurringActionReason | null {
+  if (status !== "CONFIRMED") return "NOT_CONFIRMED";
+  return lifecycle === "ACTIVE" ? null : "ALREADY_PAUSED";
+}
+
+function getResumeReason(
+  status: RecurringActionPolicyInput["recurring"]["status"],
+  lifecycle: RecurringActionPolicyInput["recurring"]["lifecycle"],
+): RecurringActionReason | null {
+  if (status !== "CONFIRMED") return "NOT_CONFIRMED";
+  return lifecycle === "PAUSED" ? null : "NOT_PAUSED";
 }
 
 function getConfirmReason(

@@ -89,6 +89,7 @@ async function createDetectedCandidate(
     nextOccurrenceAt: null,
     sampleTransactionIds: ["transaction-evidence"],
     status: "CANDIDATE",
+    lifecycle: "ACTIVE",
     createdByUserId: owner.userId,
     idempotencyKey: null,
     commandFingerprint: null,

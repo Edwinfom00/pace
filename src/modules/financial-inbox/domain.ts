@@ -48,6 +48,10 @@ export type RecurringPaymentOrigin = (typeof RECURRING_PAYMENT_ORIGINS)[number];
 export const RECURRING_PAYMENT_DIRECTIONS = ["EXPENSE", "INCOME"] as const;
 export type RecurringPaymentDirection = (typeof RECURRING_PAYMENT_DIRECTIONS)[number];
 
+
+export const RECURRING_PAYMENT_LIFECYCLES = ["ACTIVE", "PAUSED"] as const;
+export type RecurringPaymentLifecycle = (typeof RECURRING_PAYMENT_LIFECYCLES)[number];
+
 export interface ClassificationRuleRecord {
   id: string;
   workspaceId: string;
@@ -113,6 +117,7 @@ export interface RecurringPaymentRecord {
   nextOccurrenceAt: Date | null;
   sampleTransactionIds: string[];
   status: RecurringPaymentStatus;
+  lifecycle: RecurringPaymentLifecycle;
   createdByUserId: string | null;
   idempotencyKey: string | null;
   commandFingerprint: string | null;

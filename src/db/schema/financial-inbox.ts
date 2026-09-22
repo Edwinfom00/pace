@@ -55,6 +55,8 @@ export const recurringPaymentOrigin = pgEnum("recurring_payment_origin", ["DETEC
 
 export const recurringPaymentDirection = pgEnum("recurring_payment_direction", ["EXPENSE", "INCOME"]);
 
+export const recurringPaymentLifecycle = pgEnum("recurring_payment_lifecycle", ["ACTIVE", "PAUSED"]);
+
 export const transactionClassificationRules = pgTable(
   "transaction_classification_rule",
   {
@@ -157,6 +159,7 @@ export const recurringPayments = pgTable(
     nextOccurrenceAt: timestamp("next_occurrence_at", { withTimezone: true }),
     sampleTransactionIds: jsonb("sample_transaction_ids").$type<string[]>().notNull().default([]),
     status: recurringPaymentStatus("status").notNull().default("CANDIDATE"),
+    lifecycle: recurringPaymentLifecycle("lifecycle").notNull().default("ACTIVE"),
     createdByUserId: text("created_by_user_id").references(() => users.id, {
       onDelete: "restrict",
     }),

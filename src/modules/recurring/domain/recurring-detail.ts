@@ -21,6 +21,7 @@ export type RecurringDetail = {
   readonly title: string;
   readonly direction: "OUTFLOW" | "INFLOW";
   readonly status: RecurringPaymentStatus;
+  readonly lifecycle: "ACTIVE" | "PAUSED";
   readonly reviewState: "NEEDS_REVIEW" | null;
   readonly capabilities: RecurringCapabilities;
   readonly amount: SerializedMoney & { readonly kind: "TYPICAL" };
