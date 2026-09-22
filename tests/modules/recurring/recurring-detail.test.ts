@@ -292,7 +292,7 @@ test("detail tabs are URL-safe and labels are localized and serializable", () =>
   }
 });
 
-test("detail view keeps the approved hierarchy while exposing no recurring mutations", async () => {
+test("detail view keeps the approved hierarchy and delegates only canonical recurring management", async () => {
   const source = await readFile("src/modules/recurring/ui/views/recurring-detail-view.tsx", "utf8");
   assert.match(source, /<h1/);
   assert.match(source, /<RecurringDetailTabs/);
@@ -300,7 +300,9 @@ test("detail view keeps the approved hierarchy while exposing no recurring mutat
   assert.match(source, /labels\.about\.title/);
   assert.match(source, /TransactionTable/);
   assert.match(source, /\/w\/\$\{workspaceSlug\}\/accounts\/\$\{detail\.account\.id\}/);
-  assert.doesNotMatch(source, /\b(?:Pause|Resume|Delete|Skip next)\b/);
+  assert.match(source, /RecurringReviewActions/);
+  assert.match(source, /editableNextOccurrenceAt/);
+  assert.doesNotMatch(source, /\b(?:Delete|Skip next)\b/);
 });
 
 function containsFunction(value: unknown): boolean {

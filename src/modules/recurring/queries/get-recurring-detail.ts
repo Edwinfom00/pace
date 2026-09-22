@@ -159,6 +159,7 @@ export function buildRecurringDetail({
     startedAt: payment.firstOccurredAt,
     lastOccurrenceAt,
     nextOccurrenceAt: upcomingDates[0] ?? null,
+    editableNextOccurrenceAt: payment.nextOccurrenceAt,
     account: account ? { id: account.id, name: account.name } : null,
     category: category ? { id: category.id, name: category.name, systemKey: category.systemKey } : null,
     merchant: merchant ? { id: merchant.id, name: merchant.name } : null,

@@ -186,7 +186,7 @@ function RecurringItemRow({
         </div>
       </div>
       <div className="flex items-center gap-1 justify-self-end lg:hidden">
-        <RecurringStatusBadge labels={labels} status={item.status} />
+        <RecurringStatusBadge lifecycle={item.lifecycle} labels={labels} status={item.status} />
         <RecurringReviewActions
           labels={labels.reviewActions}
           locale={locale}
@@ -238,7 +238,7 @@ function RecurringItemRow({
         ) : null}
       </div>
       <div className="hidden lg:block">
-        <RecurringStatusBadge labels={labels} status={item.status} />
+        <RecurringStatusBadge lifecycle={item.lifecycle} labels={labels} status={item.status} />
       </div>
       <div className="hidden justify-self-end lg:block">
         <RecurringReviewActions

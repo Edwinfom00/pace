@@ -30,6 +30,8 @@ export type RecurringDetail = {
   /** The latest canonical matched date, not a retrospective projection. */
   readonly lastOccurrenceAt: string | null;
   readonly nextOccurrenceAt: string | null;
+  /** Persisted future schedule anchor used exclusively by the canonical edit operation. */
+  readonly editableNextOccurrenceAt: string | null;
   readonly account: { readonly id: string; readonly name: string } | null;
   readonly category: { readonly id: string; readonly name: string; readonly systemKey: string | null } | null;
   readonly merchant: { readonly id: string; readonly name: string } | null;

@@ -27,6 +27,7 @@ export type RecurringUiLabels = {
   readonly nextExpected: string;
   readonly account: string;
   readonly category: string;
+  readonly lifecycle: { readonly paused: string };
   readonly status: Readonly<Record<RecurringPaymentStatus, string>>;
   readonly upcoming: {
     readonly title: string;
@@ -128,6 +129,7 @@ export function getRecurringUiLabels(labels: DashboardLabels): RecurringUiLabels
     nextExpected: labels["recurring.nextExpected"],
     account: labels["recurring.account"],
     category: labels["recurring.category"],
+    lifecycle: { paused: labels["recurring.lifecycle.paused"] },
     status: {
       CANDIDATE: labels["recurring.status.candidate"],
       CONFIRMED: labels["recurring.status.confirmed"],

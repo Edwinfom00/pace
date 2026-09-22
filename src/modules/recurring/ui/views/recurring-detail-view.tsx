@@ -14,6 +14,7 @@ import {
 import { TransactionIcon } from "@/components/pace/transaction-visuals/transaction-icon";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import { formatOverviewMoney } from "@/modules/overview/domain/overview-formatters";
+import { toCurrencyCode } from "@/money/currency";
 import type {
   RecurringDetail,
   RecurringDetailHistory,
@@ -30,6 +31,10 @@ import { formatSystemCategory } from "@/modules/transactions/ui/transaction-deta
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
 import { TransactionMobileCard } from "@/modules/transactions/ui/components/transaction-mobile-card";
+import type {
+  RecurringCreateAccountOption,
+  RecurringCreateCategoryOption,
+} from "@/modules/recurring/ui/components/recurring-create-flow";
 
 import type { RecurringDetailUiLabels } from "../recurring-detail-ui-labels";
 
@@ -379,6 +384,7 @@ function OverviewContent({
               </DetailRow>
               <DetailRow label={labels.status}>
                 <RecurringStatusBadge
+                  lifecycle={detail.lifecycle}
                   labels={getRecurringUiLabels(dashboardLabels)}
                   status={detail.status}
                 />
@@ -678,6 +684,10 @@ function RelatedTransactionsTab({
 }
 
 export function RecurringDetailView({
+  accountAvailability,
+  accountOptions,
+  categoryAvailability,
+  categoryOptions,
   detail,
   labels,
   language,
@@ -688,6 +698,10 @@ export function RecurringDetailView({
   workspaceId,
   workspaceSlug,
 }: {
+  readonly accountAvailability: "ready" | "error";
+  readonly accountOptions: readonly RecurringCreateAccountOption[];
+  readonly categoryAvailability: "ready" | "error";
+  readonly categoryOptions: readonly RecurringCreateCategoryOption[];
   readonly detail: RecurringDetail;
   readonly labels: RecurringDetailUiLabels;
   readonly language: "en" | "fr" | "de";
@@ -775,6 +789,7 @@ export function RecurringDetailView({
               </h1>
               <RecurringStatusBadge
                 labels={getRecurringUiLabels(dashboardLabels)}
+                lifecycle={detail.lifecycle}
                 status={detail.status}
               />
             </div>
@@ -791,6 +806,12 @@ export function RecurringDetailView({
             workspaceId={workspaceId}
           />
           <RecurringReviewActions
+            editOptions={{
+              accountAvailability,
+              accounts: accountOptions,
+              categoryAvailability,
+              categories: categoryOptions,
+            }}
             labels={getRecurringReviewUiLabels(dashboardLabels)}
             locale={locale}
             target={{
@@ -801,6 +822,18 @@ export function RecurringDetailView({
               cadenceDays: detail.cadenceDays,
               updatedAt: detail.updatedAt,
               capabilities: detail.capabilities,
+              edit: {
+                accountId: detail.account?.id ?? null,
+                accountName: detail.account?.name ?? null,
+                amountMinor: detail.amount.minor,
+                cadenceDays: detail.cadenceDays,
+                categoryId: detail.category?.id ?? null,
+                categoryName: detail.category?.name ?? null,
+                currency: toCurrencyCode(detail.amount.currency),
+                direction: detail.direction === "INFLOW" ? "INCOME" : "EXPENSE",
+                name: detail.title,
+                nextOccurrenceAt: detail.editableNextOccurrenceAt,
+              },
             }}
             workspaceId={workspaceId}
           />

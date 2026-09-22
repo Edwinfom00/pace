@@ -8,6 +8,10 @@ import { parseRecurringDetailTab } from "@/modules/recurring/domain/recurring-de
 import { getRecurringDetail } from "@/modules/recurring/queries/get-recurring-detail";
 import { getRecurringDetailUiLabels } from "@/modules/recurring/ui/recurring-detail-ui-labels";
 import { RecurringDetailView } from "@/modules/recurring/ui/views/recurring-detail-view";
+import { loadTransactionAccountOptions } from "@/modules/transactions/domain/transaction-account-options";
+import { loadTransactionCategoryOptions } from "@/modules/transactions/domain/transaction-category-options";
+import { getServerTransactionAccountOptions } from "@/modules/transactions/server/get-transaction-account-options";
+import { getServerTransactionCategoryOptions } from "@/modules/transactions/server/get-transaction-category-options";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 type RecurringDetailPageProps = {
@@ -27,7 +31,7 @@ export default async function RecurringDetailPage({ params, searchParams }: Recu
   // every workspace detail route.
   if (!workspace) notFound();
 
-  const [language, detail] = await Promise.all([
+  const [language, detail, recurringAccounts, recurringCategories] = await Promise.all([
     getPersistedDashboardLanguage(actor.userId),
     getRecurringDetail({
       actor,
@@ -35,6 +39,14 @@ export default async function RecurringDetailPage({ params, searchParams }: Recu
       recurringId,
       timeZone: workspace.preferences.timezone,
     }),
+    loadTransactionAccountOptions(() => getServerTransactionAccountOptions({
+      actor,
+      workspaceId: workspace.workspace.id,
+    })),
+    loadTransactionCategoryOptions(() => getServerTransactionCategoryOptions({
+      actor,
+      workspaceId: workspace.workspace.id,
+    })),
   ]);
   // The composed reader only searches recurring records within workspaceId.
   if (!detail) notFound();
@@ -42,6 +54,10 @@ export default async function RecurringDetailPage({ params, searchParams }: Recu
   return (
     <RecurringDetailView
       detail={detail}
+      accountAvailability={recurringAccounts.status}
+      accountOptions={recurringAccounts.accounts}
+      categoryAvailability={recurringCategories.status}
+      categoryOptions={recurringCategories.categories}
       labels={getRecurringDetailUiLabels(getDashboardLabels(language))}
       language={language}
       locale={workspace.preferences.locale}
