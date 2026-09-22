@@ -1,4 +1,6 @@
+import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
+import { assertWorkspacePermission, type WorkspaceRole } from "@/authorization/workspace-permissions";
 import type { RecurringPaymentView } from "@/modules/financial-inbox/financial-inbox-service";
 import { getFinancialInboxService } from "@/modules/financial-inbox/server";
 import { currentFinancialTransactions } from "@/modules/ledger/correction-chain";
@@ -10,12 +12,18 @@ import type {
   LedgerTransactionRecord,
 } from "@/modules/ledger/domain";
 import { getLedgerService } from "@/modules/ledger/server";
+import {
+  DatabaseWorkspaceRepository,
+  type WorkspaceRepository,
+} from "@/modules/workspaces/repositories/workspace-repository";
 import { projectRecurringOccurrences } from "@/modules/overview/domain/overview-right-rail";
 import { mapTransactionListItem } from "@/modules/transactions/queries/get-transactions-page";
 
 import type { RecurringDetail, RecurringDetailHistory } from "../domain/recurring-detail";
+import { getRecurringCapabilities } from "../domain/recurring-action-policy";
 
 export type RecurringDetailReaders = {
+  readonly findMembership: Pick<WorkspaceRepository, "findMembership">["findMembership"];
   readonly listRecurring: (actor: AuthenticatedActor, workspaceId: string) => Promise<readonly RecurringPaymentView[]>;
   readonly listAccounts: (actor: AuthenticatedActor, workspaceId: string) => Promise<readonly LedgerAccountRecord[]>;
   readonly listCategories: (actor: AuthenticatedActor, workspaceId: string) => Promise<readonly LedgerCategoryRecord[]>;
@@ -39,7 +47,9 @@ export type GetRecurringDetailInput = {
 export async function getRecurringDetail(input: GetRecurringDetailInput): Promise<RecurringDetail | null> {
   const recurring = getFinancialInboxService();
   const ledger = getLedgerService();
+  const workspaces = new DatabaseWorkspaceRepository();
   return getRecurringDetailWithReaders(input, {
+    findMembership: (workspaceId, userId) => workspaces.findMembership(workspaceId, userId),
     listRecurring: (actor, workspaceId) => recurring.listRecurring(actor, workspaceId),
     listAccounts: (actor, workspaceId) => ledger.listAccounts(actor, workspaceId),
     listCategories: (actor, workspaceId) => ledger.listCategories(actor, workspaceId),
@@ -52,6 +62,10 @@ export async function getRecurringDetailWithReaders(
   { actor, workspaceId, recurringId, timeZone, now = new Date() }: GetRecurringDetailInput,
   readers: RecurringDetailReaders,
 ): Promise<RecurringDetail | null> {
+  const membership = await readers.findMembership(workspaceId, actor.userId);
+  if (!membership) throw new AuthorizationError("You are not a member of this workspace.");
+  assertWorkspacePermission(membership.role, "read");
+
   const payment = (await readers.listRecurring(actor, workspaceId)).find((candidate) => candidate.id === recurringId);
   if (!payment) return null;
 
@@ -78,6 +92,7 @@ export async function getRecurringDetailWithReaders(
     merchant,
     now,
     timeZone,
+    workspaceRole: membership.role,
   });
 }
 
@@ -90,6 +105,7 @@ export function buildRecurringDetail({
   merchant,
   now,
   timeZone,
+  workspaceRole,
 }: {
   readonly payment: RecurringPaymentView;
   readonly accounts: readonly LedgerAccountRecord[];
@@ -99,6 +115,7 @@ export function buildRecurringDetail({
   readonly merchant: LedgerMerchantRecord | null;
   readonly now: Date;
   readonly timeZone: string;
+  readonly workspaceRole: WorkspaceRole;
 }): RecurringDetail {
   const accountById = new Map(accounts.map((account) => [account.id, account]));
   const categoryById = new Map(categories.map((category) => [category.id, category]));
@@ -133,6 +150,7 @@ export function buildRecurringDetail({
     direction: "OUTFLOW",
     status: payment.status,
     reviewState: payment.status === "CANDIDATE" ? "NEEDS_REVIEW" : null,
+    capabilities: getRecurringCapabilities({ recurring: payment, workspaceRole }),
     amount: { minor: payment.typicalAmountMinor, currency: payment.currency, kind: "TYPICAL" },
     cadenceDays: payment.cadenceDays,
     startedAt: payment.firstOccurredAt,

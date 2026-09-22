@@ -2,6 +2,9 @@ import type { LedgerAccountRecord, LedgerCategoryRecord } from "@/modules/ledger
 import type { RecurringPaymentStatus } from "@/modules/financial-inbox/domain";
 import type { RecurringPaymentView } from "@/modules/financial-inbox/financial-inbox-service";
 import { nextExpectedRecurringDate } from "@/modules/overview/domain/overview-right-rail";
+import type { WorkspaceRole } from "@/authorization/workspace-permissions";
+
+import { getRecurringCapabilities, type RecurringCapabilities } from "./recurring-action-policy";
 
 export const RECURRING_OVERVIEW_FILTERS = ["ALL", "CONFIRMED", "NEEDS_REVIEW", "IGNORED"] as const;
 
@@ -10,17 +13,15 @@ export type RecurringOverviewFilter = (typeof RECURRING_OVERVIEW_FILTERS)[number
 export type RecurringOverviewItem = {
   readonly id: string;
   readonly merchantName: string;
-  /** M4 only detects posted EXPENSE patterns; there are currently no recurring inflows or transfers. */
   readonly direction: "OUTFLOW";
   readonly origin: "DETERMINISTIC_DETECTION";
-  /** The M4 amount is the median of matching posted-expense samples, not a fixed scheduled charge. */
   readonly amountKind: "TYPICAL";
   readonly typicalAmountMinor: string;
   readonly currency: string;
-  /** M4 stores recurrence as a detected cadence in whole days, rather than a frequency enum. */
   readonly cadenceDays: number;
   readonly status: RecurringPaymentStatus;
   readonly reviewState: "NEEDS_REVIEW" | null;
+  readonly capabilities: RecurringCapabilities;
   readonly account: { readonly id: string; readonly name: string } | null;
   readonly category: { readonly id: string; readonly name: string; readonly systemKey: string | null } | null;
   readonly firstOccurredAt: string;
@@ -71,18 +72,20 @@ export function buildRecurringOverview({
   filter,
   timeZone,
   now,
+  workspaceRole,
 }: {
   readonly payments: readonly RecurringPaymentView[];
   readonly accounts: readonly LedgerAccountRecord[];
   readonly categories: readonly LedgerCategoryRecord[];
   readonly filter: RecurringOverviewFilter;
+  readonly workspaceRole: WorkspaceRole;
   readonly timeZone: string;
   readonly now: Date;
 }): RecurringOverview {
   const accountById = new Map(accounts.map((account) => [account.id, account]));
   const categoryById = new Map(categories.map((category) => [category.id, category]));
   const items = payments
-    .map((payment) => toOverviewItem(payment, accountById, categoryById, now, timeZone))
+    .map((payment) => toOverviewItem(payment, accountById, categoryById, now, timeZone, workspaceRole))
     .sort(compareByNextExpected);
 
   const counts = {
@@ -124,6 +127,7 @@ function toOverviewItem(
   categoryById: ReadonlyMap<string, LedgerCategoryRecord>,
   now: Date,
   timeZone: string,
+  workspaceRole: WorkspaceRole,
 ): RecurringOverviewItem {
   const account = payment.accountId ? accountById.get(payment.accountId) ?? null : null;
   const category = payment.categoryId ? categoryById.get(payment.categoryId) ?? null : null;
@@ -138,6 +142,7 @@ function toOverviewItem(
     cadenceDays: payment.cadenceDays,
     status: payment.status,
     reviewState: payment.status === "CANDIDATE" ? "NEEDS_REVIEW" : null,
+    capabilities: getRecurringCapabilities({ recurring: payment, workspaceRole }),
     account: account ? { id: account.id, name: account.name } : null,
     category: category ? { id: category.id, name: category.name, systemKey: category.systemKey } : null,
     firstOccurredAt: payment.firstOccurredAt,

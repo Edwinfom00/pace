@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
+import type { WorkspaceMembershipRecord } from "@/modules/workspaces/domain";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import type { RecurringPaymentView } from "@/modules/financial-inbox/financial-inbox-service";
 import type { LedgerAccountRecord, LedgerCategoryRecord } from "@/modules/ledger/domain";
@@ -14,6 +16,16 @@ import { getRecurringUiLabels } from "@/modules/recurring/ui/recurring-ui-labels
 
 const actor: AuthenticatedActor = { userId: "member-1", email: "member@example.com", name: "Member" };
 const now = new Date("2026-09-20T12:00:00.000Z");
+
+function membership(role: WorkspaceMembershipRecord["role"] = "MEMBER"): WorkspaceMembershipRecord {
+  return {
+    workspaceId: "workspace-a",
+    userId: actor.userId,
+    role,
+    invitedByUserId: null,
+    joinedAt: now,
+  };
+}
 
 test("recurring UI labels are complete, localized, and serializable across supported languages", () => {
   for (const language of ["en", "fr", "de"] as const) {
@@ -88,6 +100,7 @@ test("recurring overview composes canonical M4 fields and preserves candidate re
     filter: "ALL",
     timeZone: "UTC",
     now,
+    workspaceRole: "MEMBER",
   });
 
   const candidate = overview.items.find((item) => item.id === "candidate");
@@ -96,6 +109,8 @@ test("recurring overview composes canonical M4 fields and preserves candidate re
   assert.equal(candidate?.origin, "DETERMINISTIC_DETECTION");
   assert.equal(candidate?.amountKind, "TYPICAL");
   assert.equal(candidate?.reviewState, "NEEDS_REVIEW");
+  assert.equal(candidate?.capabilities.canConfirm, true);
+  assert.equal(candidate?.capabilities.canIgnore, true);
   assert.equal(candidate?.account?.name, "Main account");
   assert.equal(candidate?.category?.systemKey, "expense:entertainment");
   assert.ok(candidate?.nextExpectedAt);
@@ -116,6 +131,7 @@ test("recurring overview groups every financial projection by currency and exclu
     filter: "ALL",
     timeZone: "UTC",
     now,
+    workspaceRole: "MEMBER",
   });
 
   assert.deepEqual(overview.confirmedOutflows, [
@@ -133,7 +149,14 @@ test("recurring filters are URL-safe and operate on canonical status/review valu
     recurring("candidate", { status: "CANDIDATE" }),
     recurring("ignored", { status: "IGNORED" }),
   ];
-  const input = { payments, accounts: [account()], categories: [category()], timeZone: "UTC", now };
+  const input = {
+    payments,
+    accounts: [account()],
+    categories: [category()],
+    timeZone: "UTC",
+    now,
+    workspaceRole: "MEMBER" as const,
+  };
 
   assert.equal(parseRecurringOverviewFilter("CONFIRMED"), "CONFIRMED");
   assert.equal(parseRecurringOverviewFilter("not-a-filter"), "ALL");
@@ -151,6 +174,10 @@ test("overview readers stay workspace-scoped and fetch related ledger data in ba
     timeZone: "UTC",
     now,
   }, {
+    findMembership: async (workspaceId, userId) => {
+      requested.push(`membership:${workspaceId}:${userId}`);
+      return membership();
+    },
     listRecurring: async (_actor, workspaceId) => {
       requested.push(`recurring:${workspaceId}`);
       return [recurring("current")];
@@ -165,8 +192,37 @@ test("overview readers stay workspace-scoped and fetch related ledger data in ba
     },
   });
 
-  assert.deepEqual(requested, ["recurring:workspace-a", "accounts:workspace-a", "categories:workspace-a"]);
+  assert.deepEqual(requested, [
+    "membership:workspace-a:member-1",
+    "recurring:workspace-a",
+    "accounts:workspace-a",
+    "categories:workspace-a",
+  ]);
   assert.equal(overview.items[0]?.account?.name, "Main account");
+  assert.equal(overview.items[0]?.capabilities.canEdit, false);
+});
+
+test("overview rejects a foreign workspace before loading recurring rows", async () => {
+  let loaded = false;
+  await assert.rejects(
+    getRecurringOverviewWithReaders({
+      actor,
+      workspaceId: "workspace-b",
+      filter: "ALL",
+      timeZone: "UTC",
+      now,
+    }, {
+      findMembership: async () => null,
+      listRecurring: async () => {
+        loaded = true;
+        return [];
+      },
+      listAccounts: async () => [],
+      listCategories: async () => [],
+    }),
+    AuthorizationError,
+  );
+  assert.equal(loaded, false);
 });
 
 function containsFunction(value: unknown): boolean {

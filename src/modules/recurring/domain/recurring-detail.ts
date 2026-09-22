@@ -1,6 +1,8 @@
 import type { RecurringPaymentStatus } from "@/modules/financial-inbox/domain";
 import type { SerializedMoney, TransactionListItem } from "@/modules/transactions/types/transaction-ui.types";
 
+import type { RecurringCapabilities } from "./recurring-action-policy";
+
 export const RECURRING_DETAIL_TABS = ["overview", "history", "upcoming", "transactions"] as const;
 export type RecurringDetailTab = (typeof RECURRING_DETAIL_TABS)[number];
 
@@ -20,6 +22,7 @@ export type RecurringDetail = {
   readonly direction: "OUTFLOW";
   readonly status: RecurringPaymentStatus;
   readonly reviewState: "NEEDS_REVIEW" | null;
+  readonly capabilities: RecurringCapabilities;
   readonly amount: SerializedMoney & { readonly kind: "TYPICAL" };
   readonly cadenceDays: number;
   readonly startedAt: string;
