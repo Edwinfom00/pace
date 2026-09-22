@@ -31,7 +31,7 @@ export async function GET(
   }
 }
 
-/** Server-only manual recurring foundation; no creation UI invokes this yet. */
+/** Canonical manual recurring creation endpoint; it never creates a ledger transaction. */
 export async function POST(
   request: Request,
   context: RouteContext<"/api/workspaces/[workspaceId]/recurring">,

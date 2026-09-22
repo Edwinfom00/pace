@@ -29,6 +29,9 @@ import {
 } from "../components/recurring-filter-loading";
 import { RecurringFilterTabs } from "../components/recurring-filter-tabs";
 import { RecurringStatusBadge } from "../components/recurring-status-badge";
+import { RecurringCreateControl } from "../components/recurring-create-control";
+import type { RecurringCreateAccountOption, RecurringCreateCategoryOption } from "../components/recurring-create-flow";
+import type { CurrencyCode } from "@/money/currency";
 
 function formatDisplayName(value: string, locale: string): string {
   return value.replace(/\b\p{L}/gu, (letter) =>
@@ -348,6 +351,11 @@ export function RecurringOverviewView({
   labels,
   locale,
   overview,
+  accountOptions,
+  accountAvailability,
+  categoryOptions,
+  categoryAvailability,
+  defaultCurrency,
   timeZone,
   workspaceId,
   workspaceSlug,
@@ -356,6 +364,11 @@ export function RecurringOverviewView({
   readonly labels: RecurringUiLabels;
   readonly locale: string;
   readonly overview: RecurringOverview;
+  readonly accountOptions: readonly RecurringCreateAccountOption[];
+  readonly accountAvailability: "ready" | "error";
+  readonly categoryOptions: readonly RecurringCreateCategoryOption[];
+  readonly categoryAvailability: "ready" | "error";
+  readonly defaultCurrency: CurrencyCode;
   readonly timeZone: string;
   readonly workspaceId: string;
   readonly workspaceSlug: string;
@@ -370,12 +383,26 @@ export function RecurringOverviewView({
             </h1>
             <p className="mt-1 text-[13px] text-[#71809a]">{labels.subtitle}</p>
           </div>
-          <RecurringAskPace
-            language={language}
-            locale={locale}
-            timeZone={timeZone}
-            workspaceId={workspaceId}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <RecurringAskPace
+              language={language}
+              locale={locale}
+              timeZone={timeZone}
+              workspaceId={workspaceId}
+            />
+            <RecurringCreateControl
+              accountAvailability={accountAvailability}
+              accounts={accountOptions}
+              categories={categoryOptions}
+              categoryAvailability={categoryAvailability}
+              defaultCurrency={defaultCurrency}
+              labels={labels}
+              language={language}
+              locale={locale}
+              timeZone={timeZone}
+              workspaceId={workspaceId}
+            />
+          </div>
         </header>
 
         <section
