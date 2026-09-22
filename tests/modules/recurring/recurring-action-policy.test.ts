@@ -4,8 +4,8 @@ import test from "node:test";
 import { RECURRING_PAYMENT_STATUSES, type RecurringPaymentRecord } from "@/modules/financial-inbox/domain";
 import { getRecurringCapabilities } from "@/modules/recurring/domain/recurring-action-policy";
 
-function recurring(status: RecurringPaymentRecord["status"]): Pick<RecurringPaymentRecord, "status"> {
-  return { status };
+function recurring(status: RecurringPaymentRecord["status"]): Pick<RecurringPaymentRecord, "origin" | "status"> {
+  return { origin: "DETECTED", status };
 }
 
 test("M4 recurring state remains a single detection review dimension", () => {
@@ -38,6 +38,18 @@ test("confirmed detection has no second confirm, edit, or disable lifecycle in M
   assert.equal(capabilities.canEdit, false);
   assert.equal(capabilities.canDelete, false);
   assert.equal(capabilities.reasons.delete, "DELETE_NOT_SUPPORTED");
+});
+
+test("manual recurring patterns never inherit detected review actions", () => {
+  const capabilities = getRecurringCapabilities({
+    recurring: { origin: "MANUAL", status: "CONFIRMED" },
+    workspaceRole: "OWNER",
+  });
+
+  assert.equal(capabilities.canConfirm, false);
+  assert.equal(capabilities.canIgnore, false);
+  assert.equal(capabilities.reasons.confirm, "MANUAL_RECURRING");
+  assert.equal(capabilities.reasons.ignore, "MANUAL_RECURRING");
 });
 
 test("ignored detection is terminal while history stays readable", () => {

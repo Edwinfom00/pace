@@ -2,12 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { AuthorizationError, ConflictError, DomainConflictError, NotFoundError } from "@/authorization/errors";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
+import type { WorkspaceRole } from "@/authorization/workspace-permissions";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { toCurrencyCode } from "@/money/currency";
 import type { LedgerCategoryRecord, LedgerTransactionRecord } from "@/modules/ledger/domain";
 import { currentFinancialTransactions } from "@/modules/ledger/correction-chain";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
+import { getRecurringCapabilities } from "@/modules/recurring/domain/recurring-action-policy";
 
 import { classifyMerchant, type AiClassificationSuggestion } from "./classification";
 import {
@@ -90,6 +92,8 @@ export interface RecurringPaymentView {
   lastOccurredAt: string;
   nextOccurrenceAt: string | null;
   sampleTransactionIds: string[];
+  /** Canonical optimistic-concurrency token for later server mutations. */
+  updatedAt: string;
 }
 
 export const MAX_MANUAL_RECURRING_NAME_LENGTH = 160;
@@ -110,16 +114,22 @@ export interface CreateManualRecurringCommand {
   readonly nextOccurrenceAt: Date;
   readonly accountId?: string | null;
   readonly categoryId?: string | null;
-  /** Existing M4 matching identity; it is intentionally not inferred from `name`. */
   readonly merchantOrSource?: string | null;
   readonly idempotencyKey: string;
 }
 
-/**
- * M4 classification lives beside the immutable ledger. It can enrich a
- * transaction and create review work, but it does not update money, account,
- * or ledger rows. Those mutations remain solely in the approved M3 action.
- */
+export interface ConfirmRecurringCommand {
+  readonly workspaceId: string;
+  readonly recurringId: string;
+  readonly expectedUpdatedAt?: Date;
+  readonly idempotencyKey: string;
+}
+
+export interface IgnoreRecurringCommand extends ConfirmRecurringCommand {
+  readonly reason?: string;
+}
+
+
 export class FinancialInboxService {
   constructor(
     private readonly repository: FinancialInboxRepository,
@@ -395,6 +405,28 @@ export class FinancialInboxService {
     return this.presentRecurring(created);
   }
 
+  /**
+   * Canonical detected-recurring review action. It changes only M4 review
+   * state and audit metadata; it never calls any ledger mutation path.
+   */
+  async confirmRecurring(
+    actor: AuthenticatedActor,
+    command: ConfirmRecurringCommand,
+  ): Promise<RecurringPaymentView> {
+    return this.reviewRecurring(actor, command, "CONFIRM");
+  }
+
+  /**
+   * Canonical detected-recurring review action. Ignore is a retained review
+   * state, never a deletion of matching evidence or transactions.
+   */
+  async ignoreRecurring(
+    actor: AuthenticatedActor,
+    command: IgnoreRecurringCommand,
+  ): Promise<RecurringPaymentView> {
+    return this.reviewRecurring(actor, command, "IGNORE");
+  }
+
   async resolveInboxItem(
     actor: AuthenticatedActor,
     workspaceId: string,
@@ -512,27 +544,132 @@ export class FinancialInboxService {
     action: Extract<InboxAction, "CONFIRM_RECURRING" | "IGNORE_RECURRING">,
   ): Promise<void> {
     if (!item.recurringPaymentId) throw new ConflictError("This Inbox item has no recurring-payment candidate.");
-    const payment = await this.repository.findRecurringPaymentById(workspaceId, item.recurringPaymentId);
-    if (!payment) throw new NotFoundError("Recurring-payment candidate not found in this workspace.");
-    if (payment.status !== "CANDIDATE") {
-      throw new ConflictError("This recurring-payment candidate has already been resolved.");
+    const command = {
+      workspaceId,
+      recurringId: item.recurringPaymentId,
+      // The Inbox item is a legacy presentation of the same review action.
+      // Its deterministic key gives retries exactly the same semantics as the
+      // direct M9.5 commands without accepting new mutable input.
+      idempotencyKey: `inbox:${item.id}:${action}`,
+    };
+    await this.reviewRecurring(
+      actor,
+      action === "CONFIRM_RECURRING" ? command : { ...command, reason: undefined },
+      action === "CONFIRM_RECURRING" ? "CONFIRM" : "IGNORE",
+      { inboxItemId: item.id },
+    );
+  }
+
+  private async reviewRecurring(
+    actor: AuthenticatedActor,
+    command: ConfirmRecurringCommand | IgnoreRecurringCommand,
+    action: "CONFIRM" | "IGNORE",
+    auditContext?: { readonly inboxItemId: string },
+  ): Promise<RecurringPaymentView> {
+    const workspaceRole = await this.requireWorkspaceRole(actor.userId, command.workspaceId);
+    const prepared = prepareRecurringReviewCommand(command, action);
+    const commandFingerprint = fingerprintRecurringReviewCommand(prepared);
+    const replay = await this.repository.findRecurringAuditByIdempotencyKey(
+      command.workspaceId,
+      actor.userId,
+      prepared.idempotencyKey,
+    );
+    if (replay) {
+      return this.resolveExistingRecurringReviewCommand(
+        command.workspaceId,
+        command.recurringId,
+        action,
+        commandFingerprint,
+        replay,
+      );
     }
+
+    const payment = await this.repository.findRecurringPaymentById(command.workspaceId, command.recurringId);
+    if (!payment) throw new NotFoundError("Recurring payment not found in this workspace.");
+
+    const capabilities = getRecurringCapabilities({ recurring: payment, workspaceRole });
+    const allowed = action === "CONFIRM" ? capabilities.canConfirm : capabilities.canIgnore;
+    if (!allowed) this.throwRecurringActionNotAllowed(action, capabilities, workspaceRole);
+
     const now = new Date();
-    const confirmed = action === "CONFIRM_RECURRING";
-    await this.repository.updateRecurringPayment(workspaceId, payment.id, {
-      status: confirmed ? "CONFIRMED" : "IGNORED",
-      confirmedByUserId: confirmed ? actor.userId : null,
-      confirmedAt: confirmed ? now : null,
-      ignoredByUserId: confirmed ? null : actor.userId,
-      ignoredAt: confirmed ? null : now,
-    });
-    await this.audit(workspaceId, {
-      inboxItemId: item.id,
-      recurringPaymentId: payment.id,
-      actorUserId: actor.userId,
-      event: confirmed ? "RECURRING_CONFIRMED" : "RECURRING_IGNORED",
-      metadata: { cadenceDays: payment.cadenceDays, detectionKey: payment.detectionKey },
-    });
+    const before = recurringReviewAuditState(payment.status);
+    const afterStatus = action === "CONFIRM" ? "CONFIRMED" : "IGNORED";
+    const updated = {
+      status: afterStatus,
+      confirmedByUserId: action === "CONFIRM" ? actor.userId : null,
+      confirmedAt: action === "CONFIRM" ? now : null,
+      ignoredByUserId: action === "IGNORE" ? actor.userId : null,
+      ignoredAt: action === "IGNORE" ? now : null,
+    } as const;
+
+    try {
+      const persisted = await this.repository.transitionRecurringPayment({
+        workspaceId: command.workspaceId,
+        recurringPaymentId: payment.id,
+        expectedStatus: payment.status,
+        expectedUpdatedAt: prepared.expectedUpdatedAt,
+        ...updated,
+        audit: {
+          id: randomUUID(),
+          workspaceId: command.workspaceId,
+          recurringPaymentId: payment.id,
+          ...(auditContext ? { inboxItemId: auditContext.inboxItemId } : {}),
+          actorUserId: actor.userId,
+          event: action === "CONFIRM" ? "RECURRING_CONFIRMED" : "RECURRING_IGNORED",
+          commandFingerprint,
+          idempotencyKey: prepared.idempotencyKey,
+          metadata: {
+            origin: payment.origin,
+            detectionKey: payment.detectionKey,
+            before,
+            after: recurringReviewAuditState(afterStatus),
+            ...(action === "IGNORE" && prepared.reason ? { reason: prepared.reason } : {}),
+          },
+        },
+      });
+      if (persisted) return this.presentRecurring(persisted);
+    } catch (error) {
+      const concurrentReplay = await this.repository.findRecurringAuditByIdempotencyKey(
+        command.workspaceId,
+        actor.userId,
+        prepared.idempotencyKey,
+      );
+      if (concurrentReplay) {
+        return this.resolveExistingRecurringReviewCommand(
+          command.workspaceId,
+          command.recurringId,
+          action,
+          commandFingerprint,
+          concurrentReplay,
+        );
+      }
+      if (isSerializationFailure(error)) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "This recurring pattern changed while the review action was being saved. Refresh and retry.",
+        );
+      }
+      throw error;
+    }
+
+    const concurrentReplay = await this.repository.findRecurringAuditByIdempotencyKey(
+      command.workspaceId,
+      actor.userId,
+      prepared.idempotencyKey,
+    );
+    if (concurrentReplay) {
+      return this.resolveExistingRecurringReviewCommand(
+        command.workspaceId,
+        command.recurringId,
+        action,
+        commandFingerprint,
+        concurrentReplay,
+      );
+    }
+    throw new DomainConflictError(
+      "CONCURRENT_MODIFICATION",
+      "This recurring pattern changed while the review action was being saved. Refresh and retry.",
+    );
   }
 
   private async detectAndPersistRecurringCandidate(
@@ -726,7 +863,55 @@ export class FinancialInboxService {
       lastOccurredAt: payment.lastOccurredAt.toISOString(),
       nextOccurrenceAt: payment.nextOccurrenceAt?.toISOString() ?? null,
       sampleTransactionIds: payment.sampleTransactionIds,
+      updatedAt: payment.updatedAt.toISOString(),
     };
+  }
+
+  private async resolveExistingRecurringReviewCommand(
+    workspaceId: string,
+    recurringId: string,
+    action: "CONFIRM" | "IGNORE",
+    commandFingerprint: string,
+    audit: import("./domain").FinancialInboxAuditRecord,
+  ): Promise<RecurringPaymentView> {
+    const expectedEvent = action === "CONFIRM" ? "RECURRING_CONFIRMED" : "RECURRING_IGNORED";
+    if (
+      audit.recurringPaymentId !== recurringId
+      || audit.event !== expectedEvent
+      || audit.commandFingerprint !== commandFingerprint
+    ) {
+      throw new DomainConflictError(
+        "RECURRING_ACTION_ALREADY_PROCESSED",
+        "This idempotency key has already been used for another recurring review action.",
+      );
+    }
+    const payment = await this.repository.findRecurringPaymentById(workspaceId, recurringId);
+    if (!payment) throw new NotFoundError("Recurring payment not found in this workspace.");
+    return this.presentRecurring(payment);
+  }
+
+  private throwRecurringActionNotAllowed(
+    action: "CONFIRM" | "IGNORE",
+    capabilities: ReturnType<typeof getRecurringCapabilities>,
+    workspaceRole: WorkspaceRole,
+  ): never {
+    const reason = action === "CONFIRM" ? capabilities.reasons.confirm : capabilities.reasons.ignore;
+    if (reason === "READ_ONLY_ROLE") {
+      throw new AuthorizationError("You do not have permission to review recurring patterns in this workspace.");
+    }
+    if (action === "CONFIRM" && reason === "ALREADY_CONFIRMED") {
+      throw new DomainConflictError("RECURRING_ALREADY_CONFIRMED", "This recurring pattern is already confirmed.");
+    }
+    if (action === "IGNORE" && reason === "ALREADY_IGNORED") {
+      throw new DomainConflictError("RECURRING_ALREADY_IGNORED", "This recurring pattern is already ignored.");
+    }
+    if (workspaceRole === "VIEWER") {
+      throw new AuthorizationError("You do not have permission to review recurring patterns in this workspace.");
+    }
+    throw new DomainConflictError(
+      "RECURRING_ACTION_NOT_ALLOWED",
+      "This recurring review action is not allowed in its current canonical state.",
+    );
   }
 
   private resolveExistingManualCommand(
@@ -763,9 +948,14 @@ export class FinancialInboxService {
     workspaceId: string,
     action: "read" | "manage_ledger",
   ): Promise<void> {
+    const workspaceRole = await this.requireWorkspaceRole(userId, workspaceId);
+    assertWorkspacePermission(workspaceRole, action);
+  }
+
+  private async requireWorkspaceRole(userId: string, workspaceId: string): Promise<WorkspaceRole> {
     const context = await this.workspaces.findMemberContext(workspaceId, userId);
     if (!context) throw new AuthorizationError("You are not a member of this workspace.");
-    assertWorkspacePermission(context.membership.role, action);
+    return context.membership.role;
   }
 
   private async audit(
@@ -797,6 +987,14 @@ type PreparedManualRecurringCommand = {
   readonly categoryId: string | null;
   readonly normalizedMerchant: string | null;
   readonly idempotencyKey: string;
+};
+
+type PreparedRecurringReviewCommand = {
+  readonly action: "CONFIRM" | "IGNORE";
+  readonly recurringId: string;
+  readonly expectedUpdatedAt: Date | undefined;
+  readonly idempotencyKey: string;
+  readonly reason: string | undefined;
 };
 
 function prepareManualRecurringCommand(
@@ -897,6 +1095,48 @@ function normalizeOptionalMerchantOrSource(value: string | null | undefined): st
   return normalized;
 }
 
+function prepareRecurringReviewCommand(
+  command: ConfirmRecurringCommand | IgnoreRecurringCommand,
+  action: "CONFIRM" | "IGNORE",
+): PreparedRecurringReviewCommand {
+  if (typeof command.recurringId !== "string" || !command.recurringId.trim()) {
+    throw new DomainConflictError("RECURRING_ACTION_NOT_ALLOWED", "A recurring payment identifier is required.");
+  }
+  if (typeof command.idempotencyKey !== "string") {
+    throw new DomainConflictError("RECURRING_ACTION_NOT_ALLOWED", "An idempotency key is required.");
+  }
+  const idempotencyKey = command.idempotencyKey.trim();
+  if (!idempotencyKey || idempotencyKey.length > MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH) {
+    throw new DomainConflictError(
+      "RECURRING_ACTION_NOT_ALLOWED",
+      `An idempotency key must contain 1 to ${MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH} characters.`,
+    );
+  }
+  if (
+    command.expectedUpdatedAt !== undefined
+    && (!(command.expectedUpdatedAt instanceof Date) || Number.isNaN(command.expectedUpdatedAt.getTime()))
+  ) {
+    throw new DomainConflictError("RECURRING_ACTION_NOT_ALLOWED", "Expected version must be a valid timestamp.");
+  }
+
+  const rawReason = action === "IGNORE" ? (command as IgnoreRecurringCommand).reason : undefined;
+  if (rawReason !== undefined && typeof rawReason !== "string") {
+    throw new DomainConflictError("RECURRING_ACTION_NOT_ALLOWED", "Ignore reason must be text.");
+  }
+  const reason = rawReason?.normalize("NFKC").trim().replaceAll(/\s+/g, " ") || undefined;
+  if (reason && reason.length > 500) {
+    throw new DomainConflictError("RECURRING_ACTION_NOT_ALLOWED", "Ignore reason must contain at most 500 characters.");
+  }
+
+  return {
+    action,
+    recurringId: command.recurringId.trim(),
+    expectedUpdatedAt: command.expectedUpdatedAt ? new Date(command.expectedUpdatedAt) : undefined,
+    idempotencyKey,
+    reason,
+  };
+}
+
 function optionalIdentifier(
   value: string | null | undefined,
   code: "ACCOUNT_NOT_FOUND" | "CATEGORY_NOT_FOUND",
@@ -922,6 +1162,24 @@ function fingerprintManualRecurringCommand(command: PreparedManualRecurringComma
       normalizedMerchant: command.normalizedMerchant,
     }))
     .digest("hex");
+}
+
+function fingerprintRecurringReviewCommand(command: PreparedRecurringReviewCommand): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      action: command.action,
+      recurringId: command.recurringId,
+      expectedUpdatedAt: command.expectedUpdatedAt?.toISOString() ?? null,
+      reason: command.reason ?? null,
+    }))
+    .digest("hex");
+}
+
+function recurringReviewAuditState(status: RecurringPaymentRecord["status"]): {
+  readonly status: RecurringPaymentRecord["status"];
+  readonly reviewState: "NEEDS_REVIEW" | null;
+} {
+  return { status, reviewState: status === "CANDIDATE" ? "NEEDS_REVIEW" : null };
 }
 
 function isStrongManualRecurringMatch(
@@ -957,6 +1215,10 @@ function uniqueTransactionIds(ids: readonly string[]): string[] {
 
 function isUniqueConstraintError(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "23505";
+}
+
+function isSerializationFailure(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "40001";
 }
 
 function isPossibleTransfer(transaction: LedgerTransactionRecord, merchantName: string | null): boolean {

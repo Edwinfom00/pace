@@ -10,6 +10,7 @@ export const RECURRING_ACTION_REASONS = [
   "ALREADY_CONFIRMED",
   "ALREADY_IGNORED",
   "NOT_CANDIDATE",
+  "MANUAL_RECURRING",
   "EDIT_NOT_SUPPORTED",
   "DELETE_NOT_SUPPORTED",
 ] as const;
@@ -30,7 +31,7 @@ export type RecurringCapabilities = {
 };
 
 export type RecurringActionPolicyInput = {
-  readonly recurring: Pick<RecurringPaymentRecord, "status">;
+  readonly recurring: Pick<RecurringPaymentRecord, "origin" | "status">;
   readonly workspaceRole: WorkspaceRole;
 };
 
@@ -58,14 +59,31 @@ export function getRecurringCapabilities({
     };
   }
 
+  // M9.4 manual patterns are intentional. They must never be put through the
+  // detected-review workflow, even if a corrupted row claimed candidate state.
+  if (recurring.origin === "MANUAL") {
+    return {
+      canConfirm: false,
+      canIgnore: false,
+      canEdit: false,
+      canDelete: false,
+      canViewHistory: canRead,
+      canViewRelatedTransactions: canRead,
+      reasons: {
+        confirm: "MANUAL_RECURRING",
+        ignore: "MANUAL_RECURRING",
+        edit: "EDIT_NOT_SUPPORTED",
+        delete: "DELETE_NOT_SUPPORTED",
+      },
+    };
+  }
+
   const confirmReason = getConfirmReason(recurring.status);
   const ignoreReason = getIgnoreReason(recurring.status);
 
   return {
     canConfirm: confirmReason === null,
     canIgnore: ignoreReason === null,
-    // M4 has no recurring metadata mutation contract yet. M9.4 can expand
-    // this policy only when it introduces an authoritative edit command.
     canEdit: false,
     // Detected financial provenance is intentionally retained in V1.
     canDelete: false,

@@ -247,6 +247,8 @@ export const financialInboxAudits = pgTable(
     }),
     actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "restrict" }),
     event: varchar("event", { length: 100 }).notNull(),
+    commandFingerprint: varchar("command_fingerprint", { length: 128 }),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -256,5 +258,8 @@ export const financialInboxAudits = pgTable(
     index("financial_inbox_audit_workspace_created_idx").on(table.workspaceId, table.createdAt),
     index("financial_inbox_audit_inbox_created_idx").on(table.inboxItemId, table.createdAt),
     index("financial_inbox_audit_classification_created_idx").on(table.classificationId, table.createdAt),
+    uniqueIndex("financial_inbox_audit_workspace_actor_key_unique")
+      .on(table.workspaceId, table.actorUserId, table.idempotencyKey)
+      .where(sql`${table.actorUserId} IS NOT NULL AND ${table.idempotencyKey} IS NOT NULL`),
   ],
 );

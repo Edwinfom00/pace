@@ -197,6 +197,13 @@
       "when": 1790100000003,
       "tag": "0027_manual_recurring_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790073311660,
+      "tag": "0028_material_valeria_richards",
+      "breakpoints": true
     }
   ]
 }

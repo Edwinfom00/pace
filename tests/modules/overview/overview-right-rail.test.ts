@@ -63,6 +63,7 @@ function recurring(id: string, overrides: Partial<RecurringPaymentView> = {}): R
     lastOccurredAt: "2026-09-01T12:00:00.000Z",
     nextOccurrenceAt: null,
     sampleTransactionIds: [],
+    updatedAt: "2026-09-01T12:00:00.000Z",
     ...overrides,
   };
 }

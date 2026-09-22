@@ -14,6 +14,7 @@ import type {
   CreateRecurringPaymentInput,
   CreateTransactionClassificationInput,
   FinancialInboxRepository,
+  TransitionRecurringPaymentInput,
 } from "@/modules/financial-inbox/repositories/financial-inbox-repository";
 
 export class InMemoryFinancialInboxRepository implements FinancialInboxRepository {
@@ -208,10 +209,55 @@ export class InMemoryFinancialInboxRepository implements FinancialInboxRepositor
     );
   }
 
+  async findRecurringAuditByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<FinancialInboxAuditRecord | null> {
+    return (
+      [...this.audit.values()].find(
+        (entry) =>
+          entry.workspaceId === workspaceId
+          && entry.actorUserId === actorUserId
+          && entry.idempotencyKey === idempotencyKey,
+      ) ?? null
+    );
+  }
+
   async createRecurringPayment(input: CreateRecurringPaymentInput): Promise<RecurringPaymentRecord> {
     const now = new Date();
     const record = { ...input, createdAt: now, updatedAt: now };
     this.recurring.set(record.id, record);
+    return record;
+  }
+
+  async transitionRecurringPayment(
+    input: TransitionRecurringPaymentInput,
+  ): Promise<RecurringPaymentRecord | null> {
+    // Keep this compare-and-set synchronous: it mirrors the production row
+    // lock, so two test callers cannot both advance the same candidate.
+    const current = this.recurring.get(input.recurringPaymentId);
+    if (
+      !current
+      || current.workspaceId !== input.workspaceId
+      || current.status !== input.expectedStatus
+      || (input.expectedUpdatedAt && current.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
+    ) {
+      return null;
+    }
+
+    const now = new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1));
+    const record: RecurringPaymentRecord = {
+      ...current,
+      status: input.status,
+      confirmedByUserId: input.confirmedByUserId,
+      confirmedAt: input.confirmedAt,
+      ignoredByUserId: input.ignoredByUserId,
+      ignoredAt: input.ignoredAt,
+      updatedAt: now,
+    };
+    this.recurring.set(record.id, record);
+    await this.createAudit({ ...input.audit, recurringPaymentId: record.id });
     return record;
   }
 
@@ -233,7 +279,11 @@ export class InMemoryFinancialInboxRepository implements FinancialInboxRepositor
   ): Promise<RecurringPaymentRecord | null> {
     const current = await this.findRecurringPaymentById(workspaceId, recurringPaymentId);
     if (!current) return null;
-    const record = { ...current, ...input, updatedAt: new Date() };
+    const record = {
+      ...current,
+      ...input,
+      updatedAt: new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1)),
+    };
     this.recurring.set(record.id, record);
     return record;
   }
@@ -251,6 +301,8 @@ export class InMemoryFinancialInboxRepository implements FinancialInboxRepositor
       classificationId: input.classificationId ?? null,
       recurringPaymentId: input.recurringPaymentId ?? null,
       actorUserId: input.actorUserId ?? null,
+      commandFingerprint: input.commandFingerprint ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
       createdAt: new Date(),
     };
     this.audit.set(record.id, record);

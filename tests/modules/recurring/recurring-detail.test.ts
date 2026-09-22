@@ -50,6 +50,7 @@ function recurring(overrides: Partial<RecurringPaymentView> = {}): RecurringPaym
     lastOccurredAt: "2026-09-01T12:00:00.000Z",
     nextOccurrenceAt: null,
     sampleTransactionIds: ["transaction-1", "transaction-2", "transaction-3"],
+    updatedAt: "2026-09-01T12:00:00.000Z",
     ...overrides,
   };
 }

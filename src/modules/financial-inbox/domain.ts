@@ -132,6 +132,10 @@ export interface FinancialInboxAuditRecord {
   recurringPaymentId: string | null;
   actorUserId: string | null;
   event: string;
+  /** Present only for retry-safe commands that use this existing audit trail. */
+  commandFingerprint: string | null;
+  /** Scoped to workspace + actor by the database when present. */
+  idempotencyKey: string | null;
   metadata: Record<string, unknown>;
   createdAt: Date;
 }
