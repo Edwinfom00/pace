@@ -129,6 +129,8 @@ export interface IgnoreRecurringCommand extends ConfirmRecurringCommand {
   readonly reason?: string;
 }
 
+export type RestoreRecurringCommand = ConfirmRecurringCommand;
+
 
 export class FinancialInboxService {
   constructor(
@@ -427,6 +429,17 @@ export class FinancialInboxService {
     return this.reviewRecurring(actor, command, "IGNORE");
   }
 
+  /**
+   * Canonical detected-recurring review action. Restore returns an ignored
+   * detection to review; it never changes matching transactions or balances.
+   */
+  async restoreRecurring(
+    actor: AuthenticatedActor,
+    command: RestoreRecurringCommand,
+  ): Promise<RecurringPaymentView> {
+    return this.reviewRecurring(actor, command, "RESTORE");
+  }
+
   async resolveInboxItem(
     actor: AuthenticatedActor,
     workspaceId: string,
@@ -562,8 +575,8 @@ export class FinancialInboxService {
 
   private async reviewRecurring(
     actor: AuthenticatedActor,
-    command: ConfirmRecurringCommand | IgnoreRecurringCommand,
-    action: "CONFIRM" | "IGNORE",
+    command: ConfirmRecurringCommand | IgnoreRecurringCommand | RestoreRecurringCommand,
+    action: "CONFIRM" | "IGNORE" | "RESTORE",
     auditContext?: { readonly inboxItemId: string },
   ): Promise<RecurringPaymentView> {
     const workspaceRole = await this.requireWorkspaceRole(actor.userId, command.workspaceId);
@@ -588,12 +601,20 @@ export class FinancialInboxService {
     if (!payment) throw new NotFoundError("Recurring payment not found in this workspace.");
 
     const capabilities = getRecurringCapabilities({ recurring: payment, workspaceRole });
-    const allowed = action === "CONFIRM" ? capabilities.canConfirm : capabilities.canIgnore;
+    const allowed = action === "CONFIRM"
+      ? capabilities.canConfirm
+      : action === "IGNORE"
+        ? capabilities.canIgnore
+        : capabilities.canRestore;
     if (!allowed) this.throwRecurringActionNotAllowed(action, capabilities, workspaceRole);
 
     const now = new Date();
     const before = recurringReviewAuditState(payment.status);
-    const afterStatus = action === "CONFIRM" ? "CONFIRMED" : "IGNORED";
+    const afterStatus = action === "CONFIRM"
+      ? "CONFIRMED"
+      : action === "IGNORE"
+        ? "IGNORED"
+        : "CANDIDATE";
     const updated = {
       status: afterStatus,
       confirmedByUserId: action === "CONFIRM" ? actor.userId : null,
@@ -615,7 +636,7 @@ export class FinancialInboxService {
           recurringPaymentId: payment.id,
           ...(auditContext ? { inboxItemId: auditContext.inboxItemId } : {}),
           actorUserId: actor.userId,
-          event: action === "CONFIRM" ? "RECURRING_CONFIRMED" : "RECURRING_IGNORED",
+          event: recurringReviewAuditEvent(action),
           commandFingerprint,
           idempotencyKey: prepared.idempotencyKey,
           metadata: {
@@ -870,11 +891,11 @@ export class FinancialInboxService {
   private async resolveExistingRecurringReviewCommand(
     workspaceId: string,
     recurringId: string,
-    action: "CONFIRM" | "IGNORE",
+    action: "CONFIRM" | "IGNORE" | "RESTORE",
     commandFingerprint: string,
     audit: import("./domain").FinancialInboxAuditRecord,
   ): Promise<RecurringPaymentView> {
-    const expectedEvent = action === "CONFIRM" ? "RECURRING_CONFIRMED" : "RECURRING_IGNORED";
+    const expectedEvent = recurringReviewAuditEvent(action);
     if (
       audit.recurringPaymentId !== recurringId
       || audit.event !== expectedEvent
@@ -891,11 +912,15 @@ export class FinancialInboxService {
   }
 
   private throwRecurringActionNotAllowed(
-    action: "CONFIRM" | "IGNORE",
+    action: "CONFIRM" | "IGNORE" | "RESTORE",
     capabilities: ReturnType<typeof getRecurringCapabilities>,
     workspaceRole: WorkspaceRole,
   ): never {
-    const reason = action === "CONFIRM" ? capabilities.reasons.confirm : capabilities.reasons.ignore;
+    const reason = action === "CONFIRM"
+      ? capabilities.reasons.confirm
+      : action === "IGNORE"
+        ? capabilities.reasons.ignore
+        : capabilities.reasons.restore;
     if (reason === "READ_ONLY_ROLE") {
       throw new AuthorizationError("You do not have permission to review recurring patterns in this workspace.");
     }
@@ -904,6 +929,12 @@ export class FinancialInboxService {
     }
     if (action === "IGNORE" && reason === "ALREADY_IGNORED") {
       throw new DomainConflictError("RECURRING_ALREADY_IGNORED", "This recurring pattern is already ignored.");
+    }
+    if (action === "RESTORE" && reason === "NOT_RESTORABLE") {
+      throw new DomainConflictError(
+        "RECURRING_NOT_RESTORABLE",
+        "This recurring pattern can no longer be restored to review.",
+      );
     }
     if (workspaceRole === "VIEWER") {
       throw new AuthorizationError("You do not have permission to review recurring patterns in this workspace.");
@@ -990,7 +1021,7 @@ type PreparedManualRecurringCommand = {
 };
 
 type PreparedRecurringReviewCommand = {
-  readonly action: "CONFIRM" | "IGNORE";
+  readonly action: "CONFIRM" | "IGNORE" | "RESTORE";
   readonly recurringId: string;
   readonly expectedUpdatedAt: Date | undefined;
   readonly idempotencyKey: string;
@@ -1096,8 +1127,8 @@ function normalizeOptionalMerchantOrSource(value: string | null | undefined): st
 }
 
 function prepareRecurringReviewCommand(
-  command: ConfirmRecurringCommand | IgnoreRecurringCommand,
-  action: "CONFIRM" | "IGNORE",
+  command: ConfirmRecurringCommand | IgnoreRecurringCommand | RestoreRecurringCommand,
+  action: "CONFIRM" | "IGNORE" | "RESTORE",
 ): PreparedRecurringReviewCommand {
   if (typeof command.recurringId !== "string" || !command.recurringId.trim()) {
     throw new DomainConflictError("RECURRING_ACTION_NOT_ALLOWED", "A recurring payment identifier is required.");
@@ -1135,6 +1166,17 @@ function prepareRecurringReviewCommand(
     idempotencyKey,
     reason,
   };
+}
+
+function recurringReviewAuditEvent(action: PreparedRecurringReviewCommand["action"]): string {
+  switch (action) {
+    case "CONFIRM":
+      return "RECURRING_CONFIRMED";
+    case "IGNORE":
+      return "RECURRING_IGNORED";
+    case "RESTORE":
+      return "RECURRING_RESTORED";
+  }
 }
 
 function optionalIdentifier(

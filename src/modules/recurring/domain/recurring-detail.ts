@@ -34,6 +34,8 @@ export type RecurringDetail = {
   readonly merchant: { readonly id: string; readonly name: string } | null;
   readonly origin: "DETERMINISTIC_DETECTION" | "MANUAL";
   readonly sampleCount: number;
+  /** Canonical optimistic-concurrency token for review-state actions. */
+  readonly updatedAt: string;
   readonly upcomingOccurrences: readonly RecurringDetailOccurrence[];
   readonly history: readonly RecurringDetailHistory[];
   readonly relatedTransactions: readonly TransactionListItem[];

@@ -2,6 +2,10 @@ import { formatDashboardLabel, type DashboardLabels } from "@/i18n/dashboard-mes
 import type { RecurringPaymentStatus } from "@/modules/financial-inbox/domain";
 
 import type { RecurringOverviewFilter } from "../domain/recurring-overview";
+import {
+  getRecurringReviewUiLabels,
+  type RecurringReviewUiLabels,
+} from "./recurring-review-ui-labels";
 
 export type RecurringUiLabels = {
   readonly title: string;
@@ -34,6 +38,7 @@ export type RecurringUiLabels = {
   readonly errorTitle: string;
   readonly errorRetry: string;
   readonly filterLoading: string;
+  readonly reviewActions: RecurringReviewUiLabels;
   readonly create: {
     readonly trigger: string;
     readonly title: string;
@@ -143,6 +148,7 @@ export function getRecurringUiLabels(labels: DashboardLabels): RecurringUiLabels
     errorTitle: labels["recurring.error.title"],
     errorRetry: labels["recurring.error.retry"],
     filterLoading: labels["shared.loading.filter"],
+    reviewActions: getRecurringReviewUiLabels(labels),
     create: {
       trigger: labels["recurring.create.trigger"],
       title: labels["recurring.create.title"],

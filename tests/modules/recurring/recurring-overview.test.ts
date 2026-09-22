@@ -116,10 +116,12 @@ test("recurring overview composes canonical M4 fields and preserves candidate re
   assert.equal(candidate?.reviewState, "NEEDS_REVIEW");
   assert.equal(candidate?.capabilities.canConfirm, true);
   assert.equal(candidate?.capabilities.canIgnore, true);
+  assert.equal(candidate?.capabilities.canRestore, false);
   assert.equal(candidate?.account?.name, "Main account");
   assert.equal(candidate?.category?.systemKey, "expense:entertainment");
   assert.ok(candidate?.nextExpectedAt);
   assert.equal(ignored?.nextExpectedAt, null);
+  assert.equal(ignored?.capabilities.canRestore, true);
   assert.deepEqual(overview.counts, { ALL: 3, CONFIRMED: 1, NEEDS_REVIEW: 1, IGNORED: 1 });
   assert.equal("accountBalanceMinor" in overview, false);
 });

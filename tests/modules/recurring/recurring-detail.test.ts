@@ -188,6 +188,7 @@ test("candidate and ignored details retain their M4 review semantics", () => {
   assert.equal(ignored.reviewState, null);
   assert.equal(ignored.capabilities.canConfirm, false);
   assert.equal(ignored.capabilities.reasons.ignore, "ALREADY_IGNORED");
+  assert.equal(ignored.capabilities.canRestore, true);
   assert.equal(ignored.nextOccurrenceAt, null);
   assert.equal(ignored.upcomingOccurrences.length, 0);
 });

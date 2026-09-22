@@ -163,6 +163,7 @@ export function buildRecurringDetail({
     merchant: merchant ? { id: merchant.id, name: merchant.name } : null,
     origin: payment.origin === "MANUAL" ? "MANUAL" : "DETERMINISTIC_DETECTION",
     sampleCount: payment.sampleTransactionIds.length,
+    updatedAt: payment.updatedAt,
     upcomingOccurrences: upcomingDates.map((date) => ({
       date,
       amount: { minor: payment.typicalAmountMinor, currency: payment.currency },

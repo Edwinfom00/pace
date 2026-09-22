@@ -209,23 +209,39 @@ test("ignore retains the candidate and evidence, removes projections, and record
   assert.equal(detail.capabilities.canIgnore, false);
 });
 
-test("M4 explicitly makes ignored recurring patterns terminal, so Restore is not introduced", async () => {
+test("restore returns an ignored detection to review without changing financial truth", async () => {
   const fixture = await createFixture();
   const candidate = await createDetectedCandidate(fixture);
+  const beforeBalance = await fixture.ledgerRecords.getAccountBalance(workspaceId, fixture.account.id);
+  const transactionCount = fixture.ledgerRecords.transactions.size;
   await fixture.service.ignoreRecurring(owner, {
     workspaceId,
     recurringId: candidate.id,
     idempotencyKey: "ignore-terminal",
   });
 
-  await assert.rejects(
-    fixture.service.confirmRecurring(owner, {
-      workspaceId,
-      recurringId: candidate.id,
-      idempotencyKey: "confirm-after-ignore",
-    }),
-    (error: unknown) => error instanceof DomainConflictError && error.code === "RECURRING_ACTION_NOT_ALLOWED",
-  );
+  const restored = await fixture.service.restoreRecurring(owner, {
+    workspaceId,
+    recurringId: candidate.id,
+    idempotencyKey: "restore-after-ignore",
+  });
+
+  const afterBalance = await fixture.ledgerRecords.getAccountBalance(workspaceId, fixture.account.id);
+  assert.equal(restored.status, "CANDIDATE");
+  assert.equal(restored.sampleTransactionIds.length, candidate.sampleTransactionIds.length);
+  assert.equal(afterBalance?.currentBalanceMinor, beforeBalance?.currentBalanceMinor);
+  assert.equal(afterBalance?.availableBalanceMinor, beforeBalance?.availableBalanceMinor);
+  assert.equal(fixture.ledgerRecords.transactions.size, transactionCount);
+
+  const overview = await overviewFor(fixture);
+  assert.deepEqual(overview.counts, { ALL: 1, CONFIRMED: 0, NEEDS_REVIEW: 1, IGNORED: 0 });
+  assert.equal(overview.items[0]?.capabilities.canConfirm, true);
+  assert.equal(overview.items[0]?.capabilities.canIgnore, true);
+  assert.equal(overview.items[0]?.capabilities.canRestore, false);
+  assert.equal(overview.upcoming.length, 0);
+  assert.deepEqual((await overviewFor(fixture, "NEEDS_REVIEW")).items.map((item) => item.id), [candidate.id]);
+  assert.deepEqual((await overviewFor(fixture, "IGNORED")).items, []);
+  assert.equal([...fixture.financial.audit.values()].at(-1)?.event, "RECURRING_RESTORED");
 });
 
 test("manual recurring patterns never enter detected confirm or ignore flows", async () => {
@@ -247,6 +263,7 @@ test("manual recurring patterns never enter detected confirm or ignore flows", a
   for (const action of [
     fixture.service.confirmRecurring(owner, { workspaceId, recurringId: manual.id, idempotencyKey: "manual-confirm" }),
     fixture.service.ignoreRecurring(owner, { workspaceId, recurringId: manual.id, idempotencyKey: "manual-ignore" }),
+    fixture.service.restoreRecurring(owner, { workspaceId, recurringId: manual.id, idempotencyKey: "manual-restore" }),
   ]) {
     await assert.rejects(
       action,
@@ -295,6 +312,27 @@ test("review commands are idempotent and safely reject stale or competing transi
       recurringId: stale.id,
       expectedUpdatedAt: stale.updatedAt,
       idempotencyKey: "stale-confirm",
+    }),
+    (error: unknown) => error instanceof DomainConflictError && error.code === "CONCURRENT_MODIFICATION",
+  );
+
+  const restoreFixture = await createFixture();
+  const restoreCandidate = await createDetectedCandidate(restoreFixture);
+  await restoreFixture.service.ignoreRecurring(owner, {
+    workspaceId,
+    recurringId: restoreCandidate.id,
+    idempotencyKey: "ignore-before-stale-restore",
+  });
+  const ignored = await restoreFixture.financial.findRecurringPaymentById(workspaceId, restoreCandidate.id);
+  await restoreFixture.financial.updateRecurringPayment(workspaceId, restoreCandidate.id, {
+    sampleTransactionIds: ["transaction-evidence", "new-evidence"],
+  });
+  await assert.rejects(
+    restoreFixture.service.restoreRecurring(owner, {
+      workspaceId,
+      recurringId: restoreCandidate.id,
+      expectedUpdatedAt: ignored!.updatedAt,
+      idempotencyKey: "stale-restore",
     }),
     (error: unknown) => error instanceof DomainConflictError && error.code === "CONCURRENT_MODIFICATION",
   );

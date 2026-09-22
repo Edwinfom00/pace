@@ -29,6 +29,8 @@ export type RecurringOverviewItem = {
   /** Deterministic projection from the persisted cadence; it is never a posted transaction. */
   readonly nextExpectedAt: string | null;
   readonly sampleCount: number;
+  /** Canonical optimistic-concurrency token for review-state actions. */
+  readonly updatedAt: string;
 };
 
 export type RecurringCurrencyTotal = {
@@ -153,6 +155,7 @@ function toOverviewItem(
       ? null
       : nextRecurringProjectionDate(payment, now, timeZone),
     sampleCount: payment.sampleTransactionIds.length,
+    updatedAt: payment.updatedAt,
   };
 }
 

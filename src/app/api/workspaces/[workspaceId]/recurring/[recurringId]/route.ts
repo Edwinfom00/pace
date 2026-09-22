@@ -26,6 +26,11 @@ const recurringReviewSchema = z.discriminatedUnion("action", [
     idempotencyKey: z.string().trim().min(1).max(180),
     reason: z.string().trim().max(500).optional(),
   }).strict(),
+  z.object({
+    action: z.literal("RESTORE"),
+    expectedUpdatedAt,
+    idempotencyKey: z.string().trim().min(1).max(180),
+  }).strict(),
 ]);
 
 
@@ -39,7 +44,9 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
     const service = getFinancialInboxService();
     const payment = input.action === "CONFIRM"
       ? await service.confirmRecurring(actor, { workspaceId, recurringId, ...input })
-      : await service.ignoreRecurring(actor, { workspaceId, recurringId, ...input });
+      : input.action === "IGNORE"
+        ? await service.ignoreRecurring(actor, { workspaceId, recurringId, ...input })
+        : await service.restoreRecurring(actor, { workspaceId, recurringId, ...input });
     return Response.json({ payment });
   } catch (error) {
     return jsonError(error);

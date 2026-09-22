@@ -30,6 +30,7 @@ import {
 import { RecurringFilterTabs } from "../components/recurring-filter-tabs";
 import { RecurringStatusBadge } from "../components/recurring-status-badge";
 import { RecurringCreateControl } from "../components/recurring-create-control";
+import { RecurringReviewActions } from "../components/recurring-review-actions";
 import type { RecurringCreateAccountOption, RecurringCreateCategoryOption } from "../components/recurring-create-flow";
 import type { CurrencyCode } from "@/money/currency";
 
@@ -128,6 +129,7 @@ function RecurringItemRow({
   dashboardLabels,
   locale,
   timeZone,
+  workspaceId,
   workspaceSlug,
 }: {
   readonly item: RecurringOverviewItem;
@@ -135,6 +137,7 @@ function RecurringItemRow({
   readonly dashboardLabels: ReturnType<typeof getDashboardLabels>;
   readonly locale: string;
   readonly timeZone: string;
+  readonly workspaceId: string;
   readonly workspaceSlug: string;
 }) {
   const displayName = formatDisplayName(item.merchantName, locale);
@@ -153,7 +156,7 @@ function RecurringItemRow({
   return (
     <article
       aria-label={`${displayName}, ${amount}, ${labels.status[item.status]}`}
-      className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(13rem,1.75fr)_minmax(7rem,.85fr)_minmax(8rem,.9fr)_minmax(7.5rem,.85fr)_minmax(7rem,.75fr)] lg:items-center lg:gap-4"
+      className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(13rem,1.75fr)_minmax(7rem,.85fr)_minmax(8rem,.9fr)_minmax(7.5rem,.85fr)_minmax(7rem,.75fr)_auto] lg:items-center lg:gap-4"
       role="listitem">
       <div className="flex min-w-0 items-center gap-3">
         <TransactionIcon
@@ -182,8 +185,22 @@ function RecurringItemRow({
           </div>
         </div>
       </div>
-      <div className="justify-self-end lg:hidden">
+      <div className="flex items-center gap-1 justify-self-end lg:hidden">
         <RecurringStatusBadge labels={labels} status={item.status} />
+        <RecurringReviewActions
+          labels={labels.reviewActions}
+          locale={locale}
+          target={{
+            id: item.id,
+            title: displayName,
+            typicalAmountMinor: item.typicalAmountMinor,
+            currency: item.currency,
+            cadenceDays: item.cadenceDays,
+            updatedAt: item.updatedAt,
+            capabilities: item.capabilities,
+          }}
+          workspaceId={workspaceId}
+        />
       </div>
 
       <div className="min-w-0 lg:justify-self-start">
@@ -223,6 +240,22 @@ function RecurringItemRow({
       <div className="hidden lg:block">
         <RecurringStatusBadge labels={labels} status={item.status} />
       </div>
+      <div className="hidden justify-self-end lg:block">
+        <RecurringReviewActions
+          labels={labels.reviewActions}
+          locale={locale}
+          target={{
+            id: item.id,
+            title: displayName,
+            typicalAmountMinor: item.typicalAmountMinor,
+            currency: item.currency,
+            cadenceDays: item.cadenceDays,
+            updatedAt: item.updatedAt,
+            capabilities: item.capabilities,
+          }}
+          workspaceId={workspaceId}
+        />
+      </div>
     </article>
   );
 }
@@ -233,6 +266,7 @@ function RecurringItemsList({
   dashboardLabels,
   locale,
   timeZone,
+  workspaceId,
   workspaceSlug,
 }: {
   readonly overview: RecurringOverview;
@@ -240,6 +274,7 @@ function RecurringItemsList({
   readonly dashboardLabels: ReturnType<typeof getDashboardLabels>;
   readonly locale: string;
   readonly timeZone: string;
+  readonly workspaceId: string;
   readonly workspaceSlug: string;
 }) {
   if (!overview.items.length)
@@ -258,6 +293,7 @@ function RecurringItemsList({
             labels={labels}
             locale={locale}
             timeZone={timeZone}
+            workspaceId={workspaceId}
             workspaceSlug={workspaceSlug}
           />
         </div>
@@ -470,6 +506,7 @@ export function RecurringOverviewView({
                   locale={locale}
                   overview={overview}
                   timeZone={timeZone}
+                  workspaceId={workspaceId}
                   workspaceSlug={workspaceSlug}
                 />
               </section>

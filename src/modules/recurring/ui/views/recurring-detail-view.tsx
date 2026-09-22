@@ -23,7 +23,9 @@ import type {
 import { getRecurringUiLabels } from "@/modules/recurring/ui/recurring-ui-labels";
 import { RecurringAskPace } from "@/modules/recurring/ui/components/recurring-ask-pace";
 import { RecurringDetailTabs } from "@/modules/recurring/ui/components/recurring-detail-tabs";
+import { RecurringReviewActions } from "@/modules/recurring/ui/components/recurring-review-actions";
 import { RecurringStatusBadge } from "@/modules/recurring/ui/components/recurring-status-badge";
+import { getRecurringReviewUiLabels } from "@/modules/recurring/ui/recurring-review-ui-labels";
 import { formatSystemCategory } from "@/modules/transactions/ui/transaction-detail-labels";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
@@ -781,12 +783,28 @@ export function RecurringDetailView({
             </p>
           </div>
         </div>
-        <RecurringAskPace
-          language={language}
-          locale={locale}
-          timeZone={timeZone}
-          workspaceId={workspaceId}
-        />
+        <div className="flex items-center gap-1.5">
+          <RecurringAskPace
+            language={language}
+            locale={locale}
+            timeZone={timeZone}
+            workspaceId={workspaceId}
+          />
+          <RecurringReviewActions
+            labels={getRecurringReviewUiLabels(dashboardLabels)}
+            locale={locale}
+            target={{
+              id: detail.id,
+              title: detail.title,
+              typicalAmountMinor: detail.amount.minor,
+              currency: detail.amount.currency,
+              cadenceDays: detail.cadenceDays,
+              updatedAt: detail.updatedAt,
+              capabilities: detail.capabilities,
+            }}
+            workspaceId={workspaceId}
+          />
+        </div>
       </header>
       <StateNotice detail={detail} labels={labels} />
       <div className="mt-5">

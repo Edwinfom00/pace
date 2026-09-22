@@ -8,12 +8,12 @@ function recurring(status: RecurringPaymentRecord["status"]): Pick<RecurringPaym
   return { origin: "DETECTED", status };
 }
 
-test("M4 recurring state remains a single detection review dimension", () => {
+test("M9 recurring state remains a single detection review dimension", () => {
   assert.deepEqual(RECURRING_PAYMENT_STATUSES, ["CANDIDATE", "CONFIRMED", "IGNORED"]);
   const capabilities = getRecurringCapabilities({ recurring: recurring("CANDIDATE"), workspaceRole: "OWNER" });
   assert.equal("canPause" in capabilities, false);
   assert.equal("canResume" in capabilities, false);
-  assert.equal("canRestore" in capabilities, false);
+  assert.equal(capabilities.canRestore, false);
 });
 
 test("candidate detection can be confirmed or ignored by ledger managers without mutating it", () => {
@@ -23,6 +23,7 @@ test("candidate detection can be confirmed or ignored by ledger managers without
 
   assert.equal(capabilities.canConfirm, true);
   assert.equal(capabilities.canIgnore, true);
+  assert.equal(capabilities.canRestore, false);
   assert.equal(capabilities.canEdit, false);
   assert.equal(capabilities.reasons.edit, "EDIT_NOT_SUPPORTED");
   assert.deepEqual(candidate, before);
@@ -34,6 +35,7 @@ test("confirmed detection has no second confirm, edit, or disable lifecycle in M
   assert.equal(capabilities.canConfirm, false);
   assert.equal(capabilities.reasons.confirm, "ALREADY_CONFIRMED");
   assert.equal(capabilities.canIgnore, false);
+  assert.equal(capabilities.canRestore, false);
   assert.equal(capabilities.reasons.ignore, "NOT_CANDIDATE");
   assert.equal(capabilities.canEdit, false);
   assert.equal(capabilities.canDelete, false);
@@ -48,17 +50,20 @@ test("manual recurring patterns never inherit detected review actions", () => {
 
   assert.equal(capabilities.canConfirm, false);
   assert.equal(capabilities.canIgnore, false);
+  assert.equal(capabilities.canRestore, false);
   assert.equal(capabilities.reasons.confirm, "MANUAL_RECURRING");
   assert.equal(capabilities.reasons.ignore, "MANUAL_RECURRING");
+  assert.equal(capabilities.reasons.restore, "MANUAL_RECURRING");
 });
 
-test("ignored detection is terminal while history stays readable", () => {
+test("ignored detection can be restored to review while history stays readable", () => {
   const capabilities = getRecurringCapabilities({ recurring: recurring("IGNORED"), workspaceRole: "OWNER" });
 
   assert.equal(capabilities.canConfirm, false);
   assert.equal(capabilities.canIgnore, false);
   assert.equal(capabilities.reasons.confirm, "ALREADY_IGNORED");
   assert.equal(capabilities.reasons.ignore, "ALREADY_IGNORED");
+  assert.equal(capabilities.canRestore, true);
   assert.equal(capabilities.canViewHistory, true);
   assert.equal(capabilities.canViewRelatedTransactions, true);
 });
@@ -70,11 +75,13 @@ test("viewers retain recurring history access but receive no mutation capability
   assert.equal(capabilities.canViewRelatedTransactions, true);
   assert.equal(capabilities.canConfirm, false);
   assert.equal(capabilities.canIgnore, false);
+  assert.equal(capabilities.canRestore, false);
   assert.equal(capabilities.canEdit, false);
   assert.equal(capabilities.canDelete, false);
   assert.deepEqual(capabilities.reasons, {
     confirm: "READ_ONLY_ROLE",
     ignore: "READ_ONLY_ROLE",
+    restore: "READ_ONLY_ROLE",
     edit: "READ_ONLY_ROLE",
     delete: "READ_ONLY_ROLE",
   });

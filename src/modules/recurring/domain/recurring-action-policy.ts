@@ -9,6 +9,7 @@ export const RECURRING_ACTION_REASONS = [
   "READ_ONLY_ROLE",
   "ALREADY_CONFIRMED",
   "ALREADY_IGNORED",
+  "NOT_RESTORABLE",
   "NOT_CANDIDATE",
   "MANUAL_RECURRING",
   "EDIT_NOT_SUPPORTED",
@@ -17,12 +18,13 @@ export const RECURRING_ACTION_REASONS = [
 
 export type RecurringActionReason = (typeof RECURRING_ACTION_REASONS)[number];
 
-type RecurringManagementAction = "confirm" | "ignore" | "edit" | "delete";
+type RecurringManagementAction = "confirm" | "ignore" | "restore" | "edit" | "delete";
 
 
 export type RecurringCapabilities = {
   readonly canConfirm: boolean;
   readonly canIgnore: boolean;
+  readonly canRestore: boolean;
   readonly canEdit: false;
   readonly canDelete: false;
   readonly canViewHistory: boolean;
@@ -46,6 +48,7 @@ export function getRecurringCapabilities({
     return {
       canConfirm: false,
       canIgnore: false,
+      canRestore: false,
       canEdit: false,
       canDelete: false,
       canViewHistory: canRead,
@@ -53,6 +56,7 @@ export function getRecurringCapabilities({
       reasons: {
         confirm: "READ_ONLY_ROLE",
         ignore: "READ_ONLY_ROLE",
+        restore: "READ_ONLY_ROLE",
         edit: "READ_ONLY_ROLE",
         delete: "READ_ONLY_ROLE",
       },
@@ -65,6 +69,7 @@ export function getRecurringCapabilities({
     return {
       canConfirm: false,
       canIgnore: false,
+      canRestore: false,
       canEdit: false,
       canDelete: false,
       canViewHistory: canRead,
@@ -72,6 +77,7 @@ export function getRecurringCapabilities({
       reasons: {
         confirm: "MANUAL_RECURRING",
         ignore: "MANUAL_RECURRING",
+        restore: "MANUAL_RECURRING",
         edit: "EDIT_NOT_SUPPORTED",
         delete: "DELETE_NOT_SUPPORTED",
       },
@@ -80,10 +86,12 @@ export function getRecurringCapabilities({
 
   const confirmReason = getConfirmReason(recurring.status);
   const ignoreReason = getIgnoreReason(recurring.status);
+  const restoreReason = getRestoreReason(recurring.status);
 
   return {
     canConfirm: confirmReason === null,
     canIgnore: ignoreReason === null,
+    canRestore: restoreReason === null,
     canEdit: false,
     // Detected financial provenance is intentionally retained in V1.
     canDelete: false,
@@ -92,6 +100,7 @@ export function getRecurringCapabilities({
     reasons: {
       ...(confirmReason ? { confirm: confirmReason } : {}),
       ...(ignoreReason ? { ignore: ignoreReason } : {}),
+      ...(restoreReason ? { restore: restoreReason } : {}),
       edit: "EDIT_NOT_SUPPORTED",
       delete: "DELETE_NOT_SUPPORTED",
     },
@@ -121,5 +130,17 @@ function getIgnoreReason(
       return "NOT_CANDIDATE";
     case "IGNORED":
       return "ALREADY_IGNORED";
+  }
+}
+
+function getRestoreReason(
+  status: RecurringActionPolicyInput["recurring"]["status"],
+): RecurringActionReason | null {
+  switch (status) {
+    case "IGNORED":
+      return null;
+    case "CANDIDATE":
+    case "CONFIRMED":
+      return "NOT_RESTORABLE";
   }
 }
