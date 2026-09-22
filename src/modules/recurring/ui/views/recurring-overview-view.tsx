@@ -158,7 +158,7 @@ function RecurringItemRow({
           categoryName={item.category?.name}
           merchantName={displayName}
           size="md"
-          transactionKind="EXPENSE"
+          transactionKind={item.direction === "INFLOW" ? "INCOME" : "EXPENSE"}
         />
         <div className="min-w-0">
           <Link
@@ -308,7 +308,7 @@ function UpcomingPanel({
                   categoryName={item.category?.name}
                   merchantName={title}
                   size="sm"
-                  transactionKind="EXPENSE"
+                  transactionKind={item.direction === "INFLOW" ? "INCOME" : "EXPENSE"}
                 />
                 <div className="min-w-0 flex-1">
                   <time

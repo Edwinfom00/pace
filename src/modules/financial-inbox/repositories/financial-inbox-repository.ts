@@ -114,6 +114,11 @@ export interface FinancialInboxRepository {
     workspaceId: string,
     recurringPaymentId: string,
   ): Promise<RecurringPaymentRecord | null>;
+  findRecurringPaymentByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<RecurringPaymentRecord | null>;
   createRecurringPayment(input: CreateRecurringPaymentInput): Promise<RecurringPaymentRecord>;
   updateRecurringPayment(
     workspaceId: string,
@@ -384,6 +389,25 @@ export class DatabaseFinancialInboxRepository implements FinancialInboxRepositor
         and(
           eq(recurringPayments.workspaceId, workspaceId),
           eq(recurringPayments.id, recurringPaymentId),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findRecurringPaymentByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<RecurringPaymentRecord | null> {
+    const [record] = await db
+      .select()
+      .from(recurringPayments)
+      .where(
+        and(
+          eq(recurringPayments.workspaceId, workspaceId),
+          eq(recurringPayments.createdByUserId, actorUserId),
+          eq(recurringPayments.idempotencyKey, idempotencyKey),
         ),
       )
       .limit(1);

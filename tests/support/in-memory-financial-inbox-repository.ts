@@ -193,6 +193,21 @@ export class InMemoryFinancialInboxRepository implements FinancialInboxRepositor
     return record?.workspaceId === workspaceId ? record : null;
   }
 
+  async findRecurringPaymentByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<RecurringPaymentRecord | null> {
+    return (
+      [...this.recurring.values()].find(
+        (payment) =>
+          payment.workspaceId === workspaceId &&
+          payment.createdByUserId === actorUserId &&
+          payment.idempotencyKey === idempotencyKey,
+      ) ?? null
+    );
+  }
+
   async createRecurringPayment(input: CreateRecurringPaymentInput): Promise<RecurringPaymentRecord> {
     const now = new Date();
     const record = { ...input, createdAt: now, updatedAt: now };

@@ -30,6 +30,7 @@ export function RecurringDashboard({
         {initialPayments.length === 0 ? <p className="finance-empty">{t("recurring.empty")}</p> : null}
         <div className="recurring-grid">
           {initialPayments.map((payment) => {
+            const displayName = payment.displayName ?? payment.normalizedMerchant ?? "Recurring payment";
             const amount = new Intl.NumberFormat(locale, {
               style: "currency",
               currency: payment.currency,
@@ -43,12 +44,12 @@ export function RecurringDashboard({
             return (
               <article className="recurring-card" key={payment.id}>
                 <div className="recurring-card-heading">
-                  <div className="finance-item-icon" aria-hidden="true">{payment.normalizedMerchant.slice(0, 1)}</div>
+                  <div className="finance-item-icon" aria-hidden="true">{displayName.slice(0, 1)}</div>
                   <span className={`recurring-status recurring-${payment.status.toLocaleLowerCase("en-US")}`}>
                     {t(`recurring.${payment.status.toLocaleLowerCase("en-US")}` as "recurring.candidate")}
                   </span>
                 </div>
-                <h2>{payment.normalizedMerchant}</h2>
+                <h2>{displayName}</h2>
                 <strong>{amount}</strong>
                 <p>{t("recurring.cadence", { days: payment.cadenceDays })}</p>
                 <dl>

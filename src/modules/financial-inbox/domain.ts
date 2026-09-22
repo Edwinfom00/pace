@@ -42,6 +42,12 @@ export type InboxItemStatus = (typeof INBOX_ITEM_STATUSES)[number];
 export const RECURRING_PAYMENT_STATUSES = ["CANDIDATE", "CONFIRMED", "IGNORED"] as const;
 export type RecurringPaymentStatus = (typeof RECURRING_PAYMENT_STATUSES)[number];
 
+export const RECURRING_PAYMENT_ORIGINS = ["DETECTED", "MANUAL"] as const;
+export type RecurringPaymentOrigin = (typeof RECURRING_PAYMENT_ORIGINS)[number];
+
+export const RECURRING_PAYMENT_DIRECTIONS = ["EXPENSE", "INCOME"] as const;
+export type RecurringPaymentDirection = (typeof RECURRING_PAYMENT_DIRECTIONS)[number];
+
 export interface ClassificationRuleRecord {
   id: string;
   workspaceId: string;
@@ -92,7 +98,10 @@ export interface RecurringPaymentRecord {
   id: string;
   workspaceId: string;
   detectionKey: string;
-  normalizedMerchant: string;
+  normalizedMerchant: string | null;
+  displayName: string | null;
+  origin: RecurringPaymentOrigin;
+  direction: RecurringPaymentDirection;
   accountId: string | null;
   categoryId: string | null;
   currency: string;
@@ -101,8 +110,12 @@ export interface RecurringPaymentRecord {
   cadenceDays: number;
   firstOccurredAt: Date;
   lastOccurredAt: Date;
+  nextOccurrenceAt: Date | null;
   sampleTransactionIds: string[];
   status: RecurringPaymentStatus;
+  createdByUserId: string | null;
+  idempotencyKey: string | null;
+  commandFingerprint: string | null;
   confirmedByUserId: string | null;
   confirmedAt: Date | null;
   ignoredByUserId: string | null;

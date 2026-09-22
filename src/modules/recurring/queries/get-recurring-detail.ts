@@ -16,7 +16,7 @@ import {
   DatabaseWorkspaceRepository,
   type WorkspaceRepository,
 } from "@/modules/workspaces/repositories/workspace-repository";
-import { projectRecurringOccurrences } from "@/modules/overview/domain/overview-right-rail";
+import { projectRecurringPaymentOccurrences } from "@/modules/overview/domain/overview-right-rail";
 import { mapTransactionListItem } from "@/modules/transactions/queries/get-transactions-page";
 
 import type { RecurringDetail, RecurringDetailHistory } from "../domain/recurring-detail";
@@ -74,7 +74,9 @@ export async function getRecurringDetailWithReaders(
     readers.listCategories(actor, workspaceId),
     readers.listMerchants(actor, workspaceId),
   ]);
-  const merchant = merchants.find((candidate) => candidate.normalizedName === payment.normalizedMerchant) ?? null;
+  const merchant = payment.normalizedMerchant
+    ? merchants.find((candidate) => candidate.normalizedName === payment.normalizedMerchant) ?? null
+    : null;
   const evidence = merchant
     ? await readers.listTransactions(actor, workspaceId, {
       accountId: payment.accountId ?? undefined,
@@ -131,23 +133,23 @@ export function buildRecurringDetail({
     account: transaction.accountId ? accountById.get(transaction.accountId) ?? null : null,
     category: transaction.categoryId ? categoryById.get(transaction.categoryId) ?? null : null,
     merchant: transaction.merchantId ? merchantById.get(transaction.merchantId) ?? null : null,
-  }, payment.normalizedMerchant));
+  }, payment.normalizedMerchant ?? payment.displayName ?? "Recurring payment"));
   const history: RecurringDetailHistory[] = relatedRecords.map((transaction, index) => ({
     date: transaction.occurredAt.toISOString(),
     amount: { minor: transaction.amountMinor.toString(), currency: transaction.currency },
     transaction: relatedTransactions[index]!,
   }));
-  const lastOccurrenceAt = history[0]?.date ?? payment.lastOccurredAt;
+  const lastOccurrenceAt = history[0]?.date ?? (payment.origin === "MANUAL" ? null : payment.lastOccurredAt);
   const upcomingDates = payment.status === "IGNORED"
     ? []
-    : projectRecurringOccurrences(lastOccurrenceAt, payment.cadenceDays, now, timeZone, 12);
+    : projectRecurringPaymentOccurrences(payment, now, timeZone, 12);
   const account = payment.accountId ? accountById.get(payment.accountId) ?? null : null;
   const category = payment.categoryId ? categoryById.get(payment.categoryId) ?? null : null;
 
   return {
     id: payment.id,
-    title: merchant?.name ?? payment.normalizedMerchant,
-    direction: "OUTFLOW",
+    title: payment.displayName ?? merchant?.name ?? payment.normalizedMerchant ?? "Recurring payment",
+    direction: payment.direction === "INCOME" ? "INFLOW" : "OUTFLOW",
     status: payment.status,
     reviewState: payment.status === "CANDIDATE" ? "NEEDS_REVIEW" : null,
     capabilities: getRecurringCapabilities({ recurring: payment, workspaceRole }),
@@ -159,7 +161,7 @@ export function buildRecurringDetail({
     account: account ? { id: account.id, name: account.name } : null,
     category: category ? { id: category.id, name: category.name, systemKey: category.systemKey } : null,
     merchant: merchant ? { id: merchant.id, name: merchant.name } : null,
-    origin: "DETERMINISTIC_DETECTION",
+    origin: payment.origin === "MANUAL" ? "MANUAL" : "DETERMINISTIC_DETECTION",
     sampleCount: payment.sampleTransactionIds.length,
     upcomingOccurrences: upcomingDates.map((date) => ({
       date,

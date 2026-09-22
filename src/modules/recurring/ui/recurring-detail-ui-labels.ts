@@ -13,6 +13,7 @@ export type RecurringDetailUiLabels = {
   readonly name: string;
   readonly type: string;
   readonly outflow: string;
+  readonly inflow: string;
   readonly status: string;
   readonly account: string;
   readonly category: string;
@@ -30,7 +31,7 @@ export type RecurringDetailUiLabels = {
   readonly about: { readonly title: string; readonly description: string };
   readonly review: { readonly title: string; readonly description: string };
   readonly ignored: { readonly title: string; readonly description: string };
-  readonly origin: { readonly deterministic: string };
+  readonly origin: { readonly deterministic: string; readonly manual: string };
   readonly unavailable: string;
   readonly loading: string;
   readonly notFound: { readonly title: string; readonly description: string; readonly back: string };
@@ -53,6 +54,7 @@ export function getRecurringDetailUiLabels(labels: DashboardLabels): RecurringDe
     name: labels["recurring.detail.name"],
     type: labels["recurring.detail.type"],
     outflow: labels["recurring.detail.outflow"],
+    inflow: labels["recurring.detail.inflow"],
     status: labels["recurring.detail.status"],
     account: labels["recurring.detail.account"],
     category: labels["recurring.detail.category"],
@@ -79,7 +81,10 @@ export function getRecurringDetailUiLabels(labels: DashboardLabels): RecurringDe
       title: labels["recurring.detail.ignored.title"],
       description: labels["recurring.detail.ignored.description"],
     },
-    origin: { deterministic: labels["recurring.detail.origin.deterministic"] },
+    origin: {
+      deterministic: labels["recurring.detail.origin.deterministic"],
+      manual: labels["recurring.detail.origin.manual"],
+    },
     unavailable: labels["recurring.detail.unavailable"],
     loading: labels["recurring.detail.loading"],
     notFound: {

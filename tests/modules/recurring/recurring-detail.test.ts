@@ -37,6 +37,9 @@ function recurring(overrides: Partial<RecurringPaymentView> = {}): RecurringPaym
   return {
     id: "recurring-a",
     normalizedMerchant: "netflix",
+    displayName: null,
+    origin: "DETECTED",
+    direction: "EXPENSE",
     accountId: "account-a",
     categoryId: "category-a",
     status: "CONFIRMED",
@@ -45,6 +48,7 @@ function recurring(overrides: Partial<RecurringPaymentView> = {}): RecurringPaym
     currency: "XAF",
     firstOccurredAt: "2026-06-01T12:00:00.000Z",
     lastOccurredAt: "2026-09-01T12:00:00.000Z",
+    nextOccurrenceAt: null,
     sampleTransactionIds: ["transaction-1", "transaction-2", "transaction-3"],
     ...overrides,
   };

@@ -370,7 +370,9 @@ function OverviewContent({
             </div>
             <dl className="mt-3">
               <DetailRow label={labels.name}>{detail.title}</DetailRow>
-              <DetailRow label={labels.type}>{labels.outflow}</DetailRow>
+              <DetailRow label={labels.type}>
+                {detail.direction === "INFLOW" ? labels.inflow : labels.outflow}
+              </DetailRow>
               <DetailRow label={labels.status}>
                 <RecurringStatusBadge
                   labels={getRecurringUiLabels(dashboardLabels)}
@@ -417,13 +419,15 @@ function OverviewContent({
                   </time>
                 </DetailRow>
               ) : null}
-              <DetailRow label={labels.lastOccurrence}>
-                <time dateTime={detail.lastOccurrenceAt}>
-                  {formatDate(detail.lastOccurrenceAt, locale, timeZone)}
-                </time>
-              </DetailRow>
+              {detail.lastOccurrenceAt ? (
+                <DetailRow label={labels.lastOccurrence}>
+                  <time dateTime={detail.lastOccurrenceAt}>
+                    {formatDate(detail.lastOccurrenceAt, locale, timeZone)}
+                  </time>
+                </DetailRow>
+              ) : null}
               <DetailRow label={labels.source}>
-                {labels.origin.deterministic}
+                {detail.origin === "MANUAL" ? labels.origin.manual : labels.origin.deterministic}
               </DetailRow>
             </dl>
           </section>
@@ -693,7 +697,7 @@ export function RecurringDetailView({
   const dashboardLabels = getDashboardLabels(language);
   const subtitle = detail.category
     ? formatSystemCategory(dashboardLabels, detail.category)
-    : labels.origin.deterministic;
+    : detail.origin === "MANUAL" ? labels.origin.manual : labels.origin.deterministic;
   const tabContent =
     selectedTab === "overview" ? (
       <OverviewContent
@@ -758,7 +762,7 @@ export function RecurringDetailView({
             categoryName={detail.category?.name}
             merchantName={detail.title}
             size="md"
-            transactionKind="EXPENSE"
+            transactionKind={detail.direction === "INFLOW" ? "INCOME" : "EXPENSE"}
           />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">

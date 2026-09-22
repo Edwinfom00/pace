@@ -105,14 +105,14 @@ export function buildOverviewUpcomingBills(
   return payments
     .filter((payment) => payment.status === "CONFIRMED")
     .map((payment) => {
-      const merchantName = displayRecurringMerchant(payment.normalizedMerchant);
+      const merchantName = displayRecurringName(payment);
       return {
         recurringId: payment.id,
         merchantName,
-        nextExpectedAt: nextExpectedRecurringDate(payment.lastOccurredAt, payment.cadenceDays, from, timeZone),
+        nextExpectedAt: nextRecurringProjectionDate(payment, from, timeZone),
         amountMinor: payment.typicalAmountMinor,
         currency: payment.currency,
-        iconKey: resolveTransactionIcon({ merchantName, transactionKind: "EXPENSE" }).iconKey,
+        iconKey: resolveTransactionIcon({ merchantName, transactionKind: payment.direction }).iconKey,
       };
     })
     .sort((left, right) =>
@@ -147,6 +147,41 @@ export function nextExpectedRecurringDate(
   return periodForLocalDates(start, end, timeZone).start.toISOString();
 }
 
+/**
+ * Uses a manual pattern's explicit next date when it has one; detected M4
+ * patterns continue from their most recent transaction evidence.
+ */
+export function nextRecurringProjectionDate(
+  payment: Pick<RecurringPaymentView, "lastOccurredAt" | "nextOccurrenceAt" | "cadenceDays">,
+  from: Date,
+  timeZone: string,
+): string {
+  return payment.nextOccurrenceAt
+    ? nextScheduledRecurringDate(payment.nextOccurrenceAt, payment.cadenceDays, from, timeZone)
+    : nextExpectedRecurringDate(payment.lastOccurredAt, payment.cadenceDays, from, timeZone);
+}
+
+/** Like nextExpectedRecurringDate, but includes the persisted schedule anchor itself. */
+export function nextScheduledRecurringDate(
+  nextOccurrenceAt: string,
+  cadenceDays: number,
+  from: Date,
+  timeZone: string,
+): string {
+  const cadence = Math.max(1, Math.floor(cadenceDays));
+  const scheduled = localDateForInstant(new Date(nextOccurrenceAt), timeZone);
+  const target = localDateForInstant(from, timeZone);
+  let candidate = new Date(Date.UTC(scheduled.year, scheduled.month - 1, scheduled.day));
+
+  while (candidate.getTime() < Date.UTC(target.year, target.month - 1, target.day)) {
+    candidate = new Date(candidate.getTime() + cadence * 86_400_000);
+  }
+
+  const start = formatUtcCalendarDate(candidate);
+  const end = formatUtcCalendarDate(new Date(candidate.getTime() + 86_400_000));
+  return periodForLocalDates(start, end, timeZone).start.toISOString();
+}
+
 
 /**
  * Produces a canonical, informational-only recurrence projection. It never
@@ -165,6 +200,25 @@ export function projectRecurringOccurrences(
 
   for (let index = 0; index < projectionLimit; index += 1) {
     const occurrence = nextExpectedRecurringDate(lastOccurredAt, cadenceDays, cursor, timeZone);
+    occurrences.push(occurrence);
+    cursor = new Date(new Date(occurrence).getTime() + 86_400_000);
+  }
+
+  return occurrences;
+}
+
+export function projectRecurringPaymentOccurrences(
+  payment: Pick<RecurringPaymentView, "lastOccurredAt" | "nextOccurrenceAt" | "cadenceDays">,
+  from: Date,
+  timeZone: string,
+  limit: number,
+): readonly string[] {
+  const projectionLimit = Math.min(Math.max(Math.floor(limit), 1), 12);
+  const occurrences: string[] = [];
+  let cursor = from;
+
+  for (let index = 0; index < projectionLimit; index += 1) {
+    const occurrence = nextRecurringProjectionDate(payment, cursor, timeZone);
     occurrences.push(occurrence);
     cursor = new Date(new Date(occurrence).getTime() + 86_400_000);
   }
@@ -245,7 +299,8 @@ function moneyFact(value: unknown, currency: unknown, locale: string): string | 
   return formatOverviewMoney(value, currency, locale);
 }
 
-function displayRecurringMerchant(value: string): string {
+function displayRecurringName(payment: Pick<RecurringPaymentView, "displayName" | "normalizedMerchant">): string {
+  const value = payment.displayName ?? payment.normalizedMerchant ?? "Recurring payment";
   return value.replace(/\b\p{L}/gu, (letter) => letter.toLocaleUpperCase());
 }
 

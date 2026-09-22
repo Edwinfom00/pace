@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-import { AuthorizationError, ConflictError, NotFoundError } from "@/authorization/errors";
+import { AuthorizationError, ConflictError, DomainConflictError, NotFoundError } from "@/authorization/errors";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
 import type { AuthenticatedActor } from "@/authorization/session";
+import { toCurrencyCode } from "@/money/currency";
 import type { LedgerCategoryRecord, LedgerTransactionRecord } from "@/modules/ledger/domain";
 import { currentFinancialTransactions } from "@/modules/ledger/correction-chain";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
@@ -15,11 +16,17 @@ import {
   type InboxAction,
   type InboxReason,
   isClassifiableTransaction,
+  type RecurringPaymentDirection,
   type RecurringPaymentRecord,
   type ResolveInboxInput,
   type TransactionClassificationRecord,
 } from "./domain";
-import { detectRecurringCandidates } from "./recurring-detection";
+import {
+  detectRecurringCandidates,
+  RECURRING_AMOUNT_TOLERANCE_BPS,
+  type RecurringCandidate,
+  withinAmountTolerance,
+} from "./recurring-detection";
 import type { FinancialInboxRepository } from "./repositories/financial-inbox-repository";
 
 export interface TransactionClassificationRequest {
@@ -69,7 +76,10 @@ export interface FinancialInboxPreviewView {
 
 export interface RecurringPaymentView {
   id: string;
-  normalizedMerchant: string;
+  normalizedMerchant: string | null;
+  displayName: string | null;
+  origin: "DETECTED" | "MANUAL";
+  direction: "EXPENSE" | "INCOME";
   accountId: string | null;
   categoryId: string | null;
   status: RecurringPaymentRecord["status"];
@@ -78,7 +88,30 @@ export interface RecurringPaymentView {
   currency: string;
   firstOccurredAt: string;
   lastOccurredAt: string;
+  nextOccurrenceAt: string | null;
   sampleTransactionIds: string[];
+}
+
+export const MAX_MANUAL_RECURRING_NAME_LENGTH = 160;
+export const MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH = 180;
+
+/**
+ * The canonical server/domain command for an intentional recurring pattern.
+ * It only creates the pattern; it never creates a ledger transaction.
+ */
+export interface CreateManualRecurringCommand {
+  readonly workspaceId: string;
+  readonly direction: RecurringPaymentDirection;
+  readonly name: string;
+  readonly amountMinor: bigint;
+  readonly currency: string;
+  readonly cadenceDays: number;
+  readonly nextOccurrenceAt: Date;
+  readonly accountId?: string | null;
+  readonly categoryId?: string | null;
+  /** Existing M4 matching identity; it is intentionally not inferred from `name`. */
+  readonly merchantOrSource?: string | null;
+  readonly idempotencyKey: string;
 }
 
 /**
@@ -91,7 +124,7 @@ export class FinancialInboxService {
     private readonly repository: FinancialInboxRepository,
     private readonly ledger: Pick<
       LedgerRepository,
-      "findCategory" | "findMerchant" | "findTransaction" | "listCategories" | "listTransactions"
+      "findAccount" | "findCategory" | "findMerchant" | "findTransaction" | "listCategories" | "listTransactions"
     >,
     private readonly workspaces: Pick<WorkspaceRepository, "findMemberContext">,
   ) {}
@@ -241,6 +274,124 @@ export class FinancialInboxService {
     await this.requirePermission(actor.userId, workspaceId, "read");
     const payments = await this.repository.listRecurringPayments(workspaceId);
     return payments.map((payment) => this.presentRecurring(payment));
+  }
+
+  /**
+   * Creates an intentional M4 recurring pattern. This method does not call a
+   * ledger write path: balances, reporting, and transactions stay untouched.
+   */
+  async createManualRecurring(
+    actor: AuthenticatedActor,
+    command: CreateManualRecurringCommand,
+  ): Promise<RecurringPaymentView> {
+    await this.requirePermission(actor.userId, command.workspaceId, "manage_ledger");
+    const prepared = prepareManualRecurringCommand(command);
+    const commandFingerprint = fingerprintManualRecurringCommand(prepared);
+
+    const previous = await this.repository.findRecurringPaymentByIdempotencyKey(
+      command.workspaceId,
+      actor.userId,
+      prepared.idempotencyKey,
+    );
+    if (previous) return this.resolveExistingManualCommand(previous, commandFingerprint);
+
+    const [account, category] = await Promise.all([
+      prepared.accountId ? this.ledger.findAccount(command.workspaceId, prepared.accountId) : null,
+      prepared.categoryId
+        ? this.ledger.findCategory(command.workspaceId, prepared.categoryId)
+        : null,
+    ]);
+    if (prepared.accountId && !account) {
+      throw new DomainConflictError("ACCOUNT_NOT_FOUND", "The selected account was not found in this workspace.");
+    }
+    if (account?.archivedAt) {
+      throw new DomainConflictError("ACCOUNT_UNAVAILABLE", "The selected account is archived and cannot be used.");
+    }
+    if (account && account.currency !== prepared.currency) {
+      throw new DomainConflictError(
+        "CURRENCY_MISMATCH",
+        "The recurring currency must match the selected account currency.",
+      );
+    }
+    if (prepared.categoryId && !category) {
+      throw new DomainConflictError("CATEGORY_NOT_FOUND", "The selected category was not found in this workspace.");
+    }
+    if (category && category.kind !== prepared.direction) {
+      throw new DomainConflictError(
+        "INVALID_RECURRING_CATEGORY",
+        "The category does not match the recurring direction.",
+      );
+    }
+
+    const now = new Date();
+    const id = randomUUID();
+    const input = {
+      id,
+      workspaceId: command.workspaceId,
+      // Manual patterns use a private key. Detection matching intentionally
+      // evaluates the richer evidence below instead of relying on key equality.
+      detectionKey: `manual:${id}`,
+      normalizedMerchant: prepared.normalizedMerchant,
+      displayName: prepared.name,
+      origin: "MANUAL" as const,
+      direction: prepared.direction,
+      accountId: prepared.accountId,
+      categoryId: prepared.categoryId,
+      currency: prepared.currency,
+      typicalAmountMinor: prepared.amountMinor,
+      amountToleranceBps: RECURRING_AMOUNT_TOLERANCE_BPS,
+      cadenceDays: prepared.cadenceDays,
+      // M4's required historical anchors are retained for compatibility. The
+      // separate nextOccurrenceAt field is authoritative for this manual plan.
+      firstOccurredAt: prepared.nextOccurrenceAt,
+      lastOccurredAt: prepared.nextOccurrenceAt,
+      nextOccurrenceAt: prepared.nextOccurrenceAt,
+      sampleTransactionIds: [],
+      status: "CONFIRMED" as const,
+      createdByUserId: actor.userId,
+      idempotencyKey: prepared.idempotencyKey,
+      commandFingerprint,
+      confirmedByUserId: actor.userId,
+      confirmedAt: now,
+      ignoredByUserId: null,
+      ignoredAt: null,
+    };
+
+    let created: RecurringPaymentRecord;
+    try {
+      created = await this.repository.createRecurringPayment(input);
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const concurrent = await this.repository.findRecurringPaymentByIdempotencyKey(
+        command.workspaceId,
+        actor.userId,
+        prepared.idempotencyKey,
+      );
+      if (!concurrent) {
+        throw new DomainConflictError(
+          "CONCURRENT_MODIFICATION",
+          "The recurring pattern could not be created because another write changed concurrently.",
+        );
+      }
+      return this.resolveExistingManualCommand(concurrent, commandFingerprint);
+    }
+
+    await this.audit(command.workspaceId, {
+      recurringPaymentId: created.id,
+      actorUserId: actor.userId,
+      event: "RECURRING_MANUAL_CREATED",
+      metadata: {
+        origin: created.origin,
+        direction: created.direction,
+        amountMinor: created.typicalAmountMinor.toString(),
+        currency: created.currency,
+        cadenceDays: created.cadenceDays,
+        nextOccurrenceAt: created.nextOccurrenceAt?.toISOString() ?? null,
+        accountId: created.accountId,
+        categoryId: created.categoryId,
+      },
+    });
+    return this.presentRecurring(created);
   }
 
   async resolveInboxItem(
@@ -417,11 +568,32 @@ export class FinancialInboxService {
       return null;
     }
 
+    const matchingManual = (await this.repository.listRecurringPayments(workspaceId)).find((payment) =>
+      isStrongManualRecurringMatch(payment, candidate),
+    );
+    if (matchingManual) {
+      await this.repository.updateRecurringPayment(workspaceId, matchingManual.id, {
+        lastOccurredAt: candidate.lastOccurredAt,
+        sampleTransactionIds: uniqueTransactionIds([
+          ...matchingManual.sampleTransactionIds,
+          ...candidate.sampleTransactionIds,
+        ]),
+      });
+      return null;
+    }
+
     const created = await this.repository.createRecurringPayment({
       id: randomUUID(),
       workspaceId,
       ...candidate,
+      displayName: null,
+      origin: "DETECTED",
+      direction: "EXPENSE",
+      nextOccurrenceAt: null,
       status: "CANDIDATE",
+      createdByUserId: actor.userId,
+      idempotencyKey: null,
+      commandFingerprint: null,
       confirmedByUserId: null,
       confirmedAt: null,
       ignoredByUserId: null,
@@ -540,6 +712,9 @@ export class FinancialInboxService {
     return {
       id: payment.id,
       normalizedMerchant: payment.normalizedMerchant,
+      displayName: payment.displayName,
+      origin: payment.origin,
+      direction: payment.direction,
       accountId: payment.accountId,
       categoryId: payment.categoryId,
       status: payment.status,
@@ -548,8 +723,26 @@ export class FinancialInboxService {
       currency: payment.currency,
       firstOccurredAt: payment.firstOccurredAt.toISOString(),
       lastOccurredAt: payment.lastOccurredAt.toISOString(),
+      nextOccurrenceAt: payment.nextOccurrenceAt?.toISOString() ?? null,
       sampleTransactionIds: payment.sampleTransactionIds,
     };
+  }
+
+  private resolveExistingManualCommand(
+    existing: RecurringPaymentRecord,
+    commandFingerprint: string,
+  ): RecurringPaymentView {
+    if (
+      existing.origin !== "MANUAL" ||
+      !existing.commandFingerprint ||
+      existing.commandFingerprint !== commandFingerprint
+    ) {
+      throw new DomainConflictError(
+        "RECURRING_ALREADY_PROCESSED",
+        "This idempotency key was already used for a different recurring pattern.",
+      );
+    }
+    return this.presentRecurring(existing);
   }
 
   private async requireCategory(
@@ -590,6 +783,175 @@ function normalizeMerchantForDetection(value: string): string {
     .replace(/[^\p{Letter}\p{Number}]+/gu, " ")
     .trim()
     .replaceAll(/\s+/g, " ");
+}
+
+type PreparedManualRecurringCommand = {
+  readonly name: string;
+  readonly direction: RecurringPaymentDirection;
+  readonly amountMinor: bigint;
+  readonly currency: string;
+  readonly cadenceDays: number;
+  readonly nextOccurrenceAt: Date;
+  readonly accountId: string | null;
+  readonly categoryId: string | null;
+  readonly normalizedMerchant: string | null;
+  readonly idempotencyKey: string;
+};
+
+function prepareManualRecurringCommand(
+  command: CreateManualRecurringCommand,
+): PreparedManualRecurringCommand {
+  if (typeof command.name !== "string") {
+    throw new DomainConflictError("INVALID_RECURRING_NAME", "A recurring name is required.");
+  }
+  const name = command.name.normalize("NFKC").trim().replaceAll(/\s+/g, " ");
+  if (!name || name.length > MAX_MANUAL_RECURRING_NAME_LENGTH) {
+    throw new DomainConflictError(
+      "INVALID_RECURRING_NAME",
+      `A recurring name must contain 1 to ${MAX_MANUAL_RECURRING_NAME_LENGTH} characters.`,
+    );
+  }
+  if (command.direction !== "EXPENSE" && command.direction !== "INCOME") {
+    throw new DomainConflictError(
+      "INVALID_RECURRING_DIRECTION",
+      "A manual recurring pattern must be an expense or income.",
+    );
+  }
+  if (typeof command.amountMinor !== "bigint" || command.amountMinor <= 0n) {
+    throw new DomainConflictError(
+      "INVALID_RECURRING_AMOUNT",
+      "A recurring amount must be a positive bigint minor-unit value.",
+    );
+  }
+  if (
+    !Number.isInteger(command.cadenceDays) ||
+    command.cadenceDays < 7 ||
+    command.cadenceDays > 400
+  ) {
+    throw new DomainConflictError(
+      "INVALID_RECURRING_FREQUENCY",
+      "The recurring cadence must use the canonical 7 to 400 day interval.",
+    );
+  }
+  if (!(command.nextOccurrenceAt instanceof Date) || Number.isNaN(command.nextOccurrenceAt.getTime())) {
+    throw new DomainConflictError(
+      "INVALID_NEXT_OCCURRENCE",
+      "A valid next occurrence date is required.",
+    );
+  }
+  if (typeof command.idempotencyKey !== "string") {
+    throw new DomainConflictError("RECURRING_CREATE_NOT_ALLOWED", "An idempotency key is required.");
+  }
+  const idempotencyKey = command.idempotencyKey.trim();
+  if (!idempotencyKey || idempotencyKey.length > MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH) {
+    throw new DomainConflictError(
+      "RECURRING_CREATE_NOT_ALLOWED",
+      `An idempotency key must contain 1 to ${MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH} characters.`,
+    );
+  }
+
+  let currency: string;
+  try {
+    currency = toCurrencyCode(command.currency);
+  } catch {
+    throw new DomainConflictError("INVALID_RECURRING_CURRENCY", "Use a supported ISO currency code.");
+  }
+
+  const merchantOrSource = normalizeOptionalMerchantOrSource(command.merchantOrSource);
+  return {
+    name,
+    direction: command.direction,
+    amountMinor: command.amountMinor,
+    currency,
+    cadenceDays: command.cadenceDays,
+    nextOccurrenceAt: new Date(command.nextOccurrenceAt),
+    accountId: optionalIdentifier(command.accountId, "ACCOUNT_NOT_FOUND"),
+    categoryId: optionalIdentifier(command.categoryId, "CATEGORY_NOT_FOUND"),
+    normalizedMerchant: merchantOrSource,
+    idempotencyKey,
+  };
+}
+
+function normalizeOptionalMerchantOrSource(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") {
+    throw new DomainConflictError("INVALID_RECURRING_SOURCE", "The recurring source must be text.");
+  }
+  const trimmed = value.normalize("NFKC").trim().replaceAll(/\s+/g, " ");
+  if (!trimmed) return null;
+  if (trimmed.length > MAX_MANUAL_RECURRING_NAME_LENGTH) {
+    throw new DomainConflictError(
+      "INVALID_RECURRING_SOURCE",
+      `The recurring source must contain at most ${MAX_MANUAL_RECURRING_NAME_LENGTH} characters.`,
+    );
+  }
+  const normalized = normalizeMerchantForDetection(trimmed);
+  if (!normalized) {
+    throw new DomainConflictError("INVALID_RECURRING_SOURCE", "The recurring source must contain letters or numbers.");
+  }
+  return normalized;
+}
+
+function optionalIdentifier(
+  value: string | null | undefined,
+  code: "ACCOUNT_NOT_FOUND" | "CATEGORY_NOT_FOUND",
+): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new DomainConflictError(code, "A linked resource identifier must be non-empty text.");
+  }
+  return value.trim();
+}
+
+function fingerprintManualRecurringCommand(command: PreparedManualRecurringCommand): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      name: command.name,
+      direction: command.direction,
+      amountMinor: command.amountMinor.toString(),
+      currency: command.currency,
+      cadenceDays: command.cadenceDays,
+      nextOccurrenceAt: command.nextOccurrenceAt.toISOString(),
+      accountId: command.accountId,
+      categoryId: command.categoryId,
+      normalizedMerchant: command.normalizedMerchant,
+    }))
+    .digest("hex");
+}
+
+function isStrongManualRecurringMatch(
+  payment: RecurringPaymentRecord,
+  candidate: RecurringCandidate,
+): boolean {
+  if (
+    payment.origin !== "MANUAL" ||
+    payment.direction !== "EXPENSE" ||
+    payment.status !== "CONFIRMED" ||
+    !payment.normalizedMerchant ||
+    payment.normalizedMerchant !== candidate.normalizedMerchant ||
+    payment.currency !== candidate.currency ||
+    payment.accountId !== candidate.accountId ||
+    !withinAmountTolerance(candidate.typicalAmountMinor, payment.typicalAmountMinor, payment.amountToleranceBps)
+  ) {
+    return false;
+  }
+  if (
+    payment.categoryId !== null &&
+    candidate.categoryId !== null &&
+    payment.categoryId !== candidate.categoryId
+  ) {
+    return false;
+  }
+  const tolerance = Math.max(3, Math.round(Math.max(payment.cadenceDays, candidate.cadenceDays) * 0.2));
+  return Math.abs(payment.cadenceDays - candidate.cadenceDays) <= tolerance;
+}
+
+function uniqueTransactionIds(ids: readonly string[]): string[] {
+  return [...new Set(ids)];
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "23505";
 }
 
 function isPossibleTransfer(transaction: LedgerTransactionRecord, merchantName: string | null): boolean {

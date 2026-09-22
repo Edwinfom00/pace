@@ -50,6 +50,9 @@ function recurring(id: string, overrides: Partial<RecurringPaymentView> = {}): R
   return {
     id,
     normalizedMerchant: "netflix",
+    displayName: null,
+    origin: "DETECTED",
+    direction: "EXPENSE",
     accountId: null,
     categoryId: null,
     status: "CONFIRMED",
@@ -58,6 +61,7 @@ function recurring(id: string, overrides: Partial<RecurringPaymentView> = {}): R
     currency: "XAF",
     firstOccurredAt: "2026-07-01T12:00:00.000Z",
     lastOccurredAt: "2026-09-01T12:00:00.000Z",
+    nextOccurrenceAt: null,
     sampleTransactionIds: [],
     ...overrides,
   };

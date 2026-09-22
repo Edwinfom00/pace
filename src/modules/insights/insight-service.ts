@@ -161,7 +161,13 @@ export class InsightService {
       transactions: transactions.filter(isUserFacingLedgerTransaction),
       budgets,
       goals,
-      recurringPayments,
+      // Manual recurring patterns are intentional projections, not historical
+      // evidence for a recurring-price insight. They become eligible only when
+      // the existing detector has transaction evidence to analyze.
+      recurringPayments: recurringPayments.filter(
+        (payment): payment is typeof payment & { normalizedMerchant: string } =>
+          payment.origin === "DETECTED" && payment.normalizedMerchant !== null,
+      ),
       merchantNames,
     });
     const byFingerprint = new Map(existing.map((insight) => [insight.fingerprint, insight]));

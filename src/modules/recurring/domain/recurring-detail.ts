@@ -19,7 +19,7 @@ export type RecurringDetailHistory = RecurringDetailOccurrence & {
 export type RecurringDetail = {
   readonly id: string;
   readonly title: string;
-  readonly direction: "OUTFLOW";
+  readonly direction: "OUTFLOW" | "INFLOW";
   readonly status: RecurringPaymentStatus;
   readonly reviewState: "NEEDS_REVIEW" | null;
   readonly capabilities: RecurringCapabilities;
@@ -27,12 +27,12 @@ export type RecurringDetail = {
   readonly cadenceDays: number;
   readonly startedAt: string;
   /** The latest canonical matched date, not a retrospective projection. */
-  readonly lastOccurrenceAt: string;
+  readonly lastOccurrenceAt: string | null;
   readonly nextOccurrenceAt: string | null;
   readonly account: { readonly id: string; readonly name: string } | null;
   readonly category: { readonly id: string; readonly name: string; readonly systemKey: string | null } | null;
   readonly merchant: { readonly id: string; readonly name: string } | null;
-  readonly origin: "DETERMINISTIC_DETECTION";
+  readonly origin: "DETERMINISTIC_DETECTION" | "MANUAL";
   readonly sampleCount: number;
   readonly upcomingOccurrences: readonly RecurringDetailOccurrence[];
   readonly history: readonly RecurringDetailHistory[];

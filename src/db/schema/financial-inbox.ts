@@ -51,6 +51,10 @@ export const recurringPaymentStatus = pgEnum("recurring_payment_status", [
   "IGNORED",
 ]);
 
+export const recurringPaymentOrigin = pgEnum("recurring_payment_origin", ["DETECTED", "MANUAL"]);
+
+export const recurringPaymentDirection = pgEnum("recurring_payment_direction", ["EXPENSE", "INCOME"]);
+
 export const transactionClassificationRules = pgTable(
   "transaction_classification_rule",
   {
@@ -135,7 +139,11 @@ export const recurringPayments = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     detectionKey: varchar("detection_key", { length: 256 }).notNull(),
-    normalizedMerchant: varchar("normalized_merchant", { length: 160 }).notNull(),
+
+    normalizedMerchant: varchar("normalized_merchant", { length: 160 }),
+    displayName: varchar("display_name", { length: 160 }),
+    origin: recurringPaymentOrigin("origin").notNull().default("DETECTED"),
+    direction: recurringPaymentDirection("direction").notNull().default("EXPENSE"),
     accountId: text("account_id").references(() => ledgerAccounts.id, { onDelete: "restrict" }),
     categoryId: text("category_id").references(() => ledgerCategories.id, { onDelete: "restrict" }),
     currency: varchar("currency", { length: 3 }).notNull(),
@@ -144,8 +152,16 @@ export const recurringPayments = pgTable(
     cadenceDays: integer("cadence_days").notNull(),
     firstOccurredAt: timestamp("first_occurred_at", { withTimezone: true }).notNull(),
     lastOccurredAt: timestamp("last_occurred_at", { withTimezone: true }).notNull(),
+    // A manual schedule has a user-chosen first/next date. It is an anchor for
+    // informational projections, not evidence that money already moved.
+    nextOccurrenceAt: timestamp("next_occurrence_at", { withTimezone: true }),
     sampleTransactionIds: jsonb("sample_transaction_ids").$type<string[]>().notNull().default([]),
     status: recurringPaymentStatus("status").notNull().default("CANDIDATE"),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "restrict",
+    }),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
+    commandFingerprint: varchar("command_fingerprint", { length: 128 }),
     confirmedByUserId: text("confirmed_by_user_id").references(() => users.id, {
       onDelete: "restrict",
     }),
@@ -166,7 +182,11 @@ export const recurringPayments = pgTable(
       table.workspaceId,
       table.detectionKey,
     ),
+    uniqueIndex("recurring_payment_workspace_actor_key_unique")
+      .on(table.workspaceId, table.createdByUserId, table.idempotencyKey)
+      .where(sql`${table.createdByUserId} IS NOT NULL AND ${table.idempotencyKey} IS NOT NULL`),
     index("recurring_payment_workspace_status_idx").on(table.workspaceId, table.status),
+    index("recurring_payment_workspace_origin_idx").on(table.workspaceId, table.origin),
     check("recurring_payment_amount_tolerance_check", sql`${table.amountToleranceBps} >= 0 AND ${table.amountToleranceBps} <= 10000`),
     check("recurring_payment_cadence_check", sql`${table.cadenceDays} >= 7 AND ${table.cadenceDays} <= 400`),
   ],

@@ -1,7 +1,7 @@
 import type { LedgerAccountRecord, LedgerCategoryRecord } from "@/modules/ledger/domain";
 import type { RecurringPaymentStatus } from "@/modules/financial-inbox/domain";
 import type { RecurringPaymentView } from "@/modules/financial-inbox/financial-inbox-service";
-import { nextExpectedRecurringDate } from "@/modules/overview/domain/overview-right-rail";
+import { nextRecurringProjectionDate } from "@/modules/overview/domain/overview-right-rail";
 import type { WorkspaceRole } from "@/authorization/workspace-permissions";
 
 import { getRecurringCapabilities, type RecurringCapabilities } from "./recurring-action-policy";
@@ -13,8 +13,8 @@ export type RecurringOverviewFilter = (typeof RECURRING_OVERVIEW_FILTERS)[number
 export type RecurringOverviewItem = {
   readonly id: string;
   readonly merchantName: string;
-  readonly direction: "OUTFLOW";
-  readonly origin: "DETERMINISTIC_DETECTION";
+  readonly direction: "OUTFLOW" | "INFLOW";
+  readonly origin: "DETERMINISTIC_DETECTION" | "MANUAL";
   readonly amountKind: "TYPICAL";
   readonly typicalAmountMinor: string;
   readonly currency: string;
@@ -38,7 +38,7 @@ export type RecurringCurrencyTotal = {
 
 export type RecurringUpcomingItem = Pick<
   RecurringOverviewItem,
-  "id" | "merchantName" | "typicalAmountMinor" | "currency" | "category" | "nextExpectedAt"
+  "id" | "merchantName" | "direction" | "typicalAmountMinor" | "currency" | "category" | "nextExpectedAt"
 >;
 
 export type RecurringOverview = {
@@ -96,15 +96,17 @@ export function buildRecurringOverview({
   } as const satisfies Readonly<Record<RecurringOverviewFilter, number>>;
 
   const confirmed = items.filter((item) => item.status === "CONFIRMED");
+  const confirmedOutflows = confirmed.filter((item) => item.direction === "OUTFLOW");
   const upcomingCutoff = new Date(now.getTime() + 30 * 86_400_000);
   const upcoming = confirmed
     .filter((item): item is RecurringOverviewItem & { readonly nextExpectedAt: string } =>
       item.nextExpectedAt !== null && new Date(item.nextExpectedAt).getTime() <= upcomingCutoff.getTime(),
     )
     .slice(0, 8)
-    .map(({ id, merchantName, typicalAmountMinor, currency, category, nextExpectedAt }) => ({
+    .map(({ id, merchantName, direction, typicalAmountMinor, currency, category, nextExpectedAt }) => ({
       id,
       merchantName,
+      direction,
       typicalAmountMinor,
       currency,
       category,
@@ -114,8 +116,8 @@ export function buildRecurringOverview({
   return {
     filter,
     counts,
-    confirmedOutflows: groupByCurrency(confirmed),
-    expectedUpcoming: groupByCurrency(upcoming),
+    confirmedOutflows: groupByCurrency(confirmedOutflows),
+    expectedUpcoming: groupByCurrency(upcoming.filter((item) => item.direction === "OUTFLOW")),
     items: filterItems(items, filter),
     upcoming,
   };
@@ -133,9 +135,9 @@ function toOverviewItem(
   const category = payment.categoryId ? categoryById.get(payment.categoryId) ?? null : null;
   return {
     id: payment.id,
-    merchantName: payment.normalizedMerchant,
-    direction: "OUTFLOW",
-    origin: "DETERMINISTIC_DETECTION",
+    merchantName: payment.displayName ?? payment.normalizedMerchant ?? "Recurring payment",
+    direction: payment.direction === "INCOME" ? "INFLOW" : "OUTFLOW",
+    origin: payment.origin === "MANUAL" ? "MANUAL" : "DETERMINISTIC_DETECTION",
     amountKind: "TYPICAL",
     typicalAmountMinor: payment.typicalAmountMinor,
     currency: payment.currency,
@@ -149,7 +151,7 @@ function toOverviewItem(
     lastOccurredAt: payment.lastOccurredAt,
     nextExpectedAt: payment.status === "IGNORED"
       ? null
-      : nextExpectedRecurringDate(payment.lastOccurredAt, payment.cadenceDays, now, timeZone),
+      : nextRecurringProjectionDate(payment, now, timeZone),
     sampleCount: payment.sampleTransactionIds.length,
   };
 }
