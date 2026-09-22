@@ -17,6 +17,7 @@ export function TransactionTableRow({
   now,
   actions,
   detailHref,
+  showActions = true,
 }: {
   readonly transaction: TransactionListItem;
   readonly labels: TransactionUiLabels;
@@ -25,6 +26,7 @@ export function TransactionTableRow({
   readonly now: string;
   readonly actions?: readonly TransactionRowAction[];
   readonly detailHref?: string;
+  readonly showActions?: boolean;
 }) {
   return (
     <tr className="group border-b border-[#edf0f4] bg-white transition-colors hover:bg-[#fbfcfe] last:border-b-0">
@@ -60,9 +62,11 @@ export function TransactionTableRow({
           status={transaction.status}
         />
       </td>
-      <td className="w-11 px-2 py-3.5 text-right sm:px-3">
-        <TransactionRowActions actions={actions} label={labels.actionsMenu} merchantName={transaction.merchant.name} />
-      </td>
+      {showActions ? (
+        <td className="w-11 px-2 py-3.5 text-right sm:px-3">
+          <TransactionRowActions actions={actions} label={labels.actionsMenu} merchantName={transaction.merchant.name} />
+        </td>
+      ) : null}
     </tr>
   );
 }

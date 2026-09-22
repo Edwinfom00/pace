@@ -17,6 +17,7 @@ export function TransactionMobileCard({
   now,
   actions,
   detailHref,
+  showActions = true,
 }: {
   readonly transaction: TransactionListItem;
   readonly labels: TransactionUiLabels;
@@ -25,6 +26,7 @@ export function TransactionMobileCard({
   readonly now: string;
   readonly actions?: readonly TransactionRowAction[];
   readonly detailHref?: string;
+  readonly showActions?: boolean;
 }) {
   return (
     <article className="rounded-[12px] border border-[#e7ebf1] bg-white px-4 py-3.5">
@@ -52,9 +54,11 @@ export function TransactionMobileCard({
         />
         <span aria-hidden="true" className="mx-2 text-[#c0c8d5]">·</span>
         <TransactionAccountCell account={transaction.account} unavailableLabel={labels.accountUnavailable} />
-        <span className="ml-auto -mr-1">
-          <TransactionRowActions actions={actions} label={labels.actionsMenu} merchantName={transaction.merchant.name} />
-        </span>
+        {showActions ? (
+          <span className="ml-auto -mr-1">
+            <TransactionRowActions actions={actions} label={labels.actionsMenu} merchantName={transaction.merchant.name} />
+          </span>
+        ) : null}
       </div>
     </article>
   );

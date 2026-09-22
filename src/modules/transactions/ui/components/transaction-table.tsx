@@ -10,6 +10,7 @@ export function TransactionTable({
   now,
   getRowActions,
   getDetailHref,
+  showActions = true,
 }: {
   readonly transactions: readonly TransactionListItem[];
   readonly labels: TransactionUiLabels;
@@ -18,6 +19,7 @@ export function TransactionTable({
   readonly now: string;
   readonly getRowActions?: (transaction: TransactionListItem) => readonly TransactionRowAction[];
   readonly getDetailHref?: (transaction: TransactionListItem) => string;
+  readonly showActions?: boolean;
 }) {
   return (
     <div className="hidden overflow-hidden rounded-[12px] border border-[#e7ebf1] bg-white md:block">
@@ -43,9 +45,11 @@ export function TransactionTable({
               <th className="hidden px-3 py-3 text-[11px] font-medium tracking-[-0.01em] text-[#71809a] xl:table-cell" scope="col">
                 {labels.columnStatus}
               </th>
-              <th className="w-11 px-2 py-3 sm:px-3">
-                <span className="sr-only">{labels.columnActions}</span>
-              </th>
+              {showActions ? (
+                <th className="w-11 px-2 py-3 sm:px-3">
+                  <span className="sr-only">{labels.columnActions}</span>
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -59,6 +63,7 @@ export function TransactionTable({
                 timeZone={timeZone}
                 transaction={transaction}
                 detailHref={getDetailHref?.(transaction)}
+                showActions={showActions}
               />
             ))}
           </tbody>

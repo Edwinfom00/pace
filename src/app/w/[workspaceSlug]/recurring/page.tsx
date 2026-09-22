@@ -40,6 +40,7 @@ export default async function RecurringPage({ params, searchParams }: RecurringP
       overview={overview}
       timeZone={workspace.preferences.timezone}
       workspaceId={workspace.workspace.id}
+      workspaceSlug={workspace.workspace.slug}
     />
   );
 }

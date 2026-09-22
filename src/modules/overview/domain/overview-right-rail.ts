@@ -147,6 +147,31 @@ export function nextExpectedRecurringDate(
   return periodForLocalDates(start, end, timeZone).start.toISOString();
 }
 
+
+/**
+ * Produces a canonical, informational-only recurrence projection. It never
+ * creates ledger transactions or changes balances.
+ */
+export function projectRecurringOccurrences(
+  lastOccurredAt: string,
+  cadenceDays: number,
+  from: Date,
+  timeZone: string,
+  limit: number,
+): readonly string[] {
+  const projectionLimit = Math.min(Math.max(Math.floor(limit), 1), 12);
+  const occurrences: string[] = [];
+  let cursor = from;
+
+  for (let index = 0; index < projectionLimit; index += 1) {
+    const occurrence = nextExpectedRecurringDate(lastOccurredAt, cadenceDays, cursor, timeZone);
+    occurrences.push(occurrence);
+    cursor = new Date(new Date(occurrence).getTime() + 86_400_000);
+  }
+
+  return occurrences;
+}
+
 function presentDailyBriefItem(
   insight: InsightRecord,
   language: string,
