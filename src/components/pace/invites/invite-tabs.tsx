@@ -32,13 +32,13 @@ export function InviteTabs({
     >
       <Tabs.List className="grid grid-cols-2 border-b border-[#dce4f0]" aria-label={`${emailLabel} / ${linkLabel}`}>
         <Tabs.Trigger
-          className="relative h-13 px-4 text-[16px] font-medium text-[#1b3159] outline-none transition after:absolute after:inset-x-0 after:bottom-[-1px] after:h-0.5 after:scale-x-0 after:bg-[#3268ed] after:transition-transform data-[state=active]:font-semibold data-[state=active]:text-[#1758e8] data-[state=active]:after:scale-x-100 focus-visible:bg-[#f0f5ff]"
+          className="relative h-13 px-4 text-[16px] font-medium text-[#1b3159] outline-none transition after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:scale-x-0 after:bg-[#3268ed] after:transition-transform data-[state=active]:font-semibold data-[state=active]:text-[#1758e8] data-[state=active]:after:scale-x-100 focus-visible:bg-[#f0f5ff]"
           value="email"
         >
           {emailLabel}
         </Tabs.Trigger>
         <Tabs.Trigger
-          className="relative h-13 px-4 text-[16px] font-medium text-[#1b3159] outline-none transition after:absolute after:inset-x-0 after:bottom-[-1px] after:h-0.5 after:scale-x-0 after:bg-[#3268ed] after:transition-transform data-[state=active]:font-semibold data-[state=active]:text-[#1758e8] data-[state=active]:after:scale-x-100 focus-visible:bg-[#f0f5ff]"
+          className="relative h-13 px-4 text-[16px] font-medium text-[#1b3159] outline-none transition after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:scale-x-0 after:bg-[#3268ed] after:transition-transform data-[state=active]:font-semibold data-[state=active]:text-[#1758e8] data-[state=active]:after:scale-x-100 focus-visible:bg-[#f0f5ff]"
           value="link"
         >
           {linkLabel}

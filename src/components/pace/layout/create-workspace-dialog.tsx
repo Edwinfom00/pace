@@ -201,7 +201,7 @@ export function CreateWorkspaceDialog({
             </fieldset>
           </div>
 
-          <ResponsiveDialogFooter className="mx-0 mb-0 !flex-col rounded-none border-[#e1e2e6] bg-[#f7f7f8] px-5 py-3 lg:px-6">
+          <ResponsiveDialogFooter className="mx-0 mb-0 flex-col! rounded-none border-[#e1e2e6] bg-[#f7f7f8] px-5 py-3 lg:px-6">
             <Button className="h-10 w-full rounded-[8px] border-[#e1e3e8] bg-white px-3 text-[#171b24] shadow-[0_2px_3px_rgb(31_38_55/0.08)] hover:bg-white" disabled={isCreating} type="submit" variant="outline">
               <span className="flex-1 text-center">{isCreating ? labels["workspace.create.submitting"] : labels["workspace.create.submit"]}</span>
               {!isCreating ? <HiOutlinePlus aria-hidden="true" className="size-4 text-[#3d4657]" /> : null}

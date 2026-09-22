@@ -94,6 +94,7 @@ export interface RecurringPaymentView {
 
 export const MAX_MANUAL_RECURRING_NAME_LENGTH = 160;
 export const MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH = 180;
+const MAX_POSTGRES_BIGINT_MINOR = 9_223_372_036_854_775_807n;
 
 /**
  * The canonical server/domain command for an intentional recurring pattern.
@@ -817,7 +818,11 @@ function prepareManualRecurringCommand(
       "A manual recurring pattern must be an expense or income.",
     );
   }
-  if (typeof command.amountMinor !== "bigint" || command.amountMinor <= 0n) {
+  if (
+    typeof command.amountMinor !== "bigint" ||
+    command.amountMinor <= 0n ||
+    command.amountMinor > MAX_POSTGRES_BIGINT_MINOR
+  ) {
     throw new DomainConflictError(
       "INVALID_RECURRING_AMOUNT",
       "A recurring amount must be a positive bigint minor-unit value.",

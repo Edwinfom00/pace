@@ -335,20 +335,22 @@ function OverviewContent({
             "—"
           )}
         </MetricCard>
-        <MetricCard
-          description={formatRelativeDay(
-            detail.lastOccurrenceAt,
-            now,
-            locale,
-            timeZone,
-          )}
-          icon={<FiClock className="size-4" />}
-          title={labels.lastOccurrence}
-          tone="slate">
-          <time dateTime={detail.lastOccurrenceAt}>
-            {formatDate(detail.lastOccurrenceAt, locale, timeZone)}
-          </time>
-        </MetricCard>
+        {detail.lastOccurrenceAt ? (
+          <MetricCard
+            description={formatRelativeDay(
+              detail.lastOccurrenceAt,
+              now,
+              locale,
+              timeZone,
+            )}
+            icon={<FiClock className="size-4" />}
+            title={labels.lastOccurrence}
+            tone="slate">
+            <time dateTime={detail.lastOccurrenceAt}>
+              {formatDate(detail.lastOccurrenceAt, locale, timeZone)}
+            </time>
+          </MetricCard>
+        ) : null}
       </section>
 
       <section className="mt-4 grid items-start gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(290px,.92fr)]">

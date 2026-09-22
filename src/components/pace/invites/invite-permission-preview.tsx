@@ -8,7 +8,7 @@ type InvitePermissionPreviewProps = {
 
 export function InvitePermissionPreview({ icon: Icon, title, description }: InvitePermissionPreviewProps) {
   return (
-    <div className="flex min-w-0 gap-3 px-0 sm:px-4 sm:first:pl-0 sm:[&:not(:last-child)]:border-r sm:[&:not(:last-child)]:border-[#dde5f1]">
+    <div className="flex min-w-0 gap-3 px-0 sm:px-4 sm:first:pl-0 sm:not-last:border-r sm:not-last:border-[#dde5f1]">
       <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#f0f5fd] text-[#46669d]">
         <Icon aria-hidden className="size-5" />
       </span>

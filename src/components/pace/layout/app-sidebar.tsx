@@ -53,11 +53,11 @@ function AppSidebar({
       className="border-[#e7e9ee] bg-[#fafafb]"
       style={{ "--sidebar": "#fafafb" } as CSSProperties}
     >
-      <SidebarHeader className="gap-0 px-5 pt-[60px] pb-0 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-2">
+      <SidebarHeader className="gap-0 px-5 pt-15 pb-0 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-2">
         <div className="flex items-start justify-between gap-3 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-2">
           <Link
             aria-label={labels["brand.name"]}
-            className="flex h-[35px] min-w-0 items-center rounded-[6px] outline-none focus-visible:ring-2 focus-visible:ring-[#93b4f8] group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center"
+            className="flex h-8.75 min-w-0 items-center rounded-[6px] outline-none focus-visible:ring-2 focus-visible:ring-[#93b4f8] group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center"
             href={overviewHref}
           >
             {state === "collapsed" ? (
@@ -69,7 +69,7 @@ function AppSidebar({
           <PaceSidebarTrigger labels={labels} />
         </div>
         {state !== "collapsed" ? (
-          <p className="ml-[45px] w-[124px] text-[13px] leading-[17px] tracking-[-0.01em] text-[#7c89a2]">
+          <p className="ml-11.25 w-31 text-[13px] leading-4.25 tracking-[-0.01em] text-[#7c89a2]">
             {labels["brand.description"]}
           </p>
         ) : null}

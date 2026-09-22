@@ -49,7 +49,7 @@ export function InviteEmailForm({
         <input
           aria-describedby={error ? "onboarding-invite-email-error" : undefined}
           aria-invalid={Boolean(error)}
-          className="h-[52px] w-full rounded-[10px] border border-[#d7e1f0] bg-white py-3 pl-13 pr-4 text-[16px] text-[#14223f] outline-none transition placeholder:text-[#7185aa] focus:border-[#3268ed] focus:ring-4 focus:ring-[#3268ed]/10 aria-invalid:border-red-500 aria-invalid:ring-red-100"
+          className="h-13 w-full rounded-[10px] border border-[#d7e1f0] bg-white py-3 pl-13 pr-4 text-[16px] text-[#14223f] outline-none transition placeholder:text-[#7185aa] focus:border-[#3268ed] focus:ring-4 focus:ring-[#3268ed]/10 aria-invalid:border-red-500 aria-invalid:ring-red-100"
           id="onboarding-invite-email"
           inputMode="email"
           onChange={(event) => {

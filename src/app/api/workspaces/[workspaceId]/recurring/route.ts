@@ -7,7 +7,8 @@ const createManualRecurringSchema = z.object({
   direction: z.enum(["EXPENSE", "INCOME"]),
   name: z.string(),
   amountMinor: z.string().trim().regex(/^[1-9]\d*$/, "Amount must be positive integer minor units.")
-    .transform((value) => BigInt(value)),
+    .transform((value) => BigInt(value))
+    .refine((value) => value <= 9_223_372_036_854_775_807n, "Amount must fit PostgreSQL bigint."),
   currency: z.string(),
   cadenceDays: z.number().int(),
   nextOccurrenceAt: z.coerce.date(),
