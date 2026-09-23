@@ -65,10 +65,10 @@ export function InboxOverviewView({
       isLoading={isPending}
       label={labels["inbox.loading"]}
     >
-      <main className="min-h-[calc(100svh-4rem)] bg-white">
-        <section className="min-w-0 px-5 py-7 sm:px-7 sm:py-8 lg:px-8 xl:px-10">
+      <main className="min-h-[calc(100svh-4rem)] w-full min-w-0 bg-white">
+        <section className="w-full min-w-0 px-5 py-7 sm:px-7 sm:py-8 lg:px-8 xl:px-10">
           <div className="mx-auto w-full max-w-280">
-            <header className="flex items-start justify-between gap-4">
+            <header className="flex items-start justify-between gap-3 sm:gap-4">
               <div className="min-w-0">
                 <div className="flex items-center gap-3">
                   <h1 className="text-[28px] font-semibold leading-8 tracking-[-0.04em] text-[#101a35] sm:text-[30px]">
@@ -88,7 +88,7 @@ export function InboxOverviewView({
               />
             </header>
 
-            <nav aria-label={labels["inbox.filters.label"]} className="mt-5 flex gap-2 overflow-x-auto pb-1">
+            <nav aria-label={labels["inbox.filters.label"]} className="-mx-1 mt-5 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
               <FilterChip
                 active={overview.activeFilter === null}
                 count={undefined}

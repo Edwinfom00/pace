@@ -17,11 +17,11 @@ export function FilterLoadingSurface({
   label: string;
 }) {
   return (
-    <div className="relative">
+    <div className="relative w-full min-w-0">
       <div
         aria-hidden={isLoading || undefined}
         className={cn(
-          "transition-[filter,opacity] duration-200 ease-[cubic-bezier(0.25,1,0.5,1)]",
+          "w-full min-w-0 transition-[filter,opacity] duration-200 ease-[cubic-bezier(0.25,1,0.5,1)]",
           isLoading && "pointer-events-none select-none opacity-35 blur-[1px]",
         )}
       >
