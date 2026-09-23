@@ -32,7 +32,7 @@ import { RecurringStatusBadge } from "../components/recurring-status-badge";
 import { RecurringCreateControl } from "../components/recurring-create-control";
 import { RecurringReviewActions } from "../components/recurring-review-actions";
 import type { RecurringCreateAccountOption, RecurringCreateCategoryOption } from "../components/recurring-create-flow";
-import type { CurrencyCode } from "@/money/currency";
+import { toCurrencyCode, type CurrencyCode } from "@/money/currency";
 
 function formatDisplayName(value: string, locale: string): string {
   return value.replace(/\b\p{L}/gu, (letter) =>
@@ -129,6 +129,10 @@ function RecurringItemRow({
   dashboardLabels,
   locale,
   timeZone,
+  accountOptions,
+  accountAvailability,
+  categoryOptions,
+  categoryAvailability,
   workspaceId,
   workspaceSlug,
 }: {
@@ -137,6 +141,10 @@ function RecurringItemRow({
   readonly dashboardLabels: ReturnType<typeof getDashboardLabels>;
   readonly locale: string;
   readonly timeZone: string;
+  readonly accountOptions: readonly RecurringCreateAccountOption[];
+  readonly accountAvailability: "ready" | "error";
+  readonly categoryOptions: readonly RecurringCreateCategoryOption[];
+  readonly categoryAvailability: "ready" | "error";
   readonly workspaceId: string;
   readonly workspaceSlug: string;
 }) {
@@ -152,6 +160,33 @@ function RecurringItemRow({
   const expectedLong = item.nextExpectedAt
     ? formatExpectedDate(item.nextExpectedAt, locale, timeZone, true)
     : null;
+  const editOptions = {
+    accountAvailability,
+    accounts: accountOptions,
+    categoryAvailability,
+    categories: categoryOptions,
+  };
+  const reviewTarget = {
+    id: item.id,
+    title: displayName,
+    typicalAmountMinor: item.typicalAmountMinor,
+    currency: item.currency,
+    cadenceDays: item.cadenceDays,
+    updatedAt: item.updatedAt,
+    capabilities: item.capabilities,
+    edit: {
+      accountId: item.account?.id ?? null,
+      accountName: item.account?.name ?? null,
+      amountMinor: item.typicalAmountMinor,
+      cadenceDays: item.cadenceDays,
+      categoryId: item.category?.id ?? null,
+      categoryName: item.category?.name ?? null,
+      currency: toCurrencyCode(item.currency),
+      direction: item.direction === "INFLOW" ? "INCOME" as const : "EXPENSE" as const,
+      name: item.merchantName,
+      nextOccurrenceAt: item.editableNextOccurrenceAt,
+    },
+  };
 
   return (
     <article
@@ -188,17 +223,10 @@ function RecurringItemRow({
       <div className="flex items-center gap-1 justify-self-end lg:hidden">
         <RecurringStatusBadge lifecycle={item.lifecycle} labels={labels} status={item.status} />
         <RecurringReviewActions
+          editOptions={editOptions}
           labels={labels.reviewActions}
           locale={locale}
-          target={{
-            id: item.id,
-            title: displayName,
-            typicalAmountMinor: item.typicalAmountMinor,
-            currency: item.currency,
-            cadenceDays: item.cadenceDays,
-            updatedAt: item.updatedAt,
-            capabilities: item.capabilities,
-          }}
+          target={reviewTarget}
           workspaceId={workspaceId}
         />
       </div>
@@ -242,17 +270,10 @@ function RecurringItemRow({
       </div>
       <div className="hidden justify-self-end lg:block">
         <RecurringReviewActions
+          editOptions={editOptions}
           labels={labels.reviewActions}
           locale={locale}
-          target={{
-            id: item.id,
-            title: displayName,
-            typicalAmountMinor: item.typicalAmountMinor,
-            currency: item.currency,
-            cadenceDays: item.cadenceDays,
-            updatedAt: item.updatedAt,
-            capabilities: item.capabilities,
-          }}
+          target={reviewTarget}
           workspaceId={workspaceId}
         />
       </div>
@@ -266,6 +287,10 @@ function RecurringItemsList({
   dashboardLabels,
   locale,
   timeZone,
+  accountOptions,
+  accountAvailability,
+  categoryOptions,
+  categoryAvailability,
   workspaceId,
   workspaceSlug,
 }: {
@@ -274,6 +299,10 @@ function RecurringItemsList({
   readonly dashboardLabels: ReturnType<typeof getDashboardLabels>;
   readonly locale: string;
   readonly timeZone: string;
+  readonly accountOptions: readonly RecurringCreateAccountOption[];
+  readonly accountAvailability: "ready" | "error";
+  readonly categoryOptions: readonly RecurringCreateCategoryOption[];
+  readonly categoryAvailability: "ready" | "error";
   readonly workspaceId: string;
   readonly workspaceSlug: string;
 }) {
@@ -293,6 +322,10 @@ function RecurringItemsList({
             labels={labels}
             locale={locale}
             timeZone={timeZone}
+            accountOptions={accountOptions}
+            accountAvailability={accountAvailability}
+            categoryOptions={categoryOptions}
+            categoryAvailability={categoryAvailability}
             workspaceId={workspaceId}
             workspaceSlug={workspaceSlug}
           />
@@ -506,6 +539,10 @@ export function RecurringOverviewView({
                   locale={locale}
                   overview={overview}
                   timeZone={timeZone}
+                  accountOptions={accountOptions}
+                  accountAvailability={accountAvailability}
+                  categoryOptions={categoryOptions}
+                  categoryAvailability={categoryAvailability}
                   workspaceId={workspaceId}
                   workspaceSlug={workspaceSlug}
                 />

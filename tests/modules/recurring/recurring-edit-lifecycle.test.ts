@@ -53,7 +53,7 @@ async function fixture() {
   });
   const nextAccount = await ledger.createAccount(owner, workspaceId, {
     name: "Orange Money",
-    type: "WALLET",
+    type: "MOBILE_MONEY",
     currency: "XAF",
   });
   const eurAccount = await ledger.createAccount(owner, workspaceId, {

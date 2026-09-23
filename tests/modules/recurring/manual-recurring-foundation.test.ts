@@ -234,6 +234,54 @@ test("manual creation enforces workspace permission and linked-resource scope", 
   );
 });
 
+test("an archived linked account remains historical context but cannot be edited through a forged mutation", async () => {
+  const fixture = await createFixture();
+  const created = await fixture.service.createManualRecurring(owner, manualCommand(fixture.account.id));
+  const currentAccount = fixture.ledgerRecords.accounts.get(fixture.account.id);
+  assert.ok(currentAccount);
+  fixture.ledgerRecords.accounts.set(fixture.account.id, { ...currentAccount, archivedAt: now });
+
+  const accounts = await fixture.ledgerRecords.listAccounts(workspaceId);
+  const categories = await fixture.ledgerRecords.listCategories(workspaceId);
+  const overview = buildRecurringOverview({
+    payments: await fixture.service.listRecurring(owner, workspaceId),
+    accounts,
+    categories,
+    filter: "ALL",
+    timeZone: "UTC",
+    now,
+    workspaceRole: "OWNER",
+  });
+  const detail = buildRecurringDetail({
+    payment: created,
+    accounts,
+    categories,
+    merchants: [],
+    evidence: [],
+    merchant: null,
+    now,
+    timeZone: "UTC",
+    workspaceRole: "OWNER",
+  });
+
+  assert.equal(overview.items[0]?.capabilities.canEdit, false);
+  assert.equal(detail.capabilities.canEdit, false);
+  assert.equal(detail.account?.name, "Main account");
+
+  await assert.rejects(
+    fixture.service.updateRecurring(owner, {
+      workspaceId,
+      recurringId: created.id,
+      expectedUpdatedAt: new Date(created.updatedAt),
+      idempotencyKey: "forged-archived-edit",
+      amountMinor: 7_000n,
+    }),
+    (error: unknown) => error instanceof DomainConflictError && error.code === "RECURRING_EDIT_NOT_ALLOWED",
+  );
+  assert.equal((await fixture.financial.findRecurringPaymentById(workspaceId, created.id))?.typicalAmountMinor, 6_500n);
+  assert.deepEqual([...fixture.financial.audit.values()].map((entry) => entry.event), ["RECURRING_MANUAL_CREATED"]);
+});
+
 test("later strong expense detection attaches evidence to a manual pattern without creating a detected duplicate", async () => {
   const fixture = await createFixture();
   const manual = await fixture.service.createManualRecurring(owner, manualCommand(fixture.account.id));

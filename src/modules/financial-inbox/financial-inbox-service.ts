@@ -764,7 +764,14 @@ export class FinancialInboxService {
     const payment = await this.repository.findRecurringPaymentById(workspaceId, prepared.recurringId);
     if (!payment) throw new NotFoundError("Recurring payment not found in this workspace.");
 
-    const capabilities = getRecurringCapabilities({ recurring: payment, workspaceRole });
+    const linkedAccount = payment.accountId
+      ? await this.ledger.findAccount(workspaceId, payment.accountId)
+      : null;
+    const capabilities = getRecurringCapabilities({
+      recurring: payment,
+      workspaceRole,
+      linkedAccountUnavailable: payment.accountId !== null && (!linkedAccount || linkedAccount.archivedAt !== null),
+    });
     const allowed = action === "EDIT"
       ? capabilities.canEdit
       : action === "PAUSE"

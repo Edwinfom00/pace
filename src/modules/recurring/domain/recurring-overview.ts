@@ -29,6 +29,8 @@ export type RecurringOverviewItem = {
   readonly lastOccurredAt: string;
   /** Deterministic projection from the persisted cadence; it is never a posted transaction. */
   readonly nextExpectedAt: string | null;
+  /** The persisted future anchor used only by the edit dialog. */
+  readonly editableNextOccurrenceAt: string | null;
   readonly sampleCount: number;
   /** Canonical optimistic-concurrency token for review-state actions. */
   readonly updatedAt: string;
@@ -148,7 +150,11 @@ function toOverviewItem(
     status: payment.status,
     lifecycle: payment.lifecycle,
     reviewState: payment.status === "CANDIDATE" ? "NEEDS_REVIEW" : null,
-    capabilities: getRecurringCapabilities({ recurring: payment, workspaceRole }),
+    capabilities: getRecurringCapabilities({
+      recurring: payment,
+      workspaceRole,
+      linkedAccountUnavailable: payment.accountId !== null && (!account || account.archivedAt !== null),
+    }),
     account: account ? { id: account.id, name: account.name } : null,
     category: category ? { id: category.id, name: category.name, systemKey: category.systemKey } : null,
     firstOccurredAt: payment.firstOccurredAt,
@@ -156,6 +162,7 @@ function toOverviewItem(
     nextExpectedAt: payment.status === "IGNORED" || payment.lifecycle === "PAUSED"
       ? null
       : nextRecurringProjectionDate(payment, now, timeZone),
+    editableNextOccurrenceAt: payment.nextOccurrenceAt,
     sampleCount: payment.sampleTransactionIds.length,
     updatedAt: payment.updatedAt,
   };

@@ -207,7 +207,7 @@ test("overview readers stay workspace-scoped and fetch related ledger data in ba
     "categories:workspace-a",
   ]);
   assert.equal(overview.items[0]?.account?.name, "Main account");
-  assert.equal(overview.items[0]?.capabilities.canEdit, false);
+  assert.equal(overview.items[0]?.capabilities.canEdit, true);
 });
 
 test("overview rejects a foreign workspace before loading recurring rows", async () => {

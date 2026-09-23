@@ -116,9 +116,10 @@ test("recurring management labels are complete in English, French, and German", 
 });
 
 test("the existing more menu uses capability gates, canonical mutations, and no delete or skip action", async () => {
-  const [actionsSource, editSource] = await Promise.all([
+  const [actionsSource, editSource, overviewSource] = await Promise.all([
     readFile("src/modules/recurring/ui/components/recurring-review-actions.tsx", "utf8"),
     readFile("src/modules/recurring/ui/components/recurring-edit-dialog.tsx", "utf8"),
+    readFile("src/modules/recurring/ui/views/recurring-overview-view.tsx", "utf8"),
   ]);
   assert.match(actionsSource, /target\.capabilities\.canEdit/);
   assert.match(actionsSource, /target\.capabilities\.canPause/);
@@ -126,6 +127,8 @@ test("the existing more menu uses capability gates, canonical mutations, and no 
   assert.match(editSource, /action: "UPDATE"/);
   assert.match(actionsSource, /openAction\("PAUSE"\)/);
   assert.match(actionsSource, /openAction\("RESUME"\)/);
+  assert.match(overviewSource, /editOptions=\{editOptions\}/);
+  assert.match(overviewSource, /editableNextOccurrenceAt/);
   assert.doesNotMatch(actionsSource + editSource, /\bDelete\b/);
   assert.doesNotMatch(actionsSource + editSource, /\bSkip\b/);
 });

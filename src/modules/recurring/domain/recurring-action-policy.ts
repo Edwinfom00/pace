@@ -13,6 +13,7 @@ export const RECURRING_ACTION_REASONS = [
   "NOT_CANDIDATE",
   "MANUAL_RECURRING",
   "NOT_CONFIRMED",
+  "LINKED_ACCOUNT_UNAVAILABLE",
   "ALREADY_PAUSED",
   "NOT_PAUSED",
   "DELETE_NOT_SUPPORTED",
@@ -39,11 +40,17 @@ export type RecurringCapabilities = {
 export type RecurringActionPolicyInput = {
   readonly recurring: Pick<RecurringPaymentRecord, "origin" | "status" | "lifecycle">;
   readonly workspaceRole: WorkspaceRole;
+  /**
+   * A recurring pattern may retain an archived account as historical context,
+   * but future-pattern edits must not keep projecting against it.
+   */
+  readonly linkedAccountUnavailable?: boolean;
 };
 
 export function getRecurringCapabilities({
   recurring,
   workspaceRole,
+  linkedAccountUnavailable = false,
 }: RecurringActionPolicyInput): RecurringCapabilities {
   const canRead = canPerformWorkspaceAction(workspaceRole, "read");
   const canManageLedger = canPerformWorkspaceAction(workspaceRole, "manage_ledger");
@@ -74,7 +81,7 @@ export function getRecurringCapabilities({
   // M9.4 manual patterns are intentional. They must never be put through the
   // detected-review workflow, even if a corrupted row claimed candidate state.
   if (recurring.origin === "MANUAL") {
-    const editReason = getEditReason(recurring.status);
+    const editReason = getEditReason(recurring.status, linkedAccountUnavailable);
     const pauseReason = getPauseReason(recurring.status, recurring.lifecycle);
     const resumeReason = getResumeReason(recurring.status, recurring.lifecycle);
     return {
@@ -102,7 +109,7 @@ export function getRecurringCapabilities({
   const confirmReason = getConfirmReason(recurring.status);
   const ignoreReason = getIgnoreReason(recurring.status);
   const restoreReason = getRestoreReason(recurring.status);
-  const editReason = getEditReason(recurring.status);
+  const editReason = getEditReason(recurring.status, linkedAccountUnavailable);
   const pauseReason = getPauseReason(recurring.status, recurring.lifecycle);
   const resumeReason = getResumeReason(recurring.status, recurring.lifecycle);
 
@@ -131,8 +138,10 @@ export function getRecurringCapabilities({
 
 function getEditReason(
   status: RecurringActionPolicyInput["recurring"]["status"],
+  linkedAccountUnavailable = false,
 ): RecurringActionReason | null {
-  return status === "CONFIRMED" ? null : "NOT_CONFIRMED";
+  if (status !== "CONFIRMED") return "NOT_CONFIRMED";
+  return linkedAccountUnavailable ? "LINKED_ACCOUNT_UNAVAILABLE" : null;
 }
 
 function getPauseReason(

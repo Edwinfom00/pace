@@ -53,6 +53,19 @@ test("confirmed patterns can edit and transition only between active and paused 
   assert.equal(capabilities.reasons.delete, "DELETE_NOT_SUPPORTED");
 });
 
+test("an unavailable linked account keeps history readable but blocks future edits", () => {
+  const capabilities = getRecurringCapabilities({
+    recurring: recurring("CONFIRMED"),
+    workspaceRole: "OWNER",
+    linkedAccountUnavailable: true,
+  });
+
+  assert.equal(capabilities.canViewHistory, true);
+  assert.equal(capabilities.canEdit, false);
+  assert.equal(capabilities.reasons.edit, "LINKED_ACCOUNT_UNAVAILABLE");
+  assert.equal(capabilities.canPause, true);
+});
+
 test("manual recurring patterns retain their provenance while using the same scheduling policy", () => {
   const capabilities = getRecurringCapabilities({
     recurring: { origin: "MANUAL", status: "CONFIRMED", lifecycle: "ACTIVE" },

@@ -153,7 +153,11 @@ export function buildRecurringDetail({
     status: payment.status,
     lifecycle: payment.lifecycle,
     reviewState: payment.status === "CANDIDATE" ? "NEEDS_REVIEW" : null,
-    capabilities: getRecurringCapabilities({ recurring: payment, workspaceRole }),
+    capabilities: getRecurringCapabilities({
+      recurring: payment,
+      workspaceRole,
+      linkedAccountUnavailable: payment.accountId !== null && (!account || account.archivedAt !== null),
+    }),
     amount: { minor: payment.typicalAmountMinor, currency: payment.currency, kind: "TYPICAL" },
     cadenceDays: payment.cadenceDays,
     startedAt: payment.firstOccurredAt,
