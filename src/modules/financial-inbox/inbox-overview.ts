@@ -72,12 +72,18 @@ export type InboxOverviewItem = {
   /** Lightweight server-derived policy for this row. */
   readonly capabilities: InboxResolutionCapabilities;
   readonly createdAt: string;
+  /** Opaque optimistic-concurrency token for future Inbox mutations. */
+  readonly updatedAt: string;
+  /** Current source transaction metadata-edit version. */
+  readonly transactionUpdatedAt: string;
   readonly transaction: TransactionListItem;
   readonly classification: {
     readonly id: string;
     readonly source: ClassificationSource;
     readonly status: ClassificationStatus;
     readonly confidence: number;
+    /** Classifier revision used to reject stale proposal acceptance. */
+    readonly updatedAt: string;
     /** Never rendered as a confirmed transaction category. */
     readonly proposal: {
       readonly id: string;

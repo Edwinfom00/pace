@@ -50,7 +50,11 @@ export type InboxItemDetail = {
   readonly workspaceId: string;
   readonly status: InboxItemStatus;
   readonly reason: InboxReason;
+  /** Opaque optimistic-concurrency token for future Inbox mutations. */
+  readonly updatedAt: string;
   readonly sourceId: string;
+  /** The current effective transaction's metadata-edit version. */
+  readonly transactionUpdatedAt: string;
   readonly transaction: TransactionListItem & {
     readonly merchantName: string | null;
     readonly note: string | null;
@@ -67,6 +71,8 @@ export type InboxItemDetail = {
     readonly category: { readonly id: string; readonly name: string; readonly systemKey: string | null };
     readonly confidence: InboxDetailConfidence;
     readonly score: number;
+    /** The classifier revision that must match before accepting this proposal. */
+    readonly updatedAt: string;
   } | null;
   readonly attentionReasons: readonly InboxReason[];
   readonly similarTransactions: readonly TransactionListItem[];

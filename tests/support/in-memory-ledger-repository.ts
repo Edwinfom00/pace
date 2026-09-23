@@ -323,8 +323,15 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   async updateTransactionDetails(
     input: UpdateLedgerTransactionDetailsRecord,
   ): Promise<LedgerTransactionRecord | null> {
-    const existing = await this.findTransaction(input.workspaceId, input.transactionId);
-    if (!existing || existing.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) return null;
+    // Keep this compare-and-set synchronous. The production repository locks
+    // and checks the candidate in one SQL statement; awaiting a lookup here
+    // would let two test callers both pass the same stale version.
+    const existing = this.transactions.get(input.transactionId);
+    if (
+      !existing
+      || existing.workspaceId !== input.workspaceId
+      || existing.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()
+    ) return null;
 
     let merchantId = input.merchantId;
     if (input.merchantToCreate) {

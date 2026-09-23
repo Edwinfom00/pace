@@ -10,10 +10,17 @@ import { currentFinancialTransactions } from "@/modules/ledger/correction-chain"
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 import { getRecurringCapabilities } from "@/modules/recurring/domain/recurring-action-policy";
+import { LedgerService } from "@/modules/ledger/ledger-service";
 
 import { classifyMerchant, type AiClassificationSuggestion } from "./classification";
+import type {
+  AcceptInboxCategorySuggestionCommand,
+  ChooseInboxCategoryCommand,
+} from "./inbox-category-resolution-contract";
+import { getInboxResolutionCapabilities } from "./inbox-resolution-policy";
 import {
   type ClassifiedTransaction,
+  type FinancialInboxAuditRecord,
   type FinancialInboxItemRecord,
   type InboxAction,
   type InboxReason,
@@ -101,6 +108,7 @@ export const MAX_MANUAL_RECURRING_NAME_LENGTH = 160;
 export const MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH = 180;
 const MAX_POSTGRES_BIGINT_MINOR = 9_223_372_036_854_775_807n;
 
+
 /**
  * The canonical server/domain command for an intentional recurring pattern.
  * It only creates the pattern; it never creates a ledger transaction.
@@ -132,6 +140,7 @@ export interface IgnoreRecurringCommand extends ConfirmRecurringCommand {
 
 export type RestoreRecurringCommand = ConfirmRecurringCommand;
 
+
 /**
  * Changes the canonical future recurrence only. It deliberately has no
  * transaction fields: past matched occurrences and ledger truth are immutable.
@@ -150,15 +159,35 @@ export interface UpdateRecurringCommand extends ConfirmRecurringCommand {
 export type PauseRecurringCommand = ConfirmRecurringCommand;
 export type ResumeRecurringCommand = ConfirmRecurringCommand;
 
+export type InboxCategoryResolutionResult = {
+  readonly transaction: LedgerTransactionRecord;
+  readonly item: FinancialInboxItemRecord;
+  readonly resolvedInboxItemIds: readonly string[];
+  readonly unresolvedReasons: readonly InboxReason[];
+  readonly replayed: boolean;
+};
+
+type InboxCategoryResolutionAction = "ACCEPT_SUGGESTION" | "CHOOSE_CATEGORY";
+
+type PreparedInboxCategoryResolutionCommand = {
+  readonly action: InboxCategoryResolutionAction;
+  readonly workspaceId: string;
+  readonly inboxItemId: string;
+  readonly categoryId: string | null;
+  readonly expectedInboxUpdatedAt: Date | undefined;
+  readonly expectedTransactionUpdatedAt: Date | undefined;
+  readonly expectedSuggestionCategoryId: string | null;
+  readonly expectedSuggestionUpdatedAt: Date | undefined;
+  readonly idempotencyKey: string;
+};
+
 
 export class FinancialInboxService {
   constructor(
     private readonly repository: FinancialInboxRepository,
-    private readonly ledger: Pick<
-      LedgerRepository,
-      "findAccount" | "findCategory" | "findMerchant" | "findTransaction" | "listCategories" | "listTransactions"
-    >,
-    private readonly workspaces: Pick<WorkspaceRepository, "findMemberContext">,
+    private readonly ledger: LedgerRepository,
+    private readonly workspaces: Pick<WorkspaceRepository, "findMemberContext" | "findMembership">,
+    private readonly transactionDetails: Pick<LedgerService, "updateTransactionDetails"> = new LedgerService(ledger, workspaces),
   ) {}
 
   async ingestTransaction(
@@ -427,6 +456,7 @@ export class FinancialInboxService {
     return this.presentRecurring(created);
   }
 
+
   /**
    * Canonical detected-recurring review action. It changes only M4 review
    * state and audit metadata; it never calls any ledger mutation path.
@@ -438,6 +468,8 @@ export class FinancialInboxService {
     return this.reviewRecurring(actor, command, "CONFIRM");
   }
 
+
+
   /**
    * Canonical detected-recurring review action. Ignore is a retained review
    * state, never a deletion of matching evidence or transactions.
@@ -448,6 +480,7 @@ export class FinancialInboxService {
   ): Promise<RecurringPaymentView> {
     return this.reviewRecurring(actor, command, "IGNORE");
   }
+
 
   /**
    * Canonical detected-recurring review action. Restore returns an ignored
@@ -483,6 +516,353 @@ export class FinancialInboxService {
     command: ResumeRecurringCommand,
   ): Promise<RecurringPaymentView> {
     return this.mutateRecurring(actor, command.workspaceId, prepareRecurringLifecycleCommand(command, "RESUME"), "RESUME");
+  }
+
+
+  async acceptInboxCategorySuggestion(
+    actor: AuthenticatedActor,
+    command: AcceptInboxCategorySuggestionCommand,
+  ): Promise<InboxCategoryResolutionResult> {
+    return this.resolveInboxCategory(actor, prepareAcceptInboxCategorySuggestion(command));
+  }
+
+  async chooseInboxCategory(
+    actor: AuthenticatedActor,
+    command: ChooseInboxCategoryCommand,
+  ): Promise<InboxCategoryResolutionResult> {
+    return this.resolveInboxCategory(actor, prepareChooseInboxCategory(command));
+  }
+
+  private async resolveInboxCategory(
+    actor: AuthenticatedActor,
+    command: PreparedInboxCategoryResolutionCommand,
+  ): Promise<InboxCategoryResolutionResult> {
+    const commandFingerprint = fingerprintInboxCategoryResolutionCommand(command);
+    const workspace = await this.workspaces.findMemberContext(command.workspaceId, actor.userId);
+    if (!workspace) throw new AuthorizationError("You are not a member of this workspace.");
+    assertWorkspacePermission(workspace.membership.role, "manage_ledger");
+
+    const replay = await this.repository.findInboxAuditByIdempotencyKey(
+      command.workspaceId,
+      actor.userId,
+      command.idempotencyKey,
+    );
+    if (replay) {
+      return this.resolveExistingInboxCategoryCommand(actor, command, commandFingerprint, replay);
+    }
+
+    const item = await this.repository.findInboxItem(command.workspaceId, command.inboxItemId);
+    if (!item) {
+      throw new DomainConflictError("INBOX_ITEM_NOT_FOUND", "Financial Inbox item not found in this workspace.");
+    }
+    if (
+      command.expectedInboxUpdatedAt
+      && !sameVersion(item.updatedAt, command.expectedInboxUpdatedAt)
+    ) {
+      throw new DomainConflictError("INBOX_ITEM_STALE", "This Inbox item changed since it was opened.");
+    }
+
+    const sourceTransaction = await this.ledger.findTransaction(command.workspaceId, item.transactionId);
+    if (!sourceTransaction) {
+      throw new DomainConflictError("TRANSACTION_NOT_FOUND", "The Inbox source transaction no longer exists.");
+    }
+    const [outgoingCorrection, technicalReversal, classification, relatedItems] = await Promise.all([
+      this.ledger.findTransactionCorrectionByOriginal(command.workspaceId, sourceTransaction.id),
+      this.ledger.findTransactionReversalByOriginal(command.workspaceId, sourceTransaction.id),
+      item.classificationId
+        ? this.repository.findClassification(command.workspaceId, item.classificationId)
+        : Promise.resolve(null),
+      this.repository.listInboxItemsForTransaction(command.workspaceId, sourceTransaction.id),
+    ]);
+    if (sourceTransaction.reversalOfTransactionId || outgoingCorrection || technicalReversal) {
+      throw new DomainConflictError(
+        "TRANSACTION_NOT_CURRENT",
+        "The Inbox source is no longer the current effective transaction.",
+      );
+    }
+    const suggestedCategory = classification?.suggestedCategoryId
+      ? await this.ledger.findCategory(command.workspaceId, classification.suggestedCategoryId)
+      : null;
+    const capabilities = getInboxResolutionCapabilities({
+      item,
+      relatedItems,
+      sourceTransaction,
+      effectiveTransaction: sourceTransaction,
+      classification,
+      suggestedCategory,
+      recurring: null,
+      workspaceRole: workspace.membership.role,
+    });
+
+    if (sourceTransaction.categoryId !== null || capabilities.reasons.CHOOSE_CATEGORY === "CATEGORY_ALREADY_CONFIRMED") {
+      await this.reconcileClassificationFromConfirmedCategory(
+        actor,
+        command.workspaceId,
+        sourceTransaction,
+        classification,
+      );
+      await this.reconcileCategoryInbox({
+        actor,
+        workspaceId: command.workspaceId,
+        sourceTransaction,
+        relatedItems,
+        requestedInboxItemId: item.id,
+        workspaceRole: workspace.membership.role,
+      });
+      throw new DomainConflictError(
+        "INBOX_REASON_ALREADY_RESOLVED",
+        "This transaction already has a confirmed category. Reload the Inbox item.",
+      );
+    }
+
+    if (
+      command.expectedTransactionUpdatedAt
+      && !sameVersion(sourceTransaction.updatedAt, command.expectedTransactionUpdatedAt)
+    ) {
+      throw new DomainConflictError(
+        "CONCURRENT_MODIFICATION",
+        "This transaction changed since the Inbox item was opened.",
+      );
+    }
+
+    const allowed = command.action === "ACCEPT_SUGGESTION"
+      ? capabilities.canAcceptCategorySuggestion
+      : capabilities.canChooseCategory;
+    if (!allowed) {
+      throw inboxCategoryActionNotAllowed(command.action, capabilities.reasons);
+    }
+    if (!classification || classification.transactionId !== sourceTransaction.id || classification.workspaceId !== command.workspaceId) {
+      throw new DomainConflictError("INBOX_ACTION_NOT_ALLOWED", "The Inbox classification is no longer actionable.");
+    }
+
+    if (command.action === "ACCEPT_SUGGESTION") {
+      if (
+        classification.suggestedCategoryId !== command.expectedSuggestionCategoryId
+        || !command.expectedSuggestionUpdatedAt
+        || !sameVersion(classification.updatedAt, command.expectedSuggestionUpdatedAt)
+      ) {
+        throw new DomainConflictError(
+          "CATEGORY_SUGGESTION_STALE",
+          "The category suggestion changed. Reload the Inbox item before accepting it.",
+        );
+      }
+    }
+
+    const categoryId = command.action === "ACCEPT_SUGGESTION"
+      ? classification.suggestedCategoryId
+      : command.categoryId;
+    if (!categoryId) {
+      throw new DomainConflictError(
+        "CATEGORY_SUGGESTION_NOT_AVAILABLE",
+        "There is no current category suggestion to accept.",
+      );
+    }
+
+
+    const transaction = await this.transactionDetails.updateTransactionDetails(
+      actor,
+      command.workspaceId,
+      sourceTransaction.id,
+      { categoryId },
+      command.expectedTransactionUpdatedAt ?? sourceTransaction.updatedAt,
+      workspace.preferences.timezone,
+    );
+
+    const resolvedAt = new Date();
+    const updatedClassification = await this.repository.updateClassification(
+      command.workspaceId,
+      classification.id,
+      {
+        appliedCategoryId: categoryId,
+        status: "APPLIED",
+        resolvedByUserId: actor.userId,
+        resolvedAt,
+      },
+    );
+    if (!updatedClassification) {
+      throw new DomainConflictError(
+        "CONCURRENT_MODIFICATION",
+        "The classification changed while this category decision was being saved.",
+      );
+    }
+
+    const reconciliation = await this.reconcileCategoryInbox({
+      actor,
+      workspaceId: command.workspaceId,
+      sourceTransaction: transaction,
+      relatedItems: await this.repository.listInboxItemsForTransaction(command.workspaceId, transaction.id),
+      requestedInboxItemId: item.id,
+      workspaceRole: workspace.membership.role,
+    });
+    const event = command.action === "ACCEPT_SUGGESTION"
+      ? "INBOX_CATEGORY_SUGGESTION_ACCEPTED"
+      : "INBOX_CATEGORY_MANUALLY_SELECTED";
+
+    try {
+      await this.audit(command.workspaceId, {
+        inboxItemId: item.id,
+        classificationId: updatedClassification.id,
+        actorUserId: actor.userId,
+        event,
+        commandFingerprint,
+        idempotencyKey: command.idempotencyKey,
+        metadata: {
+          intent: command.action,
+          sourceTransactionId: sourceTransaction.id,
+          transactionId: transaction.id,
+          before: { categoryId: sourceTransaction.categoryId },
+          after: { categoryId: transaction.categoryId },
+          suggestion: {
+            categoryId: classification.suggestedCategoryId,
+            accepted: command.action === "ACCEPT_SUGGESTION",
+          },
+          selectedCategoryId: command.action === "CHOOSE_CATEGORY" ? categoryId : null,
+          resolvedInboxItemIds: reconciliation.resolvedInboxItemIds,
+          unresolvedReasons: reconciliation.unresolvedReasons,
+        },
+      });
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const concurrent = await this.repository.findInboxAuditByIdempotencyKey(
+        command.workspaceId,
+        actor.userId,
+        command.idempotencyKey,
+      );
+      if (concurrent) {
+        return this.resolveExistingInboxCategoryCommand(actor, command, commandFingerprint, concurrent);
+      }
+      throw new DomainConflictError("CONCURRENT_MODIFICATION", "The Inbox category decision changed concurrently.");
+    }
+
+    return {
+      transaction,
+      item: reconciliation.item,
+      resolvedInboxItemIds: reconciliation.resolvedInboxItemIds,
+      unresolvedReasons: reconciliation.unresolvedReasons,
+      replayed: false,
+    };
+  }
+
+  private async resolveExistingInboxCategoryCommand(
+    _actor: AuthenticatedActor,
+    command: PreparedInboxCategoryResolutionCommand,
+    commandFingerprint: string,
+    audit: FinancialInboxAuditRecord,
+  ): Promise<InboxCategoryResolutionResult> {
+    if (audit.commandFingerprint !== commandFingerprint) {
+      throw new DomainConflictError(
+        "ACTION_ALREADY_PROCESSED",
+        "This idempotency key was already used for a different Inbox category action.",
+      );
+    }
+    const item = await this.repository.findInboxItem(command.workspaceId, command.inboxItemId);
+    if (!item) {
+      throw new DomainConflictError("ACTION_ALREADY_PROCESSED", "The previously processed Inbox category action is no longer available.");
+    }
+    const [transaction, relatedItems] = await Promise.all([
+      this.ledger.findTransaction(command.workspaceId, item.transactionId),
+      this.repository.listInboxItemsForTransaction(command.workspaceId, item.transactionId),
+    ]);
+    if (!transaction) {
+      throw new DomainConflictError("ACTION_ALREADY_PROCESSED", "The previously processed Inbox category action is no longer available.");
+    }
+    return {
+      transaction,
+      item,
+      resolvedInboxItemIds: relatedItems
+        .filter((candidate) => isCategoryInboxReason(candidate.reason) && candidate.status === "RESOLVED")
+        .map((candidate) => candidate.id),
+      unresolvedReasons: uniqueInboxReasons(
+        relatedItems.filter((candidate) => candidate.status === "OPEN").map((candidate) => candidate.reason),
+      ),
+      replayed: true,
+    };
+  }
+
+
+  private async reconcileClassificationFromConfirmedCategory(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    transaction: LedgerTransactionRecord,
+    classification: TransactionClassificationRecord | null,
+  ): Promise<void> {
+    if (
+      !classification
+      || !transaction.categoryId
+      || classification.workspaceId !== workspaceId
+      || classification.transactionId !== transaction.id
+      || (classification.status === "APPLIED" && classification.appliedCategoryId === transaction.categoryId)
+    ) return;
+    const reconciled = await this.repository.updateClassification(workspaceId, classification.id, {
+      appliedCategoryId: transaction.categoryId,
+      status: "APPLIED",
+      resolvedByUserId: actor.userId,
+      resolvedAt: new Date(),
+    });
+    if (!reconciled) {
+      throw new DomainConflictError(
+        "CONCURRENT_MODIFICATION",
+        "The classification changed during Inbox reconciliation.",
+      );
+    }
+  }
+
+  private async reconcileCategoryInbox(input: {
+    readonly actor: AuthenticatedActor;
+    readonly workspaceId: string;
+    readonly sourceTransaction: LedgerTransactionRecord;
+    readonly relatedItems: readonly FinancialInboxItemRecord[];
+    readonly requestedInboxItemId: string;
+    readonly workspaceRole: WorkspaceRole;
+  }): Promise<{
+    readonly item: FinancialInboxItemRecord;
+    readonly resolvedInboxItemIds: readonly string[];
+    readonly unresolvedReasons: readonly InboxReason[];
+  }> {
+    const resolvedInboxItemIds: string[] = [];
+    for (const candidate of input.relatedItems) {
+      if (!isCategoryInboxReason(candidate.reason) || candidate.status !== "OPEN") continue;
+      const classification = candidate.classificationId
+        ? await this.repository.findClassification(input.workspaceId, candidate.classificationId)
+        : null;
+      const suggestedCategory = classification?.suggestedCategoryId
+        ? await this.ledger.findCategory(input.workspaceId, classification.suggestedCategoryId)
+        : null;
+      const capabilities = getInboxResolutionCapabilities({
+        item: candidate,
+        relatedItems: input.relatedItems,
+        sourceTransaction: input.sourceTransaction,
+        effectiveTransaction: input.sourceTransaction,
+        classification,
+        suggestedCategory,
+        recurring: null,
+        workspaceRole: input.workspaceRole,
+      });
+      if (capabilities.unresolvedReasons.includes(candidate.reason)) continue;
+      const resolved = await this.repository.updateInboxItem(input.workspaceId, candidate.id, {
+        status: "RESOLVED",
+        resolvedByUserId: input.actor.userId,
+        resolvedAt: new Date(),
+      });
+      if (!resolved) {
+        throw new DomainConflictError("CONCURRENT_MODIFICATION", "The Inbox item changed during reconciliation.");
+      }
+      resolvedInboxItemIds.push(resolved.id);
+    }
+
+    const reconciledItems = await this.repository.listInboxItemsForTransaction(
+      input.workspaceId,
+      input.sourceTransaction.id,
+    );
+    const item = reconciledItems.find((candidate) => candidate.id === input.requestedInboxItemId);
+    if (!item) throw new DomainConflictError("INBOX_ITEM_NOT_FOUND", "Inbox item not found after reconciliation.");
+    return {
+      item,
+      resolvedInboxItemIds,
+      unresolvedReasons: uniqueInboxReasons(
+        reconciledItems.filter((candidate) => candidate.status === "OPEN").map((candidate) => candidate.reason),
+      ),
+    };
   }
 
   async resolveInboxItem(
@@ -1258,6 +1638,158 @@ export class FinancialInboxService {
   ): Promise<void> {
     await this.repository.createAudit({ id: randomUUID(), workspaceId, ...input });
   }
+}
+
+function prepareAcceptInboxCategorySuggestion(
+  command: AcceptInboxCategorySuggestionCommand,
+): PreparedInboxCategoryResolutionCommand {
+  const prepared = prepareInboxCategoryResolutionBase(command, "ACCEPT_SUGGESTION");
+  const expectedSuggestionCategoryId = requiredInboxIdentifier(
+    command.expectedSuggestionCategoryId,
+    "CATEGORY_SUGGESTION_STALE",
+    "The category suggestion identifier is required.",
+  );
+  const expectedSuggestionUpdatedAt = requiredInboxVersion(
+    command.expectedSuggestionUpdatedAt,
+    "CATEGORY_SUGGESTION_STALE",
+    "The category suggestion version is required.",
+  );
+  return { ...prepared, expectedSuggestionCategoryId, expectedSuggestionUpdatedAt };
+}
+
+function prepareChooseInboxCategory(
+  command: ChooseInboxCategoryCommand,
+): PreparedInboxCategoryResolutionCommand {
+  const prepared = prepareInboxCategoryResolutionBase(command, "CHOOSE_CATEGORY");
+  return {
+    ...prepared,
+    categoryId: requiredInboxIdentifier(
+      command.categoryId,
+      "INBOX_ACTION_NOT_ALLOWED",
+      "A category is required for this Inbox action.",
+    ),
+  };
+}
+
+function prepareInboxCategoryResolutionBase(
+  command: Pick<
+    AcceptInboxCategorySuggestionCommand,
+    "workspaceId" | "inboxItemId" | "expectedInboxUpdatedAt" | "expectedTransactionUpdatedAt" | "idempotencyKey"
+  >,
+  action: InboxCategoryResolutionAction,
+): PreparedInboxCategoryResolutionCommand {
+  const workspaceId = requiredInboxIdentifier(
+    command.workspaceId,
+    "INBOX_ACTION_NOT_ALLOWED",
+    "A workspace identifier is required.",
+  );
+  const inboxItemId = requiredInboxIdentifier(
+    command.inboxItemId,
+    "INBOX_ACTION_NOT_ALLOWED",
+    "An Inbox item identifier is required.",
+  );
+  const idempotencyKey = requiredInboxIdentifier(
+    command.idempotencyKey,
+    "INBOX_ACTION_NOT_ALLOWED",
+    "An idempotency key is required.",
+  );
+  if (idempotencyKey.length > 180) {
+    throw new DomainConflictError(
+      "INBOX_ACTION_NOT_ALLOWED",
+      "An idempotency key must contain at most 180 characters.",
+    );
+  }
+  return {
+    action,
+    workspaceId,
+    inboxItemId,
+    categoryId: null,
+    expectedInboxUpdatedAt: optionalInboxVersion(command.expectedInboxUpdatedAt),
+    expectedTransactionUpdatedAt: optionalInboxVersion(command.expectedTransactionUpdatedAt),
+    expectedSuggestionCategoryId: null,
+    expectedSuggestionUpdatedAt: undefined,
+    idempotencyKey,
+  };
+}
+
+function requiredInboxIdentifier(value: unknown, code: string, message: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new DomainConflictError(code, message);
+  return value.trim();
+}
+
+function optionalInboxVersion(value: unknown): Date | undefined {
+  if (value === undefined) return undefined;
+  return requiredInboxVersion(value, "INBOX_ITEM_STALE", "Expected version must be a valid timestamp.");
+}
+
+function requiredInboxVersion(value: unknown, code: string, message: string): Date {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+    throw new DomainConflictError(code, message);
+  }
+  return new Date(value);
+}
+
+function fingerprintInboxCategoryResolutionCommand(command: PreparedInboxCategoryResolutionCommand): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      action: command.action,
+      inboxItemId: command.inboxItemId,
+      categoryId: command.categoryId,
+      expectedInboxUpdatedAt: command.expectedInboxUpdatedAt?.toISOString() ?? null,
+      expectedTransactionUpdatedAt: command.expectedTransactionUpdatedAt?.toISOString() ?? null,
+      expectedSuggestionCategoryId: command.expectedSuggestionCategoryId,
+      expectedSuggestionUpdatedAt: command.expectedSuggestionUpdatedAt?.toISOString() ?? null,
+    }))
+    .digest("hex");
+}
+
+function inboxCategoryActionNotAllowed(
+  action: InboxCategoryResolutionAction,
+  reasons: {
+    readonly ACCEPT_CATEGORY_SUGGESTION?: string;
+    readonly CHOOSE_CATEGORY?: string;
+  },
+): DomainConflictError {
+  const reason = action === "ACCEPT_SUGGESTION"
+    ? reasons.ACCEPT_CATEGORY_SUGGESTION
+    : reasons.CHOOSE_CATEGORY;
+  switch (reason) {
+    case "ITEM_NOT_OPEN":
+    case "CATEGORY_ALREADY_CONFIRMED":
+      return new DomainConflictError(
+        "INBOX_REASON_ALREADY_RESOLVED",
+        "This category concern is already resolved. Reload the Inbox item.",
+      );
+    case "STALE_ITEM":
+      return new DomainConflictError("INBOX_ITEM_STALE", "This Inbox item is no longer current.");
+    case "NO_SUGGESTION":
+      return new DomainConflictError(
+        "CATEGORY_SUGGESTION_NOT_AVAILABLE",
+        "There is no current category suggestion to accept.",
+      );
+    case "SUGGESTION_NOT_CURRENT":
+      return new DomainConflictError(
+        "CATEGORY_SUGGESTION_STALE",
+        "The category suggestion is no longer current.",
+      );
+    default:
+      return new DomainConflictError(
+        "INBOX_ACTION_NOT_ALLOWED",
+        "This category action is not allowed for the current Inbox item.",
+      );
+  }
+}
+
+function sameVersion(left: Date, right: Date): boolean {
+  return left.getTime() === right.getTime();
+}
+
+function isCategoryInboxReason(reason: InboxReason): boolean {
+  return reason === "UNKNOWN_CATEGORY" || reason === "CLASSIFICATION_REVIEW";
+}
+
+function uniqueInboxReasons(reasons: readonly InboxReason[]): readonly InboxReason[] {
+  return [...new Set(reasons)];
 }
 
 function normalizeMerchantForDetection(value: string): string {

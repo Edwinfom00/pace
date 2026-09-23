@@ -150,6 +150,10 @@ export interface FinancialInboxRepository {
     status?: InboxItemStatus,
     limit?: number,
   ): Promise<FinancialInboxItemRecord[]>;
+  listInboxItemsForTransaction(
+    workspaceId: string,
+    transactionId: string,
+  ): Promise<FinancialInboxItemRecord[]>;
   countInboxItems(workspaceId: string, status?: InboxItemStatus): Promise<number>;
   updateInboxItem(
     workspaceId: string,
@@ -173,6 +177,12 @@ export interface FinancialInboxRepository {
     idempotencyKey: string,
   ): Promise<RecurringPaymentRecord | null>;
   findRecurringAuditByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<FinancialInboxAuditRecord | null>;
+  /** Finds any Inbox command replay; idempotency is scoped by workspace + actor. */
+  findInboxAuditByIdempotencyKey(
     workspaceId: string,
     actorUserId: string,
     idempotencyKey: string,
@@ -390,6 +400,20 @@ export class DatabaseFinancialInboxRepository implements FinancialInboxRepositor
     return limit === undefined ? query : query.limit(limit);
   }
 
+  async listInboxItemsForTransaction(
+    workspaceId: string,
+    transactionId: string,
+  ): Promise<FinancialInboxItemRecord[]> {
+    return db
+      .select()
+      .from(financialInboxItems)
+      .where(and(
+        eq(financialInboxItems.workspaceId, workspaceId),
+        eq(financialInboxItems.transactionId, transactionId),
+      ))
+      .orderBy(asc(financialInboxItems.createdAt), asc(financialInboxItems.id));
+  }
+
   async countInboxItems(workspaceId: string, status?: InboxItemStatus): Promise<number> {
     const [result] = await db
       .select({ total: count() })
@@ -477,6 +501,14 @@ export class DatabaseFinancialInboxRepository implements FinancialInboxRepositor
   }
 
   async findRecurringAuditByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<FinancialInboxAuditRecord | null> {
+    return this.findInboxAuditByIdempotencyKey(workspaceId, actorUserId, idempotencyKey);
+  }
+
+  async findInboxAuditByIdempotencyKey(
     workspaceId: string,
     actorUserId: string,
     idempotencyKey: string,

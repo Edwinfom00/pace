@@ -156,6 +156,15 @@ export class InMemoryFinancialInboxRepository implements FinancialInboxRepositor
     return limit === undefined ? items : items.slice(0, limit);
   }
 
+  async listInboxItemsForTransaction(
+    workspaceId: string,
+    transactionId: string,
+  ): Promise<FinancialInboxItemRecord[]> {
+    return [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId && item.transactionId === transactionId)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+  }
+
   async countInboxItems(workspaceId: string, status?: InboxItemStatus): Promise<number> {
     return [...this.items.values()].filter(
       (item) => item.workspaceId === workspaceId && (!status || item.status === status),
@@ -211,6 +220,14 @@ export class InMemoryFinancialInboxRepository implements FinancialInboxRepositor
   }
 
   async findRecurringAuditByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<FinancialInboxAuditRecord | null> {
+    return this.findInboxAuditByIdempotencyKey(workspaceId, actorUserId, idempotencyKey);
+  }
+
+  async findInboxAuditByIdempotencyKey(
     workspaceId: string,
     actorUserId: string,
     idempotencyKey: string,

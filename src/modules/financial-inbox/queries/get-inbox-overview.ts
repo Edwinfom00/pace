@@ -114,6 +114,8 @@ function toInboxOverviewItem(
       workspaceRole,
     }),
     createdAt: row.item.createdAt.toISOString(),
+    updatedAt: row.item.updatedAt.toISOString(),
+    transactionUpdatedAt: row.transaction.transaction.updatedAt.toISOString(),
     transaction: mapTransactionListItem(row.transaction, unknownMerchantName),
     classification: classification
       ? {
@@ -121,6 +123,7 @@ function toInboxOverviewItem(
           source: classification.source,
           status: classification.status,
           confidence: classification.confidence,
+          updatedAt: classification.updatedAt.toISOString(),
           proposal,
         }
       : null,

@@ -62,7 +62,9 @@ export function buildInboxItemDetail(
     workspaceId: record.item.workspaceId,
     status: record.item.status,
     reason: record.item.reason,
+    updatedAt: record.item.updatedAt.toISOString(),
     sourceId: record.item.transactionId,
+    transactionUpdatedAt: record.effectiveTransaction.transaction.updatedAt.toISOString(),
     transaction: {
       ...transaction,
       merchantName: record.effectiveTransaction.merchant?.name ?? null,
@@ -92,6 +94,7 @@ export function buildInboxItemDetail(
           },
           confidence: classification.confidence >= HIGH_CONFIDENCE_THRESHOLD ? "HIGH" : "REVIEW",
           score: classification.confidence,
+          updatedAt: classification.updatedAt.toISOString(),
         }
       : null,
     attentionReasons: attentionReasons.length ? attentionReasons : [record.item.reason],
