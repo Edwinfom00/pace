@@ -1,41 +1,15 @@
-import { InboxDashboard } from "@/app/components/inbox-dashboard";
-import { requireAuthenticatedActor } from "@/authorization/session";
-import { getPersistedUserLanguage } from "@/i18n/server";
-import { getFinancialInboxService } from "@/modules/financial-inbox/server";
-import { getLedgerService } from "@/modules/ledger/server";
+import { redirect } from "next/navigation";
+
+import { getAuthenticatedActor } from "@/authorization/session";
+import { loginPathForReturnTo } from "@/modules/auth/post-auth-resolver";
 import { getWorkspaceService } from "@/modules/workspaces/server";
 
 export default async function InboxPage() {
-  let language: "en" | "fr" = "en";
-  let locale = "en-US";
-  let workspaceId: string | null = null;
-  let items: Awaited<ReturnType<ReturnType<typeof getFinancialInboxService>["listInbox"]>> = [];
-  let categories: Awaited<ReturnType<ReturnType<typeof getLedgerService>["listCategories"]>> = [];
+  const actor = await getAuthenticatedActor();
+  if (!actor) redirect(loginPathForReturnTo("/inbox"));
 
-  try {
-    const actor = await requireAuthenticatedActor();
-    const [workspaces, persistedLanguage] = await Promise.all([
-      getWorkspaceService().listWorkspaces(actor),
-      getPersistedUserLanguage(actor.userId),
-    ]);
-    language = persistedLanguage;
-    locale = language === "fr" ? "fr-FR" : "en-US";
-    workspaceId = workspaces[0]?.id ?? null;
-    if (workspaceId) {
-      [items, categories] = await Promise.all([
-        getFinancialInboxService().listInbox(actor, workspaceId),
-        getLedgerService().listCategories(actor, workspaceId),
-      ]);
-    }
-  } catch {}
+  const workspace = (await getWorkspaceService().listWorkspaces(actor))[0];
+  if (!workspace) redirect("/onboarding");
 
-  return (
-    <InboxDashboard
-      categories={categories.map(({ id, kind, name }) => ({ id, kind, name }))}
-      initialItems={items}
-      language={language}
-      locale={locale}
-      workspaceId={workspaceId}
-    />
-  );
+  redirect(`/w/${workspace.slug}/inbox`);
 }
