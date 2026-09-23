@@ -1,7 +1,6 @@
 import type {
   FinancialInboxAuditRecord,
   FinancialInboxItemRecord,
-  InboxAction,
   InboxItemStatus,
   InboxReason,
   RecurringPaymentRecord,
@@ -13,6 +12,7 @@ import type {
   LedgerTransactionListRow,
 } from "../ledger/domain";
 import type { TransactionListItem } from "../transactions/types/transaction-ui.types";
+import type { InboxResolutionCapabilities } from "./inbox-resolution-policy";
 
 export const INBOX_DETAIL_SIMILAR_TRANSACTION_LIMIT = 3;
 
@@ -76,5 +76,6 @@ export type InboxItemDetail = {
     readonly recurring: { readonly id: string; readonly displayName: string | null; readonly cadenceDays: number } | null;
   };
   readonly activity: readonly { readonly id: string; readonly event: InboxDetailActivityEvent; readonly occurredAt: string }[];
-  readonly capabilities: readonly InboxAction[];
+  /** Server-derived policy; the UI must not infer actions from Inbox reasons. */
+  readonly capabilities: InboxResolutionCapabilities;
 };

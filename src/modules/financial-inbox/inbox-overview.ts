@@ -4,7 +4,6 @@ import type {
   ClassificationSource,
   ClassificationStatus,
   FinancialInboxItemRecord,
-  InboxAction,
   InboxItemStatus,
   InboxReason,
   RecurringPaymentOrigin,
@@ -15,6 +14,7 @@ import type {
   LedgerCategoryRecord,
   LedgerTransactionListRow,
 } from "../ledger/domain";
+import type { InboxResolutionCapabilities } from "./inbox-resolution-policy";
 
 export const INBOX_OVERVIEW_PAGE_SIZE = 25;
 export const INBOX_OVERVIEW_MAX_PAGE = 100_000;
@@ -69,7 +69,8 @@ export type InboxOverviewItem = {
   readonly reason: InboxReason;
   /** The two list views are intentionally separate: active or recently resolved. */
   readonly status: Extract<InboxItemStatus, "OPEN" | "RESOLVED">;
-  readonly capabilities: readonly InboxAction[];
+  /** Lightweight server-derived policy for this row. */
+  readonly capabilities: InboxResolutionCapabilities;
   readonly createdAt: string;
   readonly transaction: TransactionListItem;
   readonly classification: {

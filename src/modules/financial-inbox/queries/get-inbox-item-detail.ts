@@ -2,7 +2,9 @@ import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
 import { HIGH_CONFIDENCE_THRESHOLD } from "@/modules/financial-inbox/classification";
+import { getInboxResolutionCapabilities } from "@/modules/financial-inbox/inbox-resolution-policy";
 import { mapTransactionListItem } from "@/modules/transactions/queries/get-transactions-page";
+import type { WorkspaceMembershipRecord } from "@/modules/workspaces/domain";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 import type {
@@ -37,12 +39,13 @@ export async function getInboxItemDetail(
     inboxItemId: input.inboxItemId,
     similarLimit: 3,
   });
-  return record ? buildInboxItemDetail(record, input.unknownMerchantName) : null;
+  return record ? buildInboxItemDetail(record, input.unknownMerchantName, membership.role) : null;
 }
 
 export function buildInboxItemDetail(
   record: InboxItemDetailReadRecord,
   unknownMerchantName: string,
+  workspaceRole: WorkspaceMembershipRecord["role"],
 ): InboxItemDetail {
   const transaction = mapTransactionListItem(record.effectiveTransaction, unknownMerchantName);
   const classification = record.classification;
@@ -110,7 +113,16 @@ export function buildInboxItemDetail(
       const event = detailActivityEvent(audit.event);
       return event ? [{ id: audit.id, event, occurredAt: audit.createdAt.toISOString() }] : [];
     }),
-    capabilities: record.item.actions,
+    capabilities: getInboxResolutionCapabilities({
+      item: record.item,
+      relatedItems: record.relatedItems,
+      sourceTransaction: record.sourceTransaction.transaction,
+      effectiveTransaction: record.effectiveTransaction.transaction,
+      classification: record.classification,
+      suggestedCategory: record.suggestedCategory,
+      recurring: record.recurring,
+      workspaceRole,
+    }),
   };
 }
 

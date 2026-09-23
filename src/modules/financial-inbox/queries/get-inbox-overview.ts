@@ -1,7 +1,9 @@
 import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
+import { getInboxResolutionCapabilities } from "@/modules/financial-inbox/inbox-resolution-policy";
 import { mapTransactionListItem } from "@/modules/transactions/queries/get-transactions-page";
+import type { WorkspaceMembershipRecord } from "@/modules/workspaces/domain";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 import {
@@ -73,8 +75,8 @@ export async function getInboxOverview(
     }),
     activeFilter: input.reason,
     sort,
-    items: result.rows.map((row) => toInboxOverviewItem(row, input.unknownMerchantName, "OPEN")),
-    recentlyResolved: result.recentlyResolvedRows.map((row) => toInboxOverviewItem(row, input.unknownMerchantName, "RESOLVED")),
+    items: result.rows.map((row) => toInboxOverviewItem(row, input.unknownMerchantName, "OPEN", membership.role)),
+    recentlyResolved: result.recentlyResolvedRows.map((row) => toInboxOverviewItem(row, input.unknownMerchantName, "RESOLVED", membership.role)),
     pagination: {
       page,
       pageSize,
@@ -87,6 +89,7 @@ function toInboxOverviewItem(
   row: Awaited<ReturnType<InboxOverviewReader["readInboxOverview"]>>["rows"][number],
   unknownMerchantName: string,
   status: InboxOverviewItem["status"],
+  workspaceRole: WorkspaceMembershipRecord["role"],
 ): InboxOverviewItem {
   const classification = row.classification;
   const proposal = classification?.status === "NEEDS_REVIEW" && row.suggestedCategory
@@ -101,7 +104,15 @@ function toInboxOverviewItem(
     id: row.item.id,
     reason: row.item.reason,
     status,
-    capabilities: row.item.actions,
+    capabilities: getInboxResolutionCapabilities({
+      item: row.item,
+      sourceTransaction: row.transaction.transaction,
+      effectiveTransaction: row.transaction.transaction,
+      classification: row.classification,
+      suggestedCategory: row.suggestedCategory,
+      recurring: row.recurring,
+      workspaceRole,
+    }),
     createdAt: row.item.createdAt.toISOString(),
     transaction: mapTransactionListItem(row.transaction, unknownMerchantName),
     classification: classification
