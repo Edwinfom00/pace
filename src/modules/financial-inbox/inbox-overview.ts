@@ -18,12 +18,15 @@ import type {
 
 export const INBOX_OVERVIEW_PAGE_SIZE = 25;
 export const INBOX_OVERVIEW_MAX_PAGE = 100_000;
+export const INBOX_OVERVIEW_SORTS = ["NEWEST", "OLDEST"] as const;
 
 export type InboxOverviewFilter = InboxReason | null;
+export type InboxOverviewSort = (typeof INBOX_OVERVIEW_SORTS)[number];
 
 export type InboxOverviewReadInput = {
   readonly workspaceId: string;
   readonly reason: InboxOverviewFilter;
+  readonly sort: InboxOverviewSort;
   readonly offset: number;
   readonly limit: number;
 };
@@ -95,6 +98,7 @@ export type InboxOverview = {
   readonly unresolvedCount: number;
   readonly availableFilters: readonly InboxReasonCount[];
   readonly activeFilter: InboxOverviewFilter;
+  readonly sort: InboxOverviewSort;
   readonly items: readonly InboxOverviewItem[];
   /** Bounded, read-only history for the separate “Recently resolved” view. */
   readonly recentlyResolved: readonly InboxOverviewItem[];
@@ -107,17 +111,20 @@ export type InboxOverview = {
 
 export type InboxOverviewQuery = {
   readonly reason: InboxOverviewFilter;
+  readonly sort: InboxOverviewSort;
   readonly page: number;
 };
 
 export const DEFAULT_INBOX_OVERVIEW_QUERY: InboxOverviewQuery = {
   reason: null,
+  sort: "NEWEST",
   page: 1,
 };
 
 export function inboxOverviewHref(pathname: string, query: InboxOverviewQuery): string {
   const params = new URLSearchParams();
   if (query.reason) params.set("reason", query.reason);
+  if (query.sort !== "NEWEST") params.set("sort", query.sort);
   if (query.page > 1) params.set("page", String(query.page));
   const search = params.toString();
   return search ? `${pathname}?${search}` : pathname;

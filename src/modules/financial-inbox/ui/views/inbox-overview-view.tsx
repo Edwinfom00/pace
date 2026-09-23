@@ -7,7 +7,6 @@ import {
   HiOutlineCheckCircle,
   HiOutlineArrowsRightLeft,
   HiOutlineArrowPath,
-  HiOutlineChevronDown,
   HiOutlineChatBubbleLeftRight,
   HiOutlineEnvelope,
   HiOutlineMagnifyingGlass,
@@ -24,10 +23,12 @@ import { TransactionMerchantCell } from "@/modules/transactions/ui/components/tr
 
 import { INBOX_REASONS, type InboxReason } from "../../domain";
 import { InboxAskPace } from "../components/inbox-ask-pace";
+import { InboxSortFilter } from "../components/inbox-sort-filter";
 import {
   inboxOverviewHref,
   type InboxOverview,
   type InboxOverviewFilter,
+  type InboxOverviewSort,
   type InboxReasonCount,
 } from "../../inbox-overview";
 
@@ -54,8 +55,8 @@ export function InboxOverviewView({
   const [isPending, startTransition] = useTransition();
   const pathname = `/w/${workspaceSlug}/inbox`;
   const filters = filtersForView(overview.availableFilters);
-  const navigate = (reason: InboxOverviewFilter, page = 1) => {
-    startTransition(() => router.push(inboxOverviewHref(pathname, { reason, page })));
+  const navigate = (reason: InboxOverviewFilter, page = 1, sort: InboxOverviewSort = overview.sort) => {
+    startTransition(() => router.push(inboxOverviewHref(pathname, { reason, page, sort })));
   };
 
   return (
@@ -66,7 +67,7 @@ export function InboxOverviewView({
     >
       <main className="min-h-[calc(100svh-4rem)] bg-white">
         <section className="min-w-0 px-5 py-7 sm:px-7 sm:py-8 lg:px-8 xl:px-10">
-          <div className="mx-auto w-full max-w-[1120px]">
+          <div className="mx-auto w-full max-w-280">
             <header className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex items-center gap-3">
@@ -117,10 +118,12 @@ export function InboxOverviewView({
                     {overview.pagination.totalCount}
                   </span>
                 </div>
-                <p className="hidden items-center gap-1.5 whitespace-nowrap text-[12px] text-[#71809a] sm:flex">
-                  {labels["inbox.sort.newest"]}
-                  <HiOutlineChevronDown aria-hidden="true" className="size-3.5" />
-                </p>
+                <InboxSortFilter
+                  disabled={isPending}
+                  labels={labels}
+                  onValueChange={(sort) => navigate(overview.activeFilter, 1, sort)}
+                  value={overview.sort}
+                />
               </header>
 
               {overview.items.length ? (

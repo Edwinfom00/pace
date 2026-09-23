@@ -14,6 +14,7 @@ import {
   type InboxOverviewFilter,
   type InboxOverviewItem,
   type InboxOverviewReader,
+  type InboxOverviewSort,
 } from "../inbox-overview";
 
 type InboxOverviewWorkspaceRepository = Pick<WorkspaceRepository, "findMembership">;
@@ -22,6 +23,7 @@ export type GetInboxOverviewInput = {
   readonly actor: AuthenticatedActor;
   readonly workspaceId: string;
   readonly reason: InboxOverviewFilter;
+  readonly sort?: InboxOverviewSort;
   readonly page: number;
   readonly pageSize?: number;
   readonly unknownMerchantName: string;
@@ -39,10 +41,12 @@ export async function getInboxOverview(
   assertWorkspacePermission(membership.role, "read");
 
   const pageSize = normalizePageSize(input.pageSize);
+  const sort = input.sort ?? "NEWEST";
   const requestedPage = Math.max(1, Math.floor(input.page));
   let result = await dependencies.reader.readInboxOverview({
     workspaceId: input.workspaceId,
     reason: input.reason,
+    sort,
     offset: (requestedPage - 1) * pageSize,
     limit: pageSize,
   });
@@ -55,6 +59,7 @@ export async function getInboxOverview(
     result = await dependencies.reader.readInboxOverview({
       workspaceId: input.workspaceId,
       reason: input.reason,
+      sort,
       offset: (page - 1) * pageSize,
       limit: pageSize,
     });
@@ -67,6 +72,7 @@ export async function getInboxOverview(
       return count > 0 ? [{ reason, count }] : [];
     }),
     activeFilter: input.reason,
+    sort,
     items: result.rows.map((row) => toInboxOverviewItem(row, input.unknownMerchantName, "OPEN")),
     recentlyResolved: result.recentlyResolvedRows.map((row) => toInboxOverviewItem(row, input.unknownMerchantName, "RESOLVED")),
     pagination: {

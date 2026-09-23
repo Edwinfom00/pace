@@ -17,11 +17,13 @@ export async function GET(
     const filters = parseInboxOverviewSearchParams({
       page: searchParams.get("page") ?? undefined,
       reason: searchParams.get("reason") ?? undefined,
+      sort: searchParams.get("sort") ?? undefined,
     });
     const overview = await getServerInboxOverview({
       actor,
       workspaceId,
       reason: filters.reason,
+      sort: filters.sort,
       page: filters.page,
       unknownMerchantName: labels["transactions.merchant.unknown"],
     });

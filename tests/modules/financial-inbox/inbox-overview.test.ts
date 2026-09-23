@@ -4,13 +4,15 @@ import test from "node:test";
 import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
 import type { InboxReason } from "@/modules/financial-inbox/domain";
-import type {
-  InboxOverviewReadInput,
-  InboxOverviewReadResult,
-  InboxOverviewReadRow,
-  InboxOverviewReader,
+import {
+  inboxOverviewHref,
+  type InboxOverviewReadInput,
+  type InboxOverviewReadResult,
+  type InboxOverviewReadRow,
+  type InboxOverviewReader,
 } from "@/modules/financial-inbox/inbox-overview";
 import { getInboxOverview } from "@/modules/financial-inbox/queries/get-inbox-overview";
+import { parseInboxOverviewSearchParams } from "@/modules/financial-inbox/queries/inbox-overview-search-params";
 import type { WorkspaceMembershipRecord } from "@/modules/workspaces/domain";
 
 const actor: AuthenticatedActor = { userId: "owner-1", email: "owner@pace.test", name: "Owner" };
@@ -208,7 +210,8 @@ test("Inbox overview keeps ledger truth, review proposal, recurring link, and im
   assert.equal(overview.items[0]?.classification?.confidence, 0.61);
   assert.deepEqual(overview.items[0]?.recurring, recurring);
   assert.equal(overview.items[0]?.provenance, "IMPORT");
-  assert.deepEqual(reader.calls, [{ workspaceId, reason: null, offset: 0, limit: 25 }]);
+  assert.equal(overview.sort, "NEWEST");
+  assert.deepEqual(reader.calls, [{ workspaceId, reason: null, sort: "NEWEST", offset: 0, limit: 25 }]);
 });
 
 test("Inbox overview clamps stale pages and retains the canonical reason filter", async () => {
@@ -221,6 +224,7 @@ test("Inbox overview clamps stale pages and retains the canonical reason filter"
     actor,
     workspaceId,
     reason: "POSSIBLE_TRANSFER",
+    sort: "OLDEST",
     page: 9,
     unknownMerchantName: "Unknown merchant",
   }, { reader, workspaces: memberRepository() });
@@ -230,9 +234,25 @@ test("Inbox overview clamps stale pages and retains the canonical reason filter"
   assert.equal(overview.pagination.totalCount, 26);
   assert.equal(overview.items[0]?.reason, "POSSIBLE_TRANSFER");
   assert.deepEqual(reader.calls, [
-    { workspaceId, reason: "POSSIBLE_TRANSFER", offset: 200, limit: 25 },
-    { workspaceId, reason: "POSSIBLE_TRANSFER", offset: 25, limit: 25 },
+    { workspaceId, reason: "POSSIBLE_TRANSFER", sort: "OLDEST", offset: 200, limit: 25 },
+    { workspaceId, reason: "POSSIBLE_TRANSFER", sort: "OLDEST", offset: 25, limit: 25 },
   ]);
+});
+
+test("Inbox overview keeps non-default ordering in its shareable query", () => {
+  assert.deepEqual(
+    parseInboxOverviewSearchParams({ reason: "POSSIBLE_TRANSFER", sort: "OLDEST", page: "2" }),
+    { reason: "POSSIBLE_TRANSFER", sort: "OLDEST", page: 2 },
+  );
+  assert.equal(
+    inboxOverviewHref("/w/household/inbox", { reason: "POSSIBLE_TRANSFER", sort: "OLDEST", page: 2 }),
+    "/w/household/inbox?reason=POSSIBLE_TRANSFER&sort=OLDEST&page=2",
+  );
+  assert.deepEqual(parseInboxOverviewSearchParams({ sort: "unknown" }), {
+    reason: null,
+    sort: "NEWEST",
+    page: 1,
+  });
 });
 
 test("Inbox overview refuses a workspace without a membership before querying data", async () => {

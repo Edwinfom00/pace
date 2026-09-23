@@ -1,4 +1,4 @@
-import { and, count, desc, eq, isNull, ne, notExists, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, ne, notExists, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/db/client";
@@ -89,7 +89,10 @@ export class DatabaseFinancialInboxOverviewReader implements InboxOverviewReader
           ),
         )
         .where(and(...filteredPredicates))
-        .orderBy(desc(financialInboxItems.createdAt), desc(financialInboxItems.id))
+        .orderBy(
+          input.sort === "OLDEST" ? asc(financialInboxItems.createdAt) : desc(financialInboxItems.createdAt),
+          input.sort === "OLDEST" ? asc(financialInboxItems.id) : desc(financialInboxItems.id),
+        )
         .offset(input.offset)
         .limit(input.limit),
       db

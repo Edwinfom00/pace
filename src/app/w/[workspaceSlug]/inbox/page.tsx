@@ -34,6 +34,7 @@ export default async function InboxPage({ params, searchParams }: InboxPageProps
     actor,
     workspaceId: workspace.workspace.id,
     reason: filters.reason,
+    sort: filters.sort,
     page: filters.page,
     unknownMerchantName: labels["transactions.merchant.unknown"],
   });
