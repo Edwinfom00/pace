@@ -44,12 +44,20 @@ function useResponsiveDialog() {
 type ResponsiveDialogProps = {
   children: React.ReactNode;
   defaultOpen?: boolean;
+  mobilePresentation?: "drawer" | "dialog";
   onOpenChange?: (open: boolean) => void;
   open?: boolean;
 };
 
-function ResponsiveDialog({ children, defaultOpen, onOpenChange, open }: ResponsiveDialogProps) {
-  const isDrawer = useDrawerAtThisViewport();
+function ResponsiveDialog({
+  children,
+  defaultOpen,
+  mobilePresentation = "drawer",
+  onOpenChange,
+  open,
+}: ResponsiveDialogProps) {
+  const isDrawerViewport = useDrawerAtThisViewport();
+  const isDrawer = isDrawerViewport && mobilePresentation === "drawer";
 
   return (
     <ResponsiveDialogContext.Provider value={isDrawer}>

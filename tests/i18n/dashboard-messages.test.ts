@@ -29,3 +29,9 @@ test("dashboard labels format the inbox count and workspace types", () => {
   );
   assert.equal(labels[workspaceTypeMessageKeys.COUPLE], "Couple workspace");
 });
+
+test("Inbox category resolution copy is available in English, French, and German", () => {
+  assert.equal(getDashboardLabels("en")["inbox.category.chooseAnother"], "Choose another category");
+  assert.equal(getDashboardLabels("fr")["inbox.category.dialog.title"], "Choisir une catégorie");
+  assert.equal(getDashboardLabels("de")["inbox.category.save"], "Kategorie speichern");
+});

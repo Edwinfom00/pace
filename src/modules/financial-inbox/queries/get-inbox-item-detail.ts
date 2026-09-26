@@ -50,17 +50,27 @@ export function buildInboxItemDetail(
   const transaction = mapTransactionListItem(record.effectiveTransaction, unknownMerchantName);
   const classification = record.classification;
   const suggestedCategory = classification?.status === "NEEDS_REVIEW" ? record.suggestedCategory : null;
-  const attentionReasons = [...new Set(
-    record.relatedItems
-      .filter((item) => item.status === "OPEN")
-      .map((item) => item.reason),
-  )];
   const effectiveCategory = record.effectiveTransaction.category;
+  const capabilities = getInboxResolutionCapabilities({
+    item: record.item,
+    relatedItems: record.relatedItems,
+    sourceTransaction: record.sourceTransaction.transaction,
+    effectiveTransaction: record.effectiveTransaction.transaction,
+    classification: record.classification,
+    suggestedCategory: record.suggestedCategory,
+    recurring: record.recurring,
+    workspaceRole,
+  });
+  const status = record.item.status === "DISMISSED"
+    ? "DISMISSED"
+    : capabilities.isResolved
+      ? "RESOLVED"
+      : "OPEN";
 
   return {
     id: record.item.id,
     workspaceId: record.item.workspaceId,
-    status: record.item.status,
+    status,
     reason: record.item.reason,
     updatedAt: record.item.updatedAt.toISOString(),
     sourceId: record.item.transactionId,
@@ -97,7 +107,7 @@ export function buildInboxItemDetail(
           updatedAt: classification.updatedAt.toISOString(),
         }
       : null,
-    attentionReasons: attentionReasons.length ? attentionReasons : [record.item.reason],
+    attentionReasons: capabilities.unresolvedReasons,
     similarTransactions: record.similarTransactions.map((item) => mapTransactionListItem(item, unknownMerchantName)),
     context: {
       account: record.effectiveTransaction.account
@@ -116,16 +126,7 @@ export function buildInboxItemDetail(
       const event = detailActivityEvent(audit.event);
       return event ? [{ id: audit.id, event, occurredAt: audit.createdAt.toISOString() }] : [];
     }),
-    capabilities: getInboxResolutionCapabilities({
-      item: record.item,
-      relatedItems: record.relatedItems,
-      sourceTransaction: record.sourceTransaction.transaction,
-      effectiveTransaction: record.effectiveTransaction.transaction,
-      classification: record.classification,
-      suggestedCategory: record.suggestedCategory,
-      recurring: record.recurring,
-      workspaceRole,
-    }),
+    capabilities,
   };
 }
 

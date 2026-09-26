@@ -7,6 +7,8 @@ import { getPersistedDashboardLanguage } from "@/i18n/dashboard-server";
 import { getServerInboxItemDetail } from "@/modules/financial-inbox/server/get-inbox-item-detail";
 import { getInboxDetailLabels } from "@/modules/financial-inbox/ui/inbox-detail-labels";
 import { InboxItemDetailView } from "@/modules/financial-inbox/ui/views/inbox-item-detail-view";
+import { loadTransactionCategoryOptions } from "@/modules/transactions/domain/transaction-category-options";
+import { getServerTransactionCategoryOptions } from "@/modules/transactions/server/get-transaction-category-options";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 type InboxItemDetailPageProps = {
@@ -26,18 +28,25 @@ export default async function InboxItemDetailPage({ params, searchParams }: Inbo
 
   const language = await getPersistedDashboardLanguage(actor.userId);
   const labels = getDashboardLabels(language);
-  const detail = await getServerInboxItemDetail({
-    actor,
-    workspaceId: workspace.workspace.id,
-    inboxItemId,
-    unknownMerchantName: labels["transactions.merchant.unknown"],
-  });
+  const [detail, categoryOptions] = await Promise.all([
+    getServerInboxItemDetail({
+      actor,
+      workspaceId: workspace.workspace.id,
+      inboxItemId,
+      unknownMerchantName: labels["transactions.merchant.unknown"],
+    }),
+    loadTransactionCategoryOptions(() => getServerTransactionCategoryOptions({
+      actor,
+      workspaceId: workspace.workspace.id,
+    })),
+  ]);
 
   if (!detail) notFound();
 
   return (
     <InboxItemDetailView
       backHref={inboxBackHref(workspace.workspace.slug, query.returnTo)}
+      categoryOptions={categoryOptions}
       detail={detail}
       labels={getInboxDetailLabels(labels)}
       locale={workspace.preferences.locale}

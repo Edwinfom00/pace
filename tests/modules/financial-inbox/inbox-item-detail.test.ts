@@ -220,7 +220,8 @@ test("Inbox item detail composes canonical transaction truth while keeping a pro
 test("Inbox item detail preserves multiple canonical reasons and suppresses non-authoritative audit events", async () => {
   const first = inboxItem("UNKNOWN_CATEGORY");
   const second = { ...inboxItem("POSSIBLE_TRANSFER"), id: "inbox-2" };
-  const baseRecord = detailRecord({ relatedItems: [first, second] });
+  const uncategorized = transactionRow({ category: false });
+  const baseRecord = detailRecord({ source: uncategorized, effective: uncategorized, relatedItems: [first, second] });
   const record: InboxItemDetailReadRecord = {
     ...baseRecord,
     audits: [
@@ -235,6 +236,46 @@ test("Inbox item detail preserves multiple canonical reasons and suppresses non-
 
   assert.deepEqual(detail?.attentionReasons, ["UNKNOWN_CATEGORY", "POSSIBLE_TRANSFER"]);
   assert.deepEqual(detail?.activity.map((activity) => activity.event), ["INBOX_ITEM_CREATED"]);
+});
+
+test("Inbox item detail keeps remaining reasons open and reports resolved only after all reasons clear", async () => {
+  const categoryItem = inboxItem("CLASSIFICATION_REVIEW", "RESOLVED");
+  const transferItem = { ...inboxItem("POSSIBLE_TRANSFER"), id: "inbox-2" };
+  const categorized = transactionRow({ category: true });
+  const withRemainingReason = detailRecord({
+    source: categorized,
+    effective: categorized,
+    relatedItems: [categoryItem, transferItem],
+  });
+  const openDetail = await getInboxItemDetail({
+    actor,
+    workspaceId,
+    inboxItemId: "inbox-1",
+    unknownMerchantName: "Unknown merchant",
+  }, {
+    reader: new StubInboxItemDetailReader({ ...withRemainingReason, item: categoryItem }),
+    workspaces: memberRepository(),
+  });
+
+  assert.equal(openDetail?.status, "OPEN");
+  assert.deepEqual(openDetail?.attentionReasons, ["POSSIBLE_TRANSFER"]);
+
+  const resolvedDetail = await getInboxItemDetail({
+    actor,
+    workspaceId,
+    inboxItemId: "inbox-1",
+    unknownMerchantName: "Unknown merchant",
+  }, {
+    reader: new StubInboxItemDetailReader({
+      ...withRemainingReason,
+      item: categoryItem,
+      relatedItems: [categoryItem],
+    }),
+    workspaces: memberRepository(),
+  });
+
+  assert.equal(resolvedDetail?.status, "RESOLVED");
+  assert.deepEqual(resolvedDetail?.attentionReasons, []);
 });
 
 test("Inbox item detail uses the reader's effective transaction and preserves transfer and refund semantics", async () => {

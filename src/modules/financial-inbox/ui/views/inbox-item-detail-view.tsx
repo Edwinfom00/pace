@@ -17,6 +17,7 @@ import {
 
 import { TransactionIcon } from "@/components/pace/transaction-visuals/transaction-icon";
 import type { InboxItemDetail } from "@/modules/financial-inbox/inbox-item-detail";
+import type { TransactionCategoryOptionsState } from "@/modules/transactions/domain/transaction-category-options";
 import {
   formatTransactionAmount,
   transactionAmountTone,
@@ -28,12 +29,14 @@ import {
 } from "@/modules/transactions/ui/components/transaction-detail-formatters";
 
 import type { InboxDetailLabels } from "../inbox-detail-labels";
+import { InboxCategoryResolutionActions } from "../components/inbox-category-resolution-actions";
 
 const surfaceClassName =
   "rounded-[12px] border border-[#e4e8ef] bg-white px-4 py-4 shadow-[0_1px_2px_rgb(16_24_40/2%)] sm:px-5";
 
 export function InboxItemDetailView({
   detail,
+  categoryOptions,
   labels,
   locale,
   timeZone,
@@ -41,6 +44,7 @@ export function InboxItemDetailView({
   backHref,
 }: {
   readonly detail: InboxItemDetail;
+  readonly categoryOptions: TransactionCategoryOptionsState;
   readonly labels: InboxDetailLabels;
   readonly locale: string;
   readonly timeZone: string;
@@ -136,7 +140,12 @@ export function InboxItemDetailView({
           detail={detail}
           labels={labels}
         />
-        <SuggestionSurface detail={detail} labels={labels} />
+        <SuggestionSurface
+          categoryOptions={categoryOptions}
+          detail={detail}
+          labels={labels}
+          locale={locale}
+        />
         <TransactionInformationSurface
           categoryLabel={confirmedCategory}
           detail={detail}
@@ -175,6 +184,8 @@ function AttentionSurface({
   readonly detail: InboxItemDetail;
   readonly labels: InboxDetailLabels;
 }) {
+  if (detail.attentionReasons.length === 0) return null;
+
   return (
     <section
       aria-labelledby="inbox-attention-heading"
@@ -258,14 +269,33 @@ function ClassificationSurface({
 }
 
 function SuggestionSurface({
+  categoryOptions,
   detail,
   labels,
+  locale,
 }: {
+  readonly categoryOptions: TransactionCategoryOptionsState;
   readonly detail: InboxItemDetail;
   readonly labels: InboxDetailLabels;
+  readonly locale: string;
 }) {
-  if (!detail.suggestion) return null;
-  const categoryLabel = labels.systemCategory(detail.suggestion.category);
+  const categoryKind = detail.transaction.kind === "EXPENSE" || detail.transaction.kind === "INCOME"
+    ? detail.transaction.kind
+    : null;
+  const showResolutionSurface = !detail.capabilities.isResolved
+    && detail.currentClassification.state !== "CONFIRMED"
+    && (detail.suggestion !== null || detail.capabilities.canChooseCategory);
+  if (!showResolutionSurface) return null;
+
+  const suggestionLabel = detail.suggestion
+    ? labels.systemCategory(detail.suggestion.category)
+    : null;
+  const currentCategory = detail.currentClassification.category
+    ? {
+        id: detail.currentClassification.category.id,
+        label: labels.systemCategory(detail.currentClassification.category),
+      }
+    : null;
   return (
     <section
       aria-labelledby="inbox-suggestion-heading"
@@ -276,16 +306,48 @@ function SuggestionSurface({
           id="inbox-suggestion-heading">
           {labels.suggestion}
         </h2>
-        <span className="inline-flex shrink-0 rounded-[7px] bg-[#eef4ff] px-2 py-1 text-[11px] font-medium text-[#2767dc]">
-          {labels.confidence[detail.suggestion.confidence]}
-        </span>
+        {detail.suggestion ? (
+          <span className="inline-flex shrink-0 rounded-[7px] bg-[#eef4ff] px-2 py-1 text-[11px] font-medium text-[#2767dc]">
+            {labels.confidence[detail.suggestion.confidence]}
+          </span>
+        ) : null}
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <CategoryBadge label={categoryLabel} />
-      </div>
+      {suggestionLabel ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <CategoryBadge label={suggestionLabel} />
+        </div>
+      ) : null}
       <p className="mt-3 text-[13px] leading-5 text-[#71809a]">
-        {labels.suggestionDescription}
+        {detail.suggestion
+          ? labels.suggestionDescription
+          : labels.classification.uncategorizedDescription}
       </p>
+      <InboxCategoryResolutionActions
+        canAcceptCategorySuggestion={detail.capabilities.canAcceptCategorySuggestion}
+        canChooseCategory={detail.capabilities.canChooseCategory}
+        categoryKind={categoryKind}
+        categoryOptions={categoryOptions}
+        currentCategory={currentCategory}
+        expectedInboxUpdatedAt={detail.updatedAt}
+        expectedTransactionUpdatedAt={detail.transactionUpdatedAt}
+        inboxItemId={detail.id}
+        key={detail.id}
+        labels={labels.categoryResolution}
+        suggestion={detail.suggestion && suggestionLabel
+          ? {
+              id: detail.suggestion.category.id,
+              label: suggestionLabel,
+              updatedAt: detail.suggestion.updatedAt,
+            }
+          : null}
+        transactionAmount={formatTransactionAmount(
+          detail.transaction.amount,
+          detail.transaction.kind,
+          locale,
+        )}
+        transactionLabel={detail.transaction.merchant.name}
+        workspaceId={detail.workspaceId}
+      />
     </section>
   );
 }

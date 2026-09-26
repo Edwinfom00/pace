@@ -1,8 +1,11 @@
+import { revalidatePath } from "next/cache";
+
 import { jsonError, parseJson } from "@/app/api/_lib/http";
 import { requireAuthenticatedActor } from "@/authorization/session";
 import {
   inboxCategoryResolutionSchema,
 } from "@/modules/financial-inbox/inbox-category-resolution-contract";
+import { presentInboxCategoryResolution } from "@/modules/financial-inbox/inbox-category-resolution-presenter";
 import { getFinancialInboxService } from "@/modules/financial-inbox/server";
 
 
@@ -35,7 +38,9 @@ export async function POST(
           expectedTransactionUpdatedAt: input.expectedTransactionUpdatedAt,
           idempotencyKey: input.idempotencyKey,
         });
-    return Response.json({ result });
+    revalidatePath("/w/[workspaceSlug]/inbox", "page");
+    revalidatePath("/w/[workspaceSlug]/inbox/[inboxItemId]", "page");
+    return Response.json({ result: presentInboxCategoryResolution(result) });
   } catch (error) {
     return jsonError(error);
   }

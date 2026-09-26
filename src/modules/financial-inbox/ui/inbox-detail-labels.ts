@@ -4,6 +4,35 @@ import { formatSystemCategory } from "@/modules/transactions/ui/transaction-deta
 import type { InboxDetailActivityEvent, InboxItemDetail } from "../inbox-item-detail";
 import type { InboxReason } from "../domain";
 
+export type InboxCategoryResolutionLabels = {
+  readonly acceptSuggestion: string;
+  readonly accepting: string;
+  readonly chooseAnother: string;
+  readonly dialogTitle: string;
+  readonly dialogSubtitle: string;
+  readonly current: string;
+  readonly suggested: string;
+  readonly save: string;
+  readonly saving: string;
+  readonly staleSuggestion: string;
+  readonly changedSinceOpen: string;
+  readonly reloadLatest: string;
+  readonly failed: string;
+  readonly notAvailable: string;
+  readonly cancel: string;
+  readonly selector: {
+    readonly label: string;
+    readonly placeholder: string;
+    readonly helper: string;
+    readonly search: string;
+    readonly empty: string;
+    readonly loading: string;
+    readonly loadError: string;
+    readonly retry: string;
+    readonly invalid: string;
+  };
+};
+
 export type InboxDetailLabels = {
   readonly back: string;
   readonly breadcrumb: string;
@@ -19,6 +48,7 @@ export type InboxDetailLabels = {
   };
   readonly suggestion: string;
   readonly suggestionDescription: string;
+  readonly categoryResolution: InboxCategoryResolutionLabels;
   readonly confidence: Readonly<Record<NonNullable<InboxItemDetail["suggestion"]>["confidence"], string>>;
   readonly whyAttention: string;
   readonly reason: Readonly<Record<InboxReason, { readonly title: string; readonly description: string }>>;
@@ -63,6 +93,34 @@ export function getInboxDetailLabels(labels: DashboardLabels): InboxDetailLabels
     },
     suggestion: labels["inbox.detail.suggestion"],
     suggestionDescription: labels["inbox.detail.suggestionDescription"],
+    categoryResolution: {
+      acceptSuggestion: labels["inbox.category.acceptSuggestion"],
+      accepting: labels["inbox.category.accepting"],
+      chooseAnother: labels["inbox.category.chooseAnother"],
+      dialogTitle: labels["inbox.category.dialog.title"],
+      dialogSubtitle: labels["inbox.category.dialog.subtitle"],
+      current: labels["inbox.category.current"],
+      suggested: labels["inbox.category.suggested"],
+      save: labels["inbox.category.save"],
+      saving: labels["inbox.category.saving"],
+      staleSuggestion: labels["inbox.category.staleSuggestion"],
+      changedSinceOpen: labels["inbox.category.changedSinceOpen"],
+      reloadLatest: labels["inbox.category.reloadLatest"],
+      failed: labels["inbox.category.failed"],
+      notAvailable: labels["inbox.category.notAvailable"],
+      cancel: labels["transactions.actions.cancel"],
+      selector: {
+        label: labels["transactions.form.category"],
+        placeholder: labels["transactions.form.categoryPlaceholder"],
+        helper: labels["transactions.form.categoryHelper"],
+        search: labels["transactions.form.categorySearch"],
+        empty: labels["transactions.categories.empty"],
+        loading: labels["transactions.categories.loading"],
+        loadError: labels["transactions.categories.error"],
+        retry: labels["transactions.error.retry"],
+        invalid: labels["transactions.validation.categoryUnavailable"],
+      },
+    },
     confidence: { HIGH: labels["inbox.detail.confidence.high"], REVIEW: labels["inbox.detail.confidence.review"] },
     whyAttention: labels["inbox.detail.whyAttention"],
     reason: {

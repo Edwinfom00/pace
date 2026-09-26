@@ -143,6 +143,7 @@ test("accepting a current suggestion uses the ledger metadata path and settles o
   const beforeFinancial = financialShape(before);
   const beforeBalance = await ledger.getAccountBalance(owner, { workspaceId, accountId: account.id });
   const transactionAuditsBefore = await records.listTransactionAudit(workspaceId, transaction.id);
+  assert.equal((await service.listInboxPreview(owner, workspaceId, 12)).unresolvedCount, 2);
 
   const result = await service.acceptInboxCategorySuggestion(owner, {
     ...command({ item, transaction, idempotencyKey: "accept-city-taxi" }),
@@ -156,6 +157,7 @@ test("accepting a current suggestion uses the ledger metadata path and settles o
   assert.deepEqual(result.resolvedInboxItemIds, [item.id]);
   assert.equal((await financial.findInboxItem(workspaceId, item.id))?.status, "RESOLVED");
   assert.equal((await financial.findInboxItem(workspaceId, duplicateReason.id))?.status, "OPEN");
+  assert.equal((await service.listInboxPreview(owner, workspaceId, 12)).unresolvedCount, 1);
 
   const persisted = records.transactions.get(transaction.id);
   assert.ok(persisted);
@@ -210,6 +212,7 @@ test("a changed classifier proposal cannot be accepted from a stale Inbox view",
 
 test("choosing another valid category preserves classifier evidence and resolves a category-only item", async () => {
   const { classification, financial, item, service, transaction } = await fixture();
+  assert.equal((await service.listInboxPreview(owner, workspaceId, 12)).unresolvedCount, 1);
   const result = await service.chooseInboxCategory(owner, {
     ...command({ item, transaction, idempotencyKey: "choose-groceries" }),
     categoryId: SYSTEM_GROCERIES_ID,
@@ -218,6 +221,7 @@ test("choosing another valid category preserves classifier evidence and resolves
   assert.equal(result.transaction.categoryId, SYSTEM_GROCERIES_ID);
   assert.deepEqual(result.unresolvedReasons, []);
   assert.equal(result.item.status, "RESOLVED");
+  assert.equal((await service.listInboxPreview(owner, workspaceId, 12)).unresolvedCount, 0);
   const resolvedClassification = financial.classifications.get(classification.id);
   assert.equal(resolvedClassification?.suggestedCategoryId, SYSTEM_TRANSPORT_ID);
   assert.equal(resolvedClassification?.appliedCategoryId, SYSTEM_GROCERIES_ID);
