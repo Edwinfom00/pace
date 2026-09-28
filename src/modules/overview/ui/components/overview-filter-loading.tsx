@@ -20,10 +20,13 @@ import type { OverviewFilter } from "../../domain/overview.types";
 const DEFAULT_FILTER_LOADING_MINIMUM_DURATION_MS = 450;
 
 type OverviewFilterLoadingContextValue = {
+  activeDate: string | null;
   activeFilter: OverviewFilter;
   isLoading: boolean;
   pendingFilter: OverviewFilter | null;
+  selectDate: (dateKey: string | null) => void;
   selectFilter: (filter: OverviewFilter) => void;
+  selectToday: (dateKey: string) => void;
 };
 
 const OverviewFilterLoadingContext = createContext<OverviewFilterLoadingContextValue | null>(null);
@@ -31,10 +34,12 @@ const OverviewFilterLoadingContext = createContext<OverviewFilterLoadingContextV
 export function OverviewFilterLoadingProvider({
   children,
   minimumDurationMs = DEFAULT_FILTER_LOADING_MINIMUM_DURATION_MS,
+  selectedDate,
   selectedFilter,
 }: {
   children: ReactNode;
   minimumDurationMs?: number;
+  selectedDate: string | null;
   selectedFilter: OverviewFilter;
 }) {
   const pathname = usePathname();
@@ -47,6 +52,10 @@ export function OverviewFilterLoadingProvider({
   const [activeFilter, setActiveFilter] = useOptimistic(
     selectedFilter,
     (_currentFilter, nextFilter: OverviewFilter) => nextFilter,
+  );
+  const [activeDate, setActiveDate] = useOptimistic(
+    selectedDate,
+    (_currentDate, nextDate: string | null) => nextDate,
   );
 
   useEffect(() => {
@@ -82,8 +91,44 @@ export function OverviewFilterLoadingProvider({
     });
   };
 
+  const selectDate = (dateKey: string | null) => {
+    if (dateKey === activeDate || isLoading) return;
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (dateKey) nextParams.set("day", dateKey);
+    else nextParams.delete("day");
+
+    loadingStartedAt.current = performance.now();
+    setIsLoading(true);
+    setPendingFilter(null);
+
+    const query = nextParams.toString();
+    startTransition(() => {
+      setActiveDate(dateKey);
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    });
+  };
+
+  const selectToday = (dateKey: string) => {
+    if (isLoading || (activeDate === dateKey && !searchParams.has("period"))) return;
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("period");
+    nextParams.set("day", dateKey);
+
+    loadingStartedAt.current = performance.now();
+    setIsLoading(true);
+    setPendingFilter(null);
+
+    const query = nextParams.toString();
+    startTransition(() => {
+      setActiveDate(dateKey);
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    });
+  };
+
   return (
-    <OverviewFilterLoadingContext.Provider value={{ activeFilter, isLoading, pendingFilter, selectFilter }}>
+    <OverviewFilterLoadingContext.Provider value={{ activeDate, activeFilter, isLoading, pendingFilter, selectDate, selectFilter, selectToday }}>
       {children}
     </OverviewFilterLoadingContext.Provider>
   );

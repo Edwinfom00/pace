@@ -9,6 +9,7 @@ import {
 import {
   calendarMonthPeriod,
   countCalendarDays,
+  createPeriod,
   localDateForInstant,
   localDateKey,
   periodForLocalDates,
@@ -25,6 +26,8 @@ import type {
 
 export interface BuildOverviewFinancialSummaryInput {
   readonly filter: OverviewFilter;
+  /** An optional local date that limits this month's metrics to its completed days. */
+  readonly selectedDay?: string | null;
   readonly currency: string;
   readonly locale: string;
   readonly period: Period;
@@ -42,9 +45,18 @@ const POSTED_ONLY = { statuses: ["POSTED"] as const };
 export function buildOverviewFinancialSummary(
   input: BuildOverviewFinancialSummaryInput,
 ): OverviewFinancialSummary {
-  const periodTransactions = transactionsInPeriod(input.transactions, input.period);
+  const selectedPeriod = input.selectedDay
+    ? overviewPeriodThroughDay(input.period, input.selectedDay, input.timeZone)
+    : input.period;
+  const effectiveNow = input.selectedDay
+    ? new Date(selectedPeriod.end.getTime() - 1)
+    : input.now;
+  const periodTransactions = transactionsInPeriod(input.transactions, selectedPeriod);
   const previousPeriod = calendarMonthPeriod(input.period.start, input.timeZone, -1);
-  const previousTransactions = transactionsInPeriod(input.transactions, previousPeriod);
+  const comparisonPeriod = input.selectedDay
+    ? comparisonPeriodThroughSelectedDay(previousPeriod, selectedPeriod, input.timeZone)
+    : previousPeriod;
+  const previousTransactions = transactionsInPeriod(input.transactions, comparisonPeriod);
   const currentTotals = calculateTotals(periodTransactions, {
     currency: input.currency,
     ...POSTED_ONLY,
@@ -93,7 +105,7 @@ export function buildOverviewFinancialSummary(
     ? calculateDailyPace(periodTransactions, input.period, input.timeZone, {
         currency: input.currency,
         ...POSTED_ONLY,
-        now: input.now,
+        now: effectiveNow,
       })
     : null;
   const hasSpending = currentTotals.spending.minor !== 0n;
@@ -118,7 +130,7 @@ export function buildOverviewFinancialSummary(
           }
         : insufficientData(),
     spendingPace: supportsSpendingPace
-      ? buildSpendingPace(input)
+      ? buildSpendingPace({ ...input, now: effectiveNow })
       : {
           availability: "not-applicable",
           hasActualSpending: false,
@@ -126,6 +138,49 @@ export function buildOverviewFinancialSummary(
           points: [],
         },
   };
+}
+
+function overviewPeriodThroughDay(period: Period, selectedDay: string, timeZone: string): Period {
+  const selectedDate = new Date(`${selectedDay}T12:00:00.000Z`);
+  const nextDate = new Date(Date.UTC(
+    selectedDate.getUTCFullYear(),
+    selectedDate.getUTCMonth(),
+    selectedDate.getUTCDate() + 1,
+  ));
+  const end = periodForLocalDates(
+    selectedDay,
+    localDateKey({
+      year: nextDate.getUTCFullYear(),
+      month: nextDate.getUTCMonth() + 1,
+      day: nextDate.getUTCDate(),
+    }),
+    timeZone,
+  ).end;
+  return createPeriod(period.start, end);
+}
+
+function comparisonPeriodThroughSelectedDay(
+  previousPeriod: Period,
+  selectedPeriod: Period,
+  timeZone: string,
+): Period {
+  const elapsedDayCount = countCalendarDays(selectedPeriod.start, selectedPeriod.end, timeZone);
+  const previousStart = localDateForInstant(previousPeriod.start, timeZone);
+  const previousDayCount = countCalendarDays(previousPeriod.start, previousPeriod.end, timeZone);
+  const comparisonEnd = new Date(Date.UTC(
+    previousStart.year,
+    previousStart.month - 1,
+    Math.min(elapsedDayCount, previousDayCount) + 1,
+  ));
+  return periodForLocalDates(
+    localDateKey(previousStart),
+    localDateKey({
+      year: comparisonEnd.getUTCFullYear(),
+      month: comparisonEnd.getUTCMonth() + 1,
+      day: comparisonEnd.getUTCDate(),
+    }),
+    timeZone,
+  );
 }
 
 export function overviewPeriodFromKey(

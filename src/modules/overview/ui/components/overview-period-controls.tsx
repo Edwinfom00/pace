@@ -56,6 +56,7 @@ export function OverviewPeriodControls({
   const selectPeriod = (nextPeriod: string) => {
     if (nextPeriod === periodKey) return;
     const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("day");
     if (nextPeriod === currentPeriodKey) nextParams.delete("period");
     else nextParams.set("period", nextPeriod);
     const query = nextParams.toString();
@@ -184,14 +185,6 @@ export function OverviewPeriodControls({
           type="button"
         >
           <FiChevronRight aria-hidden="true" className="size-4" />
-        </button>
-        <button
-          className="ml-1 h-8 rounded-[7px] border border-[#e5eaf1] bg-white px-3 text-[13px] font-medium text-[#34405d] outline-none transition-colors hover:border-[#d4ddea] hover:bg-[#f8fafc] focus-visible:ring-2 focus-visible:ring-[#91b5fa] focus-visible:ring-offset-2"
-          disabled={isPending}
-          onClick={() => selectPeriod(currentPeriodKey)}
-          type="button"
-        >
-          {labels["overview.period.today"]}
         </button>
       </div>
       <span aria-live="polite" className="sr-only" role="status">

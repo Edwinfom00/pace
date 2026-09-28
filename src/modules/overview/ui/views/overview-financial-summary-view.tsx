@@ -7,6 +7,7 @@ import {
   OverviewFilterLoadingProvider,
   OverviewFilterLoadingSurface,
 } from "../components/overview-filter-loading";
+import { OverviewDayFilter } from "../components/overview-day-filter";
 import { OverviewKpis } from "../components/overview-kpis";
 import { OverviewPeriodControls } from "../components/overview-period-controls";
 import { SpendingPaceChart } from "../components/spending-pace-chart";
@@ -21,7 +22,9 @@ export function OverviewFinancialSummaryView({
   labels,
   currentPeriodKey,
   periodKey,
+  selectedDay,
   summary,
+  todayDate,
   recentTransactions,
   inbox,
   workspaceSlug,
@@ -34,7 +37,9 @@ export function OverviewFinancialSummaryView({
   labels: DashboardLabels;
   currentPeriodKey: string;
   periodKey: string;
+  selectedDay: string | null;
   summary: OverviewFinancialSummary;
+  todayDate: string;
   recentTransactions: readonly OverviewRecentTransaction[];
   inbox: OverviewInboxPreview;
   workspaceSlug: string;
@@ -54,8 +59,13 @@ export function OverviewFinancialSummaryView({
             locale={summary.locale}
             periodKey={periodKey}
           />
-          <OverviewFilterLoadingProvider selectedFilter={summary.filter}>
-            <OverviewFilters labels={labels} />
+          <OverviewFilterLoadingProvider selectedDate={selectedDay} selectedFilter={summary.filter}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <OverviewFilters labels={labels} />
+              <div className="shrink-0">
+                <OverviewDayFilter labels={labels} locale={summary.locale} periodKey={periodKey} todayDate={todayDate} />
+              </div>
+            </div>
             <OverviewFilterLoadingSurface labels={labels}>
               <div className="space-y-4 sm:space-y-5">
                 <OverviewKpis labels={labels} summary={summary} />

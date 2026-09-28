@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getAuthenticatedActor } from "@/authorization/session";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import { getPersistedDashboardLanguage } from "@/i18n/dashboard-server";
+import { localDateForInstant, localDateKey } from "@/money/period";
 import {
   loginPathForReturnTo,
   workspaceOverviewPath,
@@ -11,7 +12,7 @@ import {
   overviewPeriodFromKey,
   overviewPeriodKey,
 } from "@/modules/overview/domain/overview-financial-summary";
-import { parseOverviewFilter } from "@/modules/overview/domain/overview.types";
+import { parseOverviewDay, parseOverviewFilter } from "@/modules/overview/domain/overview.types";
 import { getOverviewFinancialSummary } from "@/modules/overview/queries/get-overview-financial-summary";
 import { getOverviewInboxPreview } from "@/modules/overview/queries/get-overview-inbox-preview";
 import { getOverviewRecentTransactions } from "@/modules/overview/queries/get-overview-recent-transactions";
@@ -21,7 +22,7 @@ import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/w
 
 type WorkspaceOverviewPageProps = {
   params: Promise<{ workspaceSlug: string }>;
-  searchParams: Promise<{ filter?: string | string[]; period?: string | string[] }>;
+  searchParams: Promise<{ day?: string | string[]; filter?: string | string[]; period?: string | string[] }>;
 };
 
 export default async function WorkspaceOverviewScaffoldPage({
@@ -56,6 +57,9 @@ export default async function WorkspaceOverviewScaffoldPage({
     overviewPeriodFromKey(undefined, workspace.preferences.timezone, now),
     workspace.preferences.timezone,
   );
+  const periodKey = overviewPeriodKey(period, workspace.preferences.timezone);
+  const todayDate = localDateKey(localDateForInstant(now, workspace.preferences.timezone));
+  const selectedDay = parseOverviewDay(query.day, periodKey);
   const language = await getPersistedDashboardLanguage(actor.userId);
   const labels = getDashboardLabels(language);
   const [summary, recentTransactions, inbox, rightRail] = await Promise.all([
@@ -63,10 +67,12 @@ export default async function WorkspaceOverviewScaffoldPage({
       actor,
       workspaceId: workspace.workspace.id,
       filter: parseOverviewFilter(query.filter),
+      selectedDay,
       period,
       currency: workspace.preferences.currency,
       locale: workspace.preferences.locale,
       timeZone: workspace.preferences.timezone,
+      now,
     }),
     getOverviewRecentTransactions({
       actor,
@@ -94,8 +100,10 @@ export default async function WorkspaceOverviewScaffoldPage({
     <OverviewFinancialSummaryView
       currentPeriodKey={currentPeriodKey}
       labels={labels}
-      periodKey={overviewPeriodKey(period, workspace.preferences.timezone)}
+      periodKey={periodKey}
+      selectedDay={selectedDay}
       summary={summary}
+      todayDate={todayDate}
       inbox={inbox}
       now={now.toISOString()}
       recentTransactions={recentTransactions}

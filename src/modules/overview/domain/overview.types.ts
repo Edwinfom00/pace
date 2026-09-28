@@ -10,6 +10,21 @@ export function parseOverviewFilter(value: string | string[] | undefined): Overv
   return OVERVIEW_FILTERS.includes(candidate as OverviewFilter) ? candidate as OverviewFilter : "ALL";
 }
 
+export function parseOverviewDay(
+  value: string | string[] | undefined,
+  periodKey: string,
+): string | null {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate || !/^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/.test(candidate)) return null;
+  if (!candidate.startsWith(`${periodKey}-`)) return null;
+
+  const [year, month, day] = candidate.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year!, month! - 1, day!));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month! - 1 && parsed.getUTCDate() === day
+    ? candidate
+    : null;
+}
+
 export interface OverviewKpiTrend {
   readonly direction: OverviewTrendDirection;
   readonly sentiment: OverviewTrendSentiment;

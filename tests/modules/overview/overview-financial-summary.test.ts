@@ -8,7 +8,7 @@ import {
   overviewPeriodFromKey,
 } from "@/modules/overview/domain/overview-financial-summary";
 import { formatOverviewMoney } from "@/modules/overview/domain/overview-formatters";
-import { parseOverviewFilter } from "@/modules/overview/domain/overview.types";
+import { parseOverviewDay, parseOverviewFilter } from "@/modules/overview/domain/overview.types";
 import { nextOverviewFilterFromKey } from "@/modules/overview/ui/components/overview-filters";
 import { shiftOverviewPeriodKey } from "@/modules/overview/ui/components/overview-period-controls";
 import { visibleOverviewChartDays } from "@/modules/overview/ui/components/spending-pace-chart";
@@ -143,11 +143,33 @@ test("month lengths, historical periods, and future periods do not create false 
   assert.equal(future.spendingPace.currentDay, null);
 });
 
+test("a selected day limits metrics to month-to-date data and ends the pace chart on that date", () => {
+  const selectedDay = buildOverviewFinancialSummary({
+    filter: "ALL",
+    selectedDay: "2026-02-04",
+    currency: "XAF",
+    locale: "fr-CM",
+    now,
+    period: february,
+    timeZone,
+    transactions,
+  });
+
+  assert.equal(selectedDay.primary.minor, "70000");
+  assert.equal(selectedDay.pace.minor, "17500");
+  assert.equal(selectedDay.spendingPace.currentDay, 4);
+  assert.equal(selectedDay.spendingPace.points[3]?.actualMinor, "70000");
+  assert.equal(selectedDay.spendingPace.points[4]?.actualMinor, null);
+});
+
 test("filter parsing and keyboard selection preserve the four stable filter values", () => {
   assert.equal(parseOverviewFilter(undefined), "ALL");
   assert.equal(parseOverviewFilter("EXPENSE"), "EXPENSE");
   assert.equal(parseOverviewFilter("INCOME"), "INCOME");
   assert.equal(parseOverviewFilter("TRANSFER"), "TRANSFER");
+  assert.equal(parseOverviewDay("2026-02-04", "2026-02"), "2026-02-04");
+  assert.equal(parseOverviewDay("2026-02-30", "2026-02"), null);
+  assert.equal(parseOverviewDay("2026-03-04", "2026-02"), null);
   assert.equal(nextOverviewFilterFromKey("ALL", "ArrowRight"), "EXPENSE");
   assert.equal(nextOverviewFilterFromKey("ALL", "ArrowLeft"), "TRANSFER");
   assert.equal(nextOverviewFilterFromKey("INCOME", "Home"), "ALL");

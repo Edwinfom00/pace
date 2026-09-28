@@ -72,11 +72,11 @@ export function AuthBrandPanel({
       <AuthScenicBackground />
 
       <div className="relative z-30 max-w-[49%] max-[940px]:max-w-[55%] max-md:max-w-none">
-        <header className="flex min-h-[45px] items-center">
+        <header className="flex min-h-11.25 items-center">
           <PaceLogo height={45} preload width={150} />
         </header>
 
-        <div className="mt-[clamp(4rem,4vw,4.5rem)] max-xl:mt-[clamp(4rem,4vw,4.5rem)] max-[940px]:mt-16 max-md:mt-13 max-md:max-w-[30rem] [@media(max-height:850px)]:mt-12">
+        <div className="mt-[clamp(4rem,4vw,4.5rem)] max-xl:mt-[clamp(4rem,4vw,4.5rem)] max-[940px]:mt-16 max-md:mt-13 max-md:max-w-120 [@media(max-height:850px)]:mt-12">
           {variant === "register" ? (
             <p className="mb-[1.85rem] mt-0 text-[0.7rem] font-semibold leading-[1.2] tracking-[0.055em] text-[#617096] uppercase">
               {t("auth.brand.eyebrow")}
@@ -85,7 +85,7 @@ export function AuthBrandPanel({
           <h2 className="m-0 max-w-[11ch] text-[clamp(2.8rem,3.8vw,3.75rem)] leading-[1.02] font-bold tracking-[-0.035em] text-[#07152f] max-md:max-w-[11ch] max-md:text-[clamp(2.35rem,10vw,3.5rem)] [@media(max-height:850px)]:text-[3rem]" id="auth-brand-heading">
             <AuthHeadline language={language} text={t("auth.brand.headline")} />
           </h2>
-          <p className="mt-[1.15rem] mb-0 max-w-[28rem] text-[clamp(1rem,1.45vw,1.27rem)] leading-[1.45] text-[#5f7094] text-pretty max-md:mt-3.5 [@media(max-height:850px)]:mt-3 [@media(max-height:850px)]:text-base">
+          <p className="mt-[1.15rem] mb-0 max-w-md text-[clamp(1rem,1.45vw,1.27rem)] leading-[1.45] text-[#5f7094] text-pretty max-md:mt-3.5 [@media(max-height:850px)]:mt-3 [@media(max-height:850px)]:text-base">
             {t("auth.brand.tagline")}
           </p>
         </div>
@@ -98,13 +98,13 @@ export function AuthBrandPanel({
 
       <div
         aria-hidden="true"
-        className="absolute right-[3.5rem] bottom-[3rem] left-[3.5rem] z-20 flex items-end justify-between text-[#f8fbff] max-[940px]:right-10 max-[940px]:bottom-10 max-[940px]:left-10 max-md:hidden [@media(max-height:850px)]:hidden"
+        className="absolute right-14 bottom-12 left-14 z-20 flex items-end justify-between text-[#f8fbff] max-[940px]:right-10 max-[940px]:bottom-10 max-[940px]:left-10 max-md:hidden [@media(max-height:850px)]:hidden"
       >
-        <p className="m-0 max-w-[10rem] text-[clamp(1.5rem,2.1vw,2.25rem)] leading-[1.03] font-medium tracking-[-0.035em] italic text-balance">
+        <p className="m-0 max-w-40 text-[clamp(1.5rem,2.1vw,2.25rem)] leading-[1.03] font-medium tracking-[-0.035em] italic text-balance">
           {t("auth.brand.scenicCaption")}
         </p>
         <div className="flex max-w-36 items-end gap-2.5 text-sm leading-[1.15] font-medium text-[#5573a4] italic">
-          <span className="h-6 w-9 rounded-bl-full border-b border-l border-current -rotate-[17deg]" />
+          <span className="h-6 w-9 rounded-bl-full border-b border-l border-current rotate-[-17deg]" />
           <span>{t("auth.brand.agentAnnotation")}</span>
         </div>
       </div>
@@ -147,7 +147,7 @@ function AuthScenicBackground() {
         sizes="(max-width: 760px) 0px, (max-width: 1100px) 48vw, 860px"
         src="/auth/pace-login-visual.webp"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-[#f4f7ff]/80 via-[#f3f6ff]/40 to-transparent" />
+      <div className="absolute inset-0 bg-linear-to-b from-[#f4f7ff]/80 via-[#f3f6ff]/40 to-transparent" />
     </div>
   );
 }
@@ -174,7 +174,7 @@ function AuthBenefits({
             <Icon />
           </span>
           <span className="grid min-w-0 gap-0.5">
-            <strong className="text-base leading-[1.25] font-[680] text-[#0b1830]">
+            <strong className="text-base leading-tight font-[680] text-[#0b1830]">
               {t(`auth.brand.benefits.${id}.title`)}
             </strong>
             <small className="overflow-hidden text-[0.86rem] leading-[1.35] text-ellipsis whitespace-nowrap text-[#617196]">
@@ -193,7 +193,7 @@ function AuthTestimonial({
   t: ReturnType<typeof getAuthBrandTranslations>;
 }) {
   return (
-    <figure className="mt-[clamp(3rem,4vw,5rem)] mb-0 max-w-[23rem] text-[#5a6a8e] max-[940px]:mt-[3.6rem] max-md:hidden [@media(max-height:850px)]:hidden">
+    <figure className="mt-[clamp(3rem,4vw,5rem)] mb-0 max-w-92 text-[#5a6a8e] max-[940px]:mt-[3.6rem] max-md:hidden [@media(max-height:850px)]:hidden">
       <blockquote className="m-0 text-[clamp(0.94rem,1.1vw,1.05rem)] leading-[1.55] italic text-pretty">
         {t("auth.brand.testimonial.quote")}
       </blockquote>
@@ -208,7 +208,7 @@ function AuthProductPreview() {
   return (
     <div
       aria-hidden="true"
-      className="absolute top-[15%] right-[-8%] z-20 grid min-h-[clamp(25rem,37vw,34rem)] w-[57%] max-w-[34rem] grid-cols-[34%_66%] overflow-visible rounded-[1.05rem] bg-white/93 shadow-[0_18px_38px_rgb(42_64_110_/_12%)] rotate-[4deg] origin-[54%_38%] max-xl:right-[-12%] max-xl:w-[60%] max-[940px]:hidden max-md:hidden"
+      className="absolute top-[15%] right-[-8%] z-20 grid min-h-[clamp(25rem,37vw,34rem)] w-[57%] max-w-136 grid-cols-[34%_66%] overflow-visible rounded-[1.05rem] bg-white/93 shadow-[0_18px_38px_rgb(42_64_110/12%)] rotate-[4deg] origin-[54%_38%] max-xl:right-[-12%] max-xl:w-[60%] max-[940px]:hidden max-md:hidden"
     >
       <div className="flex flex-col gap-[clamp(2.5rem,5vw,4.2rem)] bg-[#f8faff]/80 p-5 max-[940px]:gap-10">
         <PaceLogo alt="" height={24} variant="icon" width={24} />
@@ -230,14 +230,14 @@ function AuthProductPreview() {
           <i className="block h-[0.47rem] w-[60%] rounded-full bg-[#a8b4cd]" />
         </div>
 
-        <div className="mt-6.5 grid min-h-50 rounded-[0.7rem] bg-[#fafbff]/94 p-5 shadow-[0_8px_18px_rgb(56_76_119_/_8%)]">
+        <div className="mt-6.5 grid min-h-50 rounded-[0.7rem] bg-[#fafbff]/94 p-5 shadow-[0_8px_18px_rgb(56_76_119/8%)]">
           <span className="block h-[0.45rem] w-[55%] rounded-full bg-[#70809f]" />
           <span className="block h-[1.2rem] w-[78%] self-center rounded-full bg-[#0a1831]" />
           <span className="block h-[0.65rem] w-[40%] rounded-full bg-[#a8e7bd]" />
           <div className="mt-4 flex h-[7.35rem] items-end gap-2">
             {previewBars.map((height, index) => (
               <i
-                className={`w-[0.82rem] rounded-t-[0.22rem] bg-gradient-to-b from-[#b2c5ff] to-[#7f9dff] ${height}`}
+                className={`w-[0.82rem] rounded-t-[0.22rem] bg-linear-to-b from-[#b2c5ff] to-[#7f9dff] ${height}`}
                 key={`metric-bar-${index}`}
               />
             ))}
@@ -260,7 +260,7 @@ function AuthProductPreview() {
         </div>
       </div>
 
-      <div className="absolute bottom-[-2.4rem] left-[-5.5rem] z-20 flex w-[62%] max-w-[19.5rem] items-center gap-3 rounded-[0.85rem] bg-white/95 px-4 py-3.5 shadow-[0_12px_22px_rgb(34_54_97_/_12%)] -rotate-1 max-xl:left-[-3.25rem]">
+      <div className="absolute bottom-[-2.4rem] -left-22 z-20 flex w-[62%] max-w-78 items-center gap-3 rounded-[0.85rem] bg-white/95 px-4 py-3.5 shadow-[0_12px_22px_rgb(34_54_97/12%)] -rotate-1 max-xl:-left-13">
         <span className="grid size-8 shrink-0 place-items-center rounded-[0.56rem] bg-[#eef1ff] text-[1.1rem] text-[#365eff]">
           <HiOutlineSparkles />
         </span>

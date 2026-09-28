@@ -11,6 +11,7 @@ export interface GetOverviewFinancialSummaryInput {
   readonly actor: AuthenticatedActor;
   readonly workspaceId: string;
   readonly filter: OverviewFilter;
+  readonly selectedDay?: string | null;
   readonly period: Period;
   readonly currency: string;
   readonly locale: string;
@@ -28,6 +29,7 @@ export async function getOverviewFinancialSummary(input: GetOverviewFinancialSum
 
   return buildOverviewFinancialSummary({
     filter: input.filter,
+    selectedDay: input.selectedDay,
     currency: input.currency,
     locale: input.locale,
     period: input.period,
