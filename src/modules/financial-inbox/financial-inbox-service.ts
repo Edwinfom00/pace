@@ -50,6 +50,7 @@ export interface FinancialInboxView {
   status: FinancialInboxItemRecord["status"];
   details: Record<string, unknown>;
   createdAt: string;
+  updatedAt: string;
   transaction: {
     id: string;
     kind: LedgerTransactionRecord["kind"];
@@ -75,6 +76,7 @@ export interface FinancialInboxView {
     cadenceDays: number;
     typicalAmountMinor: string;
     currency: string;
+    updatedAt: string;
   } | null;
 }
 
@@ -100,7 +102,6 @@ export interface RecurringPaymentView {
   lastOccurredAt: string;
   nextOccurrenceAt: string | null;
   sampleTransactionIds: string[];
-  /** Canonical optimistic-concurrency token for later server mutations. */
   updatedAt: string;
 }
 
@@ -109,10 +110,7 @@ export const MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH = 180;
 const MAX_POSTGRES_BIGINT_MINOR = 9_223_372_036_854_775_807n;
 
 
-/**
- * The canonical server/domain command for an intentional recurring pattern.
- * It only creates the pattern; it never creates a ledger transaction.
- */
+
 export interface CreateManualRecurringCommand {
   readonly workspaceId: string;
   readonly direction: RecurringPaymentDirection;
@@ -140,24 +138,49 @@ export interface IgnoreRecurringCommand extends ConfirmRecurringCommand {
 
 export type RestoreRecurringCommand = ConfirmRecurringCommand;
 
+export interface ConfirmInboxRecurringCommand {
+  readonly workspaceId: string;
+  readonly inboxItemId: string;
+  readonly expectedInboxUpdatedAt: Date;
+  readonly idempotencyKey: string;
+}
 
-/**
- * Changes the canonical future recurrence only. It deliberately has no
- * transaction fields: past matched occurrences and ledger truth are immutable.
- */
+export interface IgnoreInboxRecurringCommand extends ConfirmInboxRecurringCommand {
+  readonly reason?: string;
+}
+
+export type InboxRecurringResolutionResult = {
+  readonly item: FinancialInboxItemRecord;
+  readonly recurring: RecurringPaymentView;
+  readonly resolvedInboxItemIds: readonly string[];
+  readonly unresolvedReasons: readonly InboxReason[];
+  readonly replayed: boolean;
+};
+
+
+
 export interface UpdateRecurringCommand extends ConfirmRecurringCommand {
   readonly name?: string;
   readonly amountMinor?: bigint;
   readonly cadenceDays?: number;
   readonly nextOccurrenceAt?: Date;
-  /** Undefined leaves the relation unchanged; null intentionally clears it. */
   readonly accountId?: string | null;
-  /** Undefined leaves the relation unchanged; null intentionally clears it. */
   readonly categoryId?: string | null;
 }
 
 export type PauseRecurringCommand = ConfirmRecurringCommand;
 export type ResumeRecurringCommand = ConfirmRecurringCommand;
+
+type RecurringReviewBridge = {
+  readonly inboxItemId: string;
+  readonly expectedInboxUpdatedAt: Date;
+};
+
+type RecurringReviewAuditContext = {
+  readonly inboxItemId: string;
+  readonly bridge?: RecurringReviewBridge;
+  readonly commandFingerprint?: string;
+};
 
 export type InboxCategoryResolutionResult = {
   readonly transaction: LedgerTransactionRecord;
@@ -337,10 +360,7 @@ export class FinancialInboxService {
     return payments.map((payment) => this.presentRecurring(payment));
   }
 
-  /**
-   * Creates an intentional M4 recurring pattern. This method does not call a
-   * ledger write path: balances, reporting, and transactions stay untouched.
-   */
+
   async createManualRecurring(
     actor: AuthenticatedActor,
     command: CreateManualRecurringCommand,
@@ -389,8 +409,6 @@ export class FinancialInboxService {
     const input = {
       id,
       workspaceId: command.workspaceId,
-      // Manual patterns use a private key. Detection matching intentionally
-      // evaluates the richer evidence below instead of relying on key equality.
       detectionKey: `manual:${id}`,
       normalizedMerchant: prepared.normalizedMerchant,
       displayName: prepared.name,
@@ -402,8 +420,6 @@ export class FinancialInboxService {
       typicalAmountMinor: prepared.amountMinor,
       amountToleranceBps: RECURRING_AMOUNT_TOLERANCE_BPS,
       cadenceDays: prepared.cadenceDays,
-      // M4's required historical anchors are retained for compatibility. The
-      // separate nextOccurrenceAt field is authoritative for this manual plan.
       firstOccurredAt: prepared.nextOccurrenceAt,
       lastOccurredAt: prepared.nextOccurrenceAt,
       nextOccurrenceAt: prepared.nextOccurrenceAt,
@@ -464,8 +480,9 @@ export class FinancialInboxService {
   async confirmRecurring(
     actor: AuthenticatedActor,
     command: ConfirmRecurringCommand,
+    auditContext?: RecurringReviewAuditContext,
   ): Promise<RecurringPaymentView> {
-    return this.reviewRecurring(actor, command, "CONFIRM");
+    return this.reviewRecurring(actor, command, "CONFIRM", auditContext);
   }
 
 
@@ -477,8 +494,141 @@ export class FinancialInboxService {
   async ignoreRecurring(
     actor: AuthenticatedActor,
     command: IgnoreRecurringCommand,
+    auditContext?: RecurringReviewAuditContext,
   ): Promise<RecurringPaymentView> {
-    return this.reviewRecurring(actor, command, "IGNORE");
+    return this.reviewRecurring(actor, command, "IGNORE", auditContext);
+  }
+
+ 
+  async confirmInboxRecurring(
+    actor: AuthenticatedActor,
+    command: ConfirmInboxRecurringCommand,
+  ): Promise<InboxRecurringResolutionResult> {
+    return this.resolveInboxRecurring(actor, command, "CONFIRM");
+  }
+
+  async ignoreInboxRecurring(
+    actor: AuthenticatedActor,
+    command: IgnoreInboxRecurringCommand,
+  ): Promise<InboxRecurringResolutionResult> {
+    return this.resolveInboxRecurring(actor, command, "IGNORE");
+  }
+
+  private async resolveInboxRecurring(
+    actor: AuthenticatedActor,
+    command: ConfirmInboxRecurringCommand | IgnoreInboxRecurringCommand,
+    action: "CONFIRM" | "IGNORE",
+  ): Promise<InboxRecurringResolutionResult> {
+    const prepared = prepareInboxRecurringCommand(command, action);
+    const commandFingerprint = fingerprintInboxRecurringCommand(prepared);
+    const workspaceRole = await this.requireWorkspaceRole(actor.userId, prepared.workspaceId);
+    assertWorkspacePermission(workspaceRole, "manage_ledger");
+    const replay = await this.repository.findInboxAuditByIdempotencyKey(
+      prepared.workspaceId,
+      actor.userId,
+      prepared.idempotencyKey,
+    );
+    if (replay) return this.resolveExistingInboxRecurringCommand(prepared, commandFingerprint, replay);
+
+    const item = await this.repository.findInboxItem(prepared.workspaceId, prepared.inboxItemId);
+    if (!item) {
+      throw new DomainConflictError("INBOX_ITEM_NOT_FOUND", "Financial Inbox item not found in this workspace.");
+    }
+    if (!sameVersion(item.updatedAt, prepared.expectedInboxUpdatedAt)) {
+      throw new DomainConflictError("INBOX_ITEM_STALE", "This Inbox item changed since it was opened.");
+    }
+    if (item.status !== "OPEN") {
+      throw new DomainConflictError("INBOX_REASON_ALREADY_RESOLVED", "This Inbox reason is no longer open.");
+    }
+    if (item.reason !== "POSSIBLE_RECURRING" || !item.recurringPaymentId) {
+      throw new DomainConflictError("INBOX_ACTION_NOT_ALLOWED", "This Inbox item is not a recurring review.");
+    }
+    const inboxAction = action === "CONFIRM" ? "CONFIRM_RECURRING" : "IGNORE_RECURRING";
+    if (!item.actions.includes(inboxAction)) {
+      throw new DomainConflictError("INBOX_ACTION_NOT_ALLOWED", "This recurring action is not available for the Inbox item.");
+    }
+    const recurring = await this.repository.findRecurringPaymentById(prepared.workspaceId, item.recurringPaymentId);
+    if (!recurring) {
+      throw new DomainConflictError("INBOX_ACTION_NOT_ALLOWED", "The Inbox recurring candidate is no longer available.");
+    }
+
+    const auditContext: RecurringReviewAuditContext = {
+      inboxItemId: item.id,
+      bridge: { inboxItemId: item.id, expectedInboxUpdatedAt: prepared.expectedInboxUpdatedAt },
+      commandFingerprint,
+    };
+    const canonicalCommand = {
+      workspaceId: prepared.workspaceId,
+      recurringId: recurring.id,
+      expectedUpdatedAt: recurring.updatedAt,
+      idempotencyKey: prepared.idempotencyKey,
+    };
+    const payment = action === "CONFIRM"
+      ? await this.confirmRecurring(actor, canonicalCommand, auditContext)
+      : await this.ignoreRecurring(actor, { ...canonicalCommand, reason: prepared.reason }, auditContext);
+    return this.readInboxRecurringResolution(prepared.workspaceId, item.id, payment, false);
+  }
+
+  private async resolveExistingInboxRecurringCommand(
+    command: PreparedInboxRecurringCommand,
+    commandFingerprint: string,
+    audit: FinancialInboxAuditRecord,
+  ): Promise<InboxRecurringResolutionResult> {
+    if (
+      audit.inboxItemId !== command.inboxItemId
+      || !audit.recurringPaymentId
+      || audit.event !== recurringReviewAuditEvent(command.action)
+      || audit.commandFingerprint !== commandFingerprint
+    ) {
+      throw new DomainConflictError(
+        "ACTION_ALREADY_PROCESSED",
+        "This idempotency key was already used for another Inbox recurring action.",
+      );
+    }
+    const recurring = await this.repository.findRecurringPaymentById(command.workspaceId, audit.recurringPaymentId);
+    if (!recurring) {
+      throw new DomainConflictError(
+        "ACTION_ALREADY_PROCESSED",
+        "The recurring candidate for this completed Inbox action is no longer available.",
+      );
+    }
+    return this.readInboxRecurringResolution(
+      command.workspaceId,
+      command.inboxItemId,
+      this.presentRecurring(recurring),
+      true,
+    );
+  }
+
+  private async readInboxRecurringResolution(
+    workspaceId: string,
+    inboxItemId: string,
+    recurring: RecurringPaymentView,
+    replayed: boolean,
+  ): Promise<InboxRecurringResolutionResult> {
+    const item = await this.repository.findInboxItem(workspaceId, inboxItemId);
+    if (!item) {
+      throw new DomainConflictError("INBOX_ITEM_NOT_FOUND", "Inbox item not found after recurring reconciliation.");
+    }
+    const [relatedItems, workspaceItems] = await Promise.all([
+      this.repository.listInboxItemsForTransaction(workspaceId, item.transactionId),
+      this.repository.listInboxItems(workspaceId),
+    ]);
+    return {
+      item,
+      recurring,
+      resolvedInboxItemIds: workspaceItems
+        .filter((candidate) =>
+          candidate.recurringPaymentId === recurring.id
+          && candidate.reason === "POSSIBLE_RECURRING"
+          && candidate.status === "RESOLVED",
+        )
+        .map((candidate) => candidate.id),
+      unresolvedReasons: uniqueInboxReasons(
+        relatedItems.filter((candidate) => candidate.status === "OPEN").map((candidate) => candidate.reason),
+      ),
+      replayed,
+    };
   }
 
 
@@ -1002,11 +1152,11 @@ export class FinancialInboxService {
     actor: AuthenticatedActor,
     command: ConfirmRecurringCommand | IgnoreRecurringCommand | RestoreRecurringCommand,
     action: "CONFIRM" | "IGNORE" | "RESTORE",
-    auditContext?: { readonly inboxItemId: string },
+    auditContext?: RecurringReviewAuditContext,
   ): Promise<RecurringPaymentView> {
     const workspaceRole = await this.requireWorkspaceRole(actor.userId, command.workspaceId);
     const prepared = prepareRecurringReviewCommand(command, action);
-    const commandFingerprint = fingerprintRecurringReviewCommand(prepared);
+    const commandFingerprint = auditContext?.commandFingerprint ?? fingerprintRecurringReviewCommand(prepared);
     const replay = await this.repository.findRecurringAuditByIdempotencyKey(
       command.workspaceId,
       actor.userId,
@@ -1049,7 +1199,7 @@ export class FinancialInboxService {
     } as const;
 
     try {
-      const persisted = await this.repository.transitionRecurringPayment({
+      const transition = {
         workspaceId: command.workspaceId,
         recurringPaymentId: payment.id,
         expectedStatus: payment.status,
@@ -1072,8 +1222,19 @@ export class FinancialInboxService {
             ...(action === "IGNORE" && prepared.reason ? { reason: prepared.reason } : {}),
           },
         },
-      });
-      if (persisted) return this.presentRecurring(persisted);
+      };
+      const persistedPayment = auditContext?.bridge
+        ? (await this.repository.transitionRecurringPaymentAndReconcileInbox({
+            ...transition,
+            inbox: {
+              inboxItemId: auditContext.bridge.inboxItemId,
+              expectedUpdatedAt: auditContext.bridge.expectedInboxUpdatedAt,
+              resolvedByUserId: actor.userId,
+              resolvedAt: now,
+            },
+          }))?.payment
+        : await this.repository.transitionRecurringPayment(transition);
+      if (persistedPayment) return this.presentRecurring(persistedPayment);
     } catch (error) {
       const concurrentReplay = await this.repository.findRecurringAuditByIdempotencyKey(
         command.workspaceId,
@@ -1397,6 +1558,7 @@ export class FinancialInboxService {
       status: item.status,
       details: item.details,
       createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
       transaction: {
         id: transaction.id,
         kind: transaction.kind,
@@ -1425,6 +1587,7 @@ export class FinancialInboxService {
             cadenceDays: recurring.cadenceDays,
             typicalAmountMinor: recurring.typicalAmountMinor.toString(),
             currency: recurring.currency,
+            updatedAt: recurring.updatedAt.toISOString(),
           }
         : null,
     };
@@ -1727,6 +1890,66 @@ function requiredInboxVersion(value: unknown, code: string, message: string): Da
     throw new DomainConflictError(code, message);
   }
   return new Date(value);
+}
+
+type PreparedInboxRecurringCommand = {
+  readonly action: "CONFIRM" | "IGNORE";
+  readonly workspaceId: string;
+  readonly inboxItemId: string;
+  readonly expectedInboxUpdatedAt: Date;
+  readonly idempotencyKey: string;
+  readonly reason: string | undefined;
+};
+
+function prepareInboxRecurringCommand(
+  command: ConfirmInboxRecurringCommand | IgnoreInboxRecurringCommand,
+  action: PreparedInboxRecurringCommand["action"],
+): PreparedInboxRecurringCommand {
+  const workspaceId = requiredInboxIdentifier(
+    command.workspaceId,
+    "INBOX_ACTION_NOT_ALLOWED",
+    "A workspace identifier is required.",
+  );
+  const inboxItemId = requiredInboxIdentifier(
+    command.inboxItemId,
+    "INBOX_ACTION_NOT_ALLOWED",
+    "An Inbox item identifier is required.",
+  );
+  const expectedInboxUpdatedAt = requiredInboxVersion(
+    command.expectedInboxUpdatedAt,
+    "INBOX_ITEM_STALE",
+    "An expected Inbox version is required.",
+  );
+  if (typeof command.idempotencyKey !== "string") {
+    throw new DomainConflictError("INBOX_ACTION_NOT_ALLOWED", "An idempotency key is required.");
+  }
+  const idempotencyKey = command.idempotencyKey.trim();
+  if (!idempotencyKey || idempotencyKey.length > MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH) {
+    throw new DomainConflictError(
+      "INBOX_ACTION_NOT_ALLOWED",
+      `An idempotency key must contain 1 to ${MAX_MANUAL_RECURRING_IDEMPOTENCY_KEY_LENGTH} characters.`,
+    );
+  }
+  const rawReason = action === "IGNORE" ? (command as IgnoreInboxRecurringCommand).reason : undefined;
+  if (rawReason !== undefined && typeof rawReason !== "string") {
+    throw new DomainConflictError("INBOX_ACTION_NOT_ALLOWED", "Ignore reason must be text.");
+  }
+  const reason = rawReason?.normalize("NFKC").trim().replaceAll(/\s+/g, " ") || undefined;
+  if (reason && reason.length > 500) {
+    throw new DomainConflictError("INBOX_ACTION_NOT_ALLOWED", "Ignore reason must contain at most 500 characters.");
+  }
+  return { action, workspaceId, inboxItemId, expectedInboxUpdatedAt, idempotencyKey, reason };
+}
+
+function fingerprintInboxRecurringCommand(command: PreparedInboxRecurringCommand): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      action: command.action,
+      inboxItemId: command.inboxItemId,
+      expectedInboxUpdatedAt: command.expectedInboxUpdatedAt.toISOString(),
+      reason: command.reason ?? null,
+    }))
+    .digest("hex");
 }
 
 function fingerprintInboxCategoryResolutionCommand(command: PreparedInboxCategoryResolutionCommand): string {

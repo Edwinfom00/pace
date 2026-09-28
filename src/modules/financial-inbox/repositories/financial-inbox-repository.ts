@@ -52,6 +52,7 @@ export type CreateFinancialInboxAuditInput = Omit<
   idempotencyKey?: string | null;
 };
 
+
 /** A review-state write and its audit are inseparable. */
 export type TransitionRecurringPaymentInput = {
   readonly workspaceId: string;
@@ -71,6 +72,21 @@ export type TransitionRecurringPaymentInput = {
     readonly commandFingerprint: string;
     readonly idempotencyKey: string;
   };
+};
+
+
+export type TransitionRecurringPaymentAndReconcileInboxInput = TransitionRecurringPaymentInput & {
+  readonly inbox: {
+    readonly inboxItemId: string;
+    readonly expectedUpdatedAt: Date;
+    readonly resolvedByUserId: string;
+    readonly resolvedAt: Date;
+  };
+};
+
+export type RecurringInboxReconciliation = {
+  readonly payment: RecurringPaymentRecord;
+  readonly resolvedInboxItemIds: readonly string[];
 };
 
 /** A future-only recurring mutation and its audit are inseparable. */
@@ -190,6 +206,9 @@ export interface FinancialInboxRepository {
   createRecurringPayment(input: CreateRecurringPaymentInput): Promise<RecurringPaymentRecord>;
   /** Atomically applies a policy-approved review transition and writes its audit. */
   transitionRecurringPayment(input: TransitionRecurringPaymentInput): Promise<RecurringPaymentRecord | null>;
+  transitionRecurringPaymentAndReconcileInbox(
+    input: TransitionRecurringPaymentAndReconcileInboxInput,
+  ): Promise<RecurringInboxReconciliation | null>;
   /** Atomically applies a policy-approved future-only mutation and writes its audit. */
   mutateRecurringPayment(input: MutateRecurringPaymentInput): Promise<RecurringPaymentRecord | null>;
   updateRecurringPayment(
@@ -613,11 +632,130 @@ export class DatabaseFinancialInboxRepository implements FinancialInboxRepositor
     return record ? mapRecurringPayment(record) : null;
   }
 
+  async transitionRecurringPaymentAndReconcileInbox(
+    input: TransitionRecurringPaymentAndReconcileInboxInput,
+  ): Promise<RecurringInboxReconciliation | null> {
+    const [rows] = await neonSql.transaction(
+      (transaction) => [transaction`
+        WITH candidate AS (
+          SELECT id
+          FROM recurring_payment
+          WHERE workspace_id = ${input.workspaceId}
+            AND id = ${input.recurringPaymentId}
+            AND status = ${input.expectedStatus}::recurring_payment_status
+            AND (
+              ${input.expectedUpdatedAt ?? null}::timestamptz IS NULL
+              OR date_trunc('milliseconds', updated_at) = ${input.expectedUpdatedAt ?? null}
+            )
+          FOR UPDATE
+        ),
+        requested_inbox AS (
+          SELECT id
+          FROM financial_inbox_item
+          WHERE workspace_id = ${input.workspaceId}
+            AND id = ${input.inbox.inboxItemId}
+            AND recurring_payment_id = ${input.recurringPaymentId}
+            AND reason = 'POSSIBLE_RECURRING'::financial_inbox_reason
+            AND status = 'OPEN'::financial_inbox_status
+            AND date_trunc('milliseconds', updated_at) = ${input.inbox.expectedUpdatedAt}
+          FOR UPDATE
+        ),
+        updated AS (
+          UPDATE recurring_payment AS payment
+          SET
+            status = ${input.status}::recurring_payment_status,
+            confirmed_by_user_id = ${input.confirmedByUserId},
+            confirmed_at = ${input.confirmedAt},
+            ignored_by_user_id = ${input.ignoredByUserId},
+            ignored_at = ${input.ignoredAt},
+            updated_at = greatest(clock_timestamp(), payment.updated_at + interval '1 millisecond')
+          FROM candidate
+          INNER JOIN requested_inbox ON TRUE
+          WHERE payment.id = candidate.id
+          RETURNING
+            payment.id,
+            payment.workspace_id AS "workspaceId",
+            payment.detection_key AS "detectionKey",
+            payment.normalized_merchant AS "normalizedMerchant",
+            payment.display_name AS "displayName",
+            payment.origin::text AS origin,
+            payment.direction::text AS direction,
+            payment.account_id AS "accountId",
+            payment.category_id AS "categoryId",
+            payment.currency,
+            payment.typical_amount_minor AS "typicalAmountMinor",
+            payment.amount_tolerance_bps AS "amountToleranceBps",
+            payment.cadence_days AS "cadenceDays",
+            payment.first_occurred_at AS "firstOccurredAt",
+            payment.last_occurred_at AS "lastOccurredAt",
+            payment.next_occurrence_at AS "nextOccurrenceAt",
+            payment.sample_transaction_ids AS "sampleTransactionIds",
+            payment.status::text AS status,
+            payment.lifecycle::text AS lifecycle,
+            payment.created_by_user_id AS "createdByUserId",
+            payment.idempotency_key AS "idempotencyKey",
+            payment.command_fingerprint AS "commandFingerprint",
+            payment.confirmed_by_user_id AS "confirmedByUserId",
+            payment.confirmed_at AS "confirmedAt",
+            payment.ignored_by_user_id AS "ignoredByUserId",
+            payment.ignored_at AS "ignoredAt",
+            payment.created_at AS "createdAt",
+            payment.updated_at AS "updatedAt"
+        ),
+        matched_inbox AS (
+          SELECT id
+          FROM financial_inbox_item
+          WHERE workspace_id = ${input.workspaceId}
+            AND recurring_payment_id = ${input.recurringPaymentId}
+            AND reason = 'POSSIBLE_RECURRING'::financial_inbox_reason
+            AND status = 'OPEN'::financial_inbox_status
+          FOR UPDATE
+        ),
+        resolved AS (
+          UPDATE financial_inbox_item AS item
+          SET
+            status = 'RESOLVED'::financial_inbox_status,
+            resolved_by_user_id = ${input.inbox.resolvedByUserId},
+            resolved_at = ${input.inbox.resolvedAt},
+            updated_at = greatest(clock_timestamp(), item.updated_at + interval '1 millisecond')
+          FROM matched_inbox
+          INNER JOIN updated ON TRUE
+          WHERE item.id = matched_inbox.id
+          RETURNING item.id
+        ),
+        audited AS (
+          INSERT INTO financial_inbox_audit (
+            id, workspace_id, inbox_item_id, classification_id, recurring_payment_id,
+            actor_user_id, event, command_fingerprint, idempotency_key, metadata
+          )
+          SELECT
+            ${input.audit.id}, ${input.audit.workspaceId}, ${input.inbox.inboxItemId},
+            ${input.audit.classificationId ?? null}, updated.id, ${input.audit.actorUserId},
+            ${input.audit.event}, ${input.audit.commandFingerprint}, ${input.audit.idempotencyKey},
+            ${JSON.stringify(input.audit.metadata)}::jsonb
+          FROM updated
+        )
+        SELECT
+          updated.*,
+          COALESCE((SELECT json_agg(resolved.id) FROM resolved), '[]'::json) AS "resolvedInboxItemIds"
+        FROM updated;
+      `],
+      { isolationLevel: "Serializable" },
+    );
+    const record = (rows as unknown as readonly (RawRecurringPayment & {
+      resolvedInboxItemIds: unknown;
+    })[])[0];
+    if (!record) return null;
+    const { resolvedInboxItemIds, ...payment } = record;
+    return {
+      payment: mapRecurringPayment(payment),
+      resolvedInboxItemIds: mapStringArray(resolvedInboxItemIds, "resolved Inbox item identifiers"),
+    };
+  }
+
   async mutateRecurringPayment(
     input: MutateRecurringPaymentInput,
   ): Promise<RecurringPaymentRecord | null> {
-    // This statement intentionally reads and writes recurring_payment plus its
-    // audit only. It cannot alter transactions, balances, or ledger reporting.
     const [rows] = await neonSql.transaction(
       (transaction) => [transaction`
         WITH candidate AS (
@@ -811,4 +949,12 @@ function mapRecurringPayment(record: RawRecurringPayment): RecurringPaymentRecor
     createdAt: new Date(record.createdAt),
     updatedAt: new Date(record.updatedAt),
   };
+}
+
+function mapStringArray(value: unknown, label: string): string[] {
+  const parsed = typeof value === "string" ? JSON.parse(value) as unknown : value;
+  if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
+    throw new Error(`Recurring reconciliation returned invalid ${label}.`);
+  }
+  return parsed;
 }

@@ -19,4 +19,8 @@ All product surfaces must use the shared `PaceLogo` component instead of recreat
 
 Use the shared `ResponsiveDialog` primitives for product dialogs. Do not import the base `Dialog` primitives directly in product surfaces.
 
+## Code comments
+
+Add comments only when they explain non-obvious intent, invariants, or safety constraints. Do not add or prioritize comments that merely restate the code.
+
 <!-- END:nextjs-agent-rules -->

@@ -15,7 +15,9 @@ import type {
   CreateTransactionClassificationInput,
   FinancialInboxRepository,
   MutateRecurringPaymentInput,
+  RecurringInboxReconciliation,
   TransitionRecurringPaymentInput,
+  TransitionRecurringPaymentAndReconcileInboxInput,
 } from "@/modules/financial-inbox/repositories/financial-inbox-repository";
 
 export class InMemoryFinancialInboxRepository implements FinancialInboxRepository {
@@ -279,10 +281,63 @@ export class InMemoryFinancialInboxRepository implements FinancialInboxRepositor
     return record;
   }
 
+  async transitionRecurringPaymentAndReconcileInbox(
+    input: TransitionRecurringPaymentAndReconcileInboxInput,
+  ): Promise<RecurringInboxReconciliation | null> {
+    const current = this.recurring.get(input.recurringPaymentId);
+    const requested = this.items.get(input.inbox.inboxItemId);
+    if (
+      !current
+      || current.workspaceId !== input.workspaceId
+      || current.status !== input.expectedStatus
+      || (input.expectedUpdatedAt && current.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
+      || !requested
+      || requested.workspaceId !== input.workspaceId
+      || requested.recurringPaymentId !== input.recurringPaymentId
+      || requested.reason !== "POSSIBLE_RECURRING"
+      || requested.status !== "OPEN"
+      || requested.updatedAt.getTime() !== input.inbox.expectedUpdatedAt.getTime()
+    ) {
+      return null;
+    }
+
+    const now = new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1));
+    const payment: RecurringPaymentRecord = {
+      ...current,
+      status: input.status,
+      confirmedByUserId: input.confirmedByUserId,
+      confirmedAt: input.confirmedAt,
+      ignoredByUserId: input.ignoredByUserId,
+      ignoredAt: input.ignoredAt,
+      updatedAt: now,
+    };
+    const linkedOpenItems = [...this.items.values()].filter(
+      (item) =>
+        item.workspaceId === input.workspaceId
+        && item.recurringPaymentId === input.recurringPaymentId
+        && item.reason === "POSSIBLE_RECURRING"
+        && item.status === "OPEN",
+    );
+    const resolvedAt = new Date(Math.max(input.inbox.resolvedAt.getTime(), now.getTime()));
+    const resolvedInboxItemIds = linkedOpenItems.map((item) => item.id);
+
+    this.recurring.set(payment.id, payment);
+    for (const item of linkedOpenItems) {
+      this.items.set(item.id, {
+        ...item,
+        status: "RESOLVED",
+        resolvedByUserId: input.inbox.resolvedByUserId,
+        resolvedAt,
+        updatedAt: new Date(Math.max(resolvedAt.getTime(), item.updatedAt.getTime() + 1)),
+      });
+    }
+    await this.createAudit({ ...input.audit, inboxItemId: input.inbox.inboxItemId, recurringPaymentId: payment.id });
+    return { payment, resolvedInboxItemIds };
+  }
+
   async mutateRecurringPayment(
     input: MutateRecurringPaymentInput,
   ): Promise<RecurringPaymentRecord | null> {
-    // Synchronous compare-and-set mirrors the production row lock for tests.
     const current = this.recurring.get(input.recurringPaymentId);
     if (
       !current

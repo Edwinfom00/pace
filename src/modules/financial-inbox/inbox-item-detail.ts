@@ -24,14 +24,11 @@ export type InboxItemDetailReadInput = {
 
 export type InboxItemDetailReadRecord = {
   readonly item: FinancialInboxItemRecord;
-  /** The original record attached to the Inbox item. */
   readonly sourceTransaction: LedgerTransactionListRow;
-  /** The correction-chain current record, or the source record when unchanged. */
   readonly effectiveTransaction: LedgerTransactionListRow;
   readonly classification: TransactionClassificationRecord | null;
   readonly suggestedCategory: LedgerCategoryRecord | null;
   readonly recurring: RecurringPaymentRecord | null;
-  /** Other persisted Inbox items for the same source record. */
   readonly relatedItems: readonly FinancialInboxItemRecord[];
   readonly similarTransactions: readonly LedgerTransactionListRow[];
   readonly audits: readonly FinancialInboxAuditRecord[];
@@ -50,10 +47,8 @@ export type InboxItemDetail = {
   readonly workspaceId: string;
   readonly status: InboxItemStatus;
   readonly reason: InboxReason;
-  /** Opaque optimistic-concurrency token for future Inbox mutations. */
   readonly updatedAt: string;
   readonly sourceId: string;
-  /** The current effective transaction's metadata-edit version. */
   readonly transactionUpdatedAt: string;
   readonly transaction: TransactionListItem & {
     readonly merchantName: string | null;
@@ -71,7 +66,6 @@ export type InboxItemDetail = {
     readonly category: { readonly id: string; readonly name: string; readonly systemKey: string | null };
     readonly confidence: InboxDetailConfidence;
     readonly score: number;
-    /** The classifier revision that must match before accepting this proposal. */
     readonly updatedAt: string;
   } | null;
   readonly attentionReasons: readonly InboxReason[];
@@ -79,9 +73,14 @@ export type InboxItemDetail = {
   readonly context: {
     readonly account: { readonly id: string; readonly name: string } | null;
     readonly source: "IMPORT" | "MANUAL" | "AGENT" | "BANK_SYNC" | null;
-    readonly recurring: { readonly id: string; readonly displayName: string | null; readonly cadenceDays: number } | null;
+    readonly recurring: {
+      readonly id: string;
+      readonly displayName: string | null;
+      readonly status: RecurringPaymentRecord["status"];
+      readonly cadenceDays: number;
+      readonly updatedAt: string;
+    } | null;
   };
   readonly activity: readonly { readonly id: string; readonly event: InboxDetailActivityEvent; readonly occurredAt: string }[];
-  /** Server-derived policy; the UI must not infer actions from Inbox reasons. */
   readonly capabilities: InboxResolutionCapabilities;
 };
