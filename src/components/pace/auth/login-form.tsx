@@ -72,7 +72,7 @@ export function LoginForm({ errors, language, returnTo }: LoginFormProps) {
     setIsSubmitting(true);
 
     try {
-      toast.loading("Loading...", { id: "login" });
+      toast.loading("Loading...", { id: "login", duration: 1000 });
       const result = await authClient.signIn.email({ email, password });
 
       if (result.error) {
@@ -121,7 +121,7 @@ export function LoginForm({ errors, language, returnTo }: LoginFormProps) {
               aria-describedby={emailError ? emailErrorId : undefined}
               aria-invalid={Boolean(emailError)}
               autoComplete="email"
-              className="h-13 rounded-4xl border-[#dbe2ec] bg-white pl-11 text-[0.92rem] text-[#17213a] placeholder:text-[#75819a] hover:border-[#cbd5e1] focus-visible:border-[#2360e8] focus-visible:ring-4 focus-visible:ring-[#2360e8]/12 [@media(max-height:850px)]:h-11"
+              className="h-13 rounded-md border-[#dbe2ec] bg-white pl-11 text-[0.92rem] text-[#17213a] placeholder:text-[#75819a] hover:border-[#cbd5e1] focus-visible:border-[#2360e8] focus-visible:ring-4 focus-visible:ring-[#2360e8]/12 [@media(max-height:850px)]:h-11"
               id="auth-email"
               name="email"
               placeholder={t("auth.form.email.placeholder")}
@@ -143,7 +143,7 @@ export function LoginForm({ errors, language, returnTo }: LoginFormProps) {
 
       <Button
         disabled={isSubmitting}
-        className="h-[3.3rem] rounded-4xl bg-[#101a2b] text-[0.92rem] font-medium text-white shadow-[0_7px_14px_rgb(18_32_55/12%)] transition-[background-color,transform,box-shadow] hover:bg-[#1c2940] active:translate-y-px focus-visible:border-[#2360e8] focus-visible:ring-4 focus-visible:ring-[#2360e8]/20 [@media(max-height:850px)]:h-11"
+        className="h-[3.3rem] rounded-md bg-[#101a2b] text-[0.92rem] font-medium text-white shadow-[0_7px_14px_rgb(18_32_55/12%)] transition-[background-color,transform,box-shadow] hover:bg-[#1c2940] active:translate-y-px focus-visible:border-[#2360e8] focus-visible:ring-4 focus-visible:ring-[#2360e8]/20 [@media(max-height:850px)]:h-11"
         type="submit"
       >
         {isSubmitting ? t("auth.form.submitting") : t("auth.form.signIn")}
