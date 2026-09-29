@@ -51,26 +51,22 @@ export type InboxResolutionRequirement = {
 
 export type InboxResolutionCapabilities = {
   readonly itemId: string;
-  /** True only when every still-relevant reason for this source is gone. */
   readonly isResolved: boolean;
-  /** The attached technical source is no longer the current ledger truth. */
   readonly isStale: boolean;
-  /** Every remaining source-level attention reason, never inferred in React. */
   readonly unresolvedReasons: readonly InboxReason[];
   readonly resolutionRequirements: readonly InboxResolutionRequirement[];
   readonly canAcceptCategorySuggestion: boolean;
   readonly canChooseCategory: boolean;
   readonly canCreateClassificationRule: boolean;
-  /** Only exposed where the existing M4 record explicitly supports dismissal. */
   readonly canDismiss: boolean;
   readonly allowedActions: readonly InboxResolutionAction[];
   readonly reasons: Partial<Record<InboxResolutionAction, InboxResolutionActionReason>>;
-  /** A recurring review remains owned by the Recurring action policy. */
   readonly recurring: {
     readonly recurringId: string;
     readonly actionOwner: "RECURRING";
+    readonly canConfirm: boolean;
+    readonly canIgnore: boolean;
   } | null;
-  /** Merchant ambiguity has no Inbox mutation; it points to transaction metadata. */
   readonly merchant: {
     readonly transactionId: string;
     readonly actionOwner: "TRANSACTION_METADATA";
@@ -79,7 +75,6 @@ export type InboxResolutionCapabilities = {
 
 export type InboxResolutionPolicyInput = {
   readonly item: FinancialInboxItemRecord;
-  /** Other Inbox records attached to the same original transaction, if loaded. */
   readonly relatedItems?: readonly FinancialInboxItemRecord[];
   readonly sourceTransaction: Pick<
     LedgerTransactionRecord,
@@ -101,7 +96,6 @@ export type InboxResolutionPolicyInput = {
   > | null;
   readonly suggestedCategory: Pick<LedgerCategoryRecord, "id" | "workspaceId" | "kind"> | null;
   readonly recurring: Pick<RecurringPaymentRecord, "id" | "origin" | "status"> & {
-    /** Detail reads include this; the batched overview join already scopes it. */
     readonly workspaceId?: string;
   } | null;
   readonly workspaceRole: WorkspaceRole;
@@ -126,6 +120,7 @@ export function getInboxResolutionCapabilities(
   const acceptReason = categoryReason ?? suggestionActionReason(input);
   const createRuleReason = categoryReason ?? classificationRuleReason(input);
   const dismissReason = dismissActionReason(input, baseReason);
+  const recurringReason = recurringActionReason(input, baseReason);
 
   const canAcceptCategorySuggestion = acceptReason === null;
   const canChooseCategory = categoryReason === null;
@@ -158,12 +153,30 @@ export function getInboxResolutionCapabilities(
     recurring: input.item.reason === "POSSIBLE_RECURRING"
       && input.recurring
       && (input.recurring.workspaceId === undefined || input.recurring.workspaceId === input.item.workspaceId)
-      ? { recurringId: input.recurring.id, actionOwner: "RECURRING" }
+      ? {
+          recurringId: input.recurring.id,
+          actionOwner: "RECURRING",
+          canConfirm: recurringReason === null && input.item.actions.includes("CONFIRM_RECURRING"),
+          canIgnore: recurringReason === null && input.item.actions.includes("IGNORE_RECURRING"),
+        }
       : null,
     merchant: input.item.reason === "MERCHANT_AMBIGUITY" && !isStale
       ? { transactionId: input.effectiveTransaction.id, actionOwner: "TRANSACTION_METADATA" }
       : null,
   };
+}
+
+function recurringActionReason(
+  input: InboxResolutionPolicyInput,
+  baseReason: InboxResolutionActionReason | null,
+): InboxResolutionActionReason | null {
+  if (input.item.reason !== "POSSIBLE_RECURRING") return "REASON_NOT_ACTIONABLE";
+  if (baseReason) return baseReason;
+  const recurring = input.recurring;
+  if (!recurring || recurring.origin !== "DETECTED" || recurring.status !== "CANDIDATE") {
+    return "SOURCE_NOT_ACTIONABLE";
+  }
+  return null;
 }
 
 function baseActionReason(

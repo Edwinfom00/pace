@@ -30,6 +30,7 @@ import {
 
 import type { InboxDetailLabels } from "../inbox-detail-labels";
 import { InboxCategoryResolutionActions } from "../components/inbox-category-resolution-actions";
+import { InboxRecurringResolutionActions } from "../components/inbox-recurring-resolution-actions";
 
 const surfaceClassName =
   "rounded-[12px] border border-[#e4e8ef] bg-white px-4 py-4 shadow-[0_1px_2px_rgb(16_24_40/2%)] sm:px-5";
@@ -135,6 +136,11 @@ export function InboxItemDetailView({
 
       <div className="mt-6 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(290px,320px)] xl:gap-x-7 xl:gap-y-4">
         <AttentionSurface detail={detail} labels={labels} />
+        <RecurringPatternSurface
+          detail={detail}
+          labels={labels}
+          locale={locale}
+        />
         <ClassificationSurface
           categoryLabel={confirmedCategory}
           detail={detail}
@@ -174,6 +180,50 @@ export function InboxItemDetailView({
         />
       </div>
     </main>
+  );
+}
+
+function RecurringPatternSurface({
+  detail,
+  labels,
+  locale,
+}: {
+  readonly detail: InboxItemDetail;
+  readonly labels: InboxDetailLabels;
+  readonly locale: string;
+}) {
+  const recurring = detail.context.recurring;
+  const capabilities = detail.capabilities.recurring;
+  if (!recurring || !capabilities || capabilities.recurringId !== recurring.id)
+    return null;
+
+  return (
+    <section
+      aria-labelledby="inbox-recurring-pattern-heading"
+      className={`${surfaceClassName} order-2 xl:col-start-2 xl:row-start-2`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2
+            className="text-[16px] font-semibold tracking-[-0.02em] text-[#18243d]"
+            id="inbox-recurring-pattern-heading">
+            {labels.recurring}
+          </h2>
+          <p className="mt-1 text-[13px] leading-5 text-[#71809a]">
+            {recurring.displayName ?? detail.transaction.merchant.name}
+          </p>
+        </div>
+      </div>
+      <InboxRecurringResolutionActions
+        capabilities={capabilities}
+        expectedInboxUpdatedAt={detail.updatedAt}
+        inboxItemId={detail.id}
+        labels={labels.recurringResolution}
+        locale={locale}
+        recurring={recurring}
+        title={detail.transaction.merchant.name}
+        workspaceId={detail.workspaceId}
+      />
+    </section>
   );
 }
 
@@ -257,7 +307,7 @@ function ClassificationSurface({
   return (
     <section
       aria-labelledby="inbox-classification-heading"
-      className={`${surfaceClassName} order-2 xl:col-start-1 xl:row-start-1`}>
+      className={`${surfaceClassName} order-3 xl:col-start-1 xl:row-start-1`}>
       <h2
         className="text-[17px] font-semibold tracking-tight text-[#15213a]"
         id="inbox-classification-heading">
@@ -279,12 +329,15 @@ function SuggestionSurface({
   readonly labels: InboxDetailLabels;
   readonly locale: string;
 }) {
-  const categoryKind = detail.transaction.kind === "EXPENSE" || detail.transaction.kind === "INCOME"
-    ? detail.transaction.kind
-    : null;
-  const showResolutionSurface = !detail.capabilities.isResolved
-    && detail.currentClassification.state !== "CONFIRMED"
-    && (detail.suggestion !== null || detail.capabilities.canChooseCategory);
+  const categoryKind =
+    detail.transaction.kind === "EXPENSE" ||
+    detail.transaction.kind === "INCOME"
+      ? detail.transaction.kind
+      : null;
+  const showResolutionSurface =
+    !detail.capabilities.isResolved &&
+    detail.currentClassification.state !== "CONFIRMED" &&
+    (detail.suggestion !== null || detail.capabilities.canChooseCategory);
   if (!showResolutionSurface) return null;
 
   const suggestionLabel = detail.suggestion
@@ -299,7 +352,7 @@ function SuggestionSurface({
   return (
     <section
       aria-labelledby="inbox-suggestion-heading"
-      className={`${surfaceClassName} order-3 xl:col-start-1 xl:row-start-2`}>
+      className={`${surfaceClassName} order-4 xl:col-start-1 xl:row-start-2`}>
       <div className="flex items-center justify-between gap-3">
         <h2
           className="text-[17px] font-semibold tracking-tight text-[#15213a]"
@@ -323,7 +376,9 @@ function SuggestionSurface({
           : labels.classification.uncategorizedDescription}
       </p>
       <InboxCategoryResolutionActions
-        canAcceptCategorySuggestion={detail.capabilities.canAcceptCategorySuggestion}
+        canAcceptCategorySuggestion={
+          detail.capabilities.canAcceptCategorySuggestion
+        }
         canChooseCategory={detail.capabilities.canChooseCategory}
         categoryKind={categoryKind}
         categoryOptions={categoryOptions}
@@ -333,13 +388,15 @@ function SuggestionSurface({
         inboxItemId={detail.id}
         key={detail.id}
         labels={labels.categoryResolution}
-        suggestion={detail.suggestion && suggestionLabel
-          ? {
-              id: detail.suggestion.category.id,
-              label: suggestionLabel,
-              updatedAt: detail.suggestion.updatedAt,
-            }
-          : null}
+        suggestion={
+          detail.suggestion && suggestionLabel
+            ? {
+                id: detail.suggestion.category.id,
+                label: suggestionLabel,
+                updatedAt: detail.suggestion.updatedAt,
+              }
+            : null
+        }
         transactionAmount={formatTransactionAmount(
           detail.transaction.amount,
           detail.transaction.kind,
@@ -369,7 +426,7 @@ function TransactionInformationSurface({
   return (
     <section
       aria-labelledby="inbox-information-heading"
-      className={`${surfaceClassName} order-4 xl:col-start-1 xl:row-start-3`}>
+      className={`${surfaceClassName} order-5 xl:col-start-1 xl:row-start-3`}>
       <h2
         className="border-b border-[#edf0f4] pb-3 text-[17px] font-semibold tracking-tight text-[#15213a]"
         id="inbox-information-heading">
@@ -400,7 +457,9 @@ function TransactionInformationSurface({
           {formatDetailTime(transaction.occurredAt, locale, timeZone)}
         </DetailRow>
         <DetailRow icon={Tag} label={labels.field.type}>
-          {transaction.kind === "OPENING_BALANCE" ? labels.technical : labels.transactionKind[transaction.kind]}
+          {transaction.kind === "OPENING_BALANCE"
+            ? labels.technical
+            : labels.transactionKind[transaction.kind]}
         </DetailRow>
         <DetailRow icon={CircleAlert} label={labels.field.status}>
           {labels.transactionStatus[transaction.status]}
@@ -440,7 +499,7 @@ function SimilarTransactionsSurface({
   return (
     <section
       aria-labelledby="inbox-similar-heading"
-      className={`${surfaceClassName} order-5 xl:col-start-1 xl:row-start-4`}>
+      className={`${surfaceClassName} order-6 xl:col-start-1 xl:row-start-4`}>
       <h2
         className="text-[17px] font-semibold tracking-tight text-[#15213a]"
         id="inbox-similar-heading">
@@ -515,7 +574,7 @@ function ContextSurface({
   return (
     <section
       aria-labelledby="inbox-context-heading"
-      className={`${surfaceClassName} order-6 xl:col-start-2 xl:row-start-2`}>
+      className={`${surfaceClassName} order-7 xl:col-start-2 xl:row-start-3`}>
       <h2
         className="text-[16px] font-semibold tracking-[-0.02em] text-[#18243d]"
         id="inbox-context-heading">

@@ -183,7 +183,12 @@ test("recurring decisions stay owned by the recurring policy and settle only whe
   };
   const capabilities = getInboxResolutionCapabilities(policyInput({ item, recurring: candidate }));
   assert.deepEqual(capabilities.allowedActions, []);
-  assert.deepEqual(capabilities.recurring, { recurringId: "recurring-1", actionOwner: "RECURRING" });
+  assert.deepEqual(capabilities.recurring, {
+    recurringId: "recurring-1",
+    actionOwner: "RECURRING",
+    canConfirm: true,
+    canIgnore: true,
+  });
   assert.deepEqual(capabilities.unresolvedReasons, ["POSSIBLE_RECURRING"]);
 
   const settled = getInboxResolutionCapabilities(policyInput({
@@ -234,4 +239,16 @@ test("viewers receive read-only capabilities and foreign recurring records are n
   }));
   assert.equal(foreignRecurring.recurring, null);
   assert.deepEqual(foreignRecurring.unresolvedReasons, []);
+
+  const viewerRecurring = getInboxResolutionCapabilities(policyInput({
+    workspaceRole: "VIEWER",
+    item: { ...recurringItem, recurringPaymentId: "recurring-1" },
+    recurring: { id: "recurring-1", workspaceId, origin: "DETECTED", status: "CANDIDATE" },
+  }));
+  assert.deepEqual(viewerRecurring.recurring, {
+    recurringId: "recurring-1",
+    actionOwner: "RECURRING",
+    canConfirm: false,
+    canIgnore: false,
+  });
 });

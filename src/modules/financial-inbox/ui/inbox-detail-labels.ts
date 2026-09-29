@@ -49,6 +49,18 @@ export type InboxDetailLabels = {
   readonly suggestion: string;
   readonly suggestionDescription: string;
   readonly categoryResolution: InboxCategoryResolutionLabels;
+  readonly recurringResolution: {
+    readonly cadenceEveryDays: string;
+    readonly amountTypical: string;
+    readonly status: { readonly CANDIDATE: string; readonly CONFIRMED: string; readonly IGNORED: string };
+    readonly lifecycle: { readonly paused: string };
+    readonly confirm: { readonly title: string; readonly description: string; readonly submit: string; readonly pending: string; readonly failed: string };
+    readonly ignore: { readonly title: string; readonly description: string; readonly submit: string; readonly pending: string; readonly failed: string; readonly reason: string; readonly reasonPlaceholder: string };
+    readonly cancel: string;
+    readonly reloadLatest: string;
+    readonly conflict: string;
+    readonly notAvailable: string;
+  };
   readonly confidence: Readonly<Record<NonNullable<InboxItemDetail["suggestion"]>["confidence"], string>>;
   readonly whyAttention: string;
   readonly reason: Readonly<Record<InboxReason, { readonly title: string; readonly description: string }>>;
@@ -120,6 +132,26 @@ export function getInboxDetailLabels(labels: DashboardLabels): InboxDetailLabels
         retry: labels["transactions.error.retry"],
         invalid: labels["transactions.validation.categoryUnavailable"],
       },
+    },
+    recurringResolution: {
+      cadenceEveryDays: labels["recurring.cadence.everyDays"],
+      amountTypical: labels["recurring.amount.typical"],
+      status: {
+        CANDIDATE: labels["recurring.status.candidate"],
+        CONFIRMED: labels["recurring.status.confirmed"],
+        IGNORED: labels["recurring.status.ignored"],
+      },
+      lifecycle: { paused: labels["recurring.lifecycle.paused"] },
+      confirm: {
+        title: labels["recurring.confirm.title"], description: labels["recurring.confirm.description"], submit: labels["recurring.confirm.submit"], pending: labels["recurring.confirm.confirming"], failed: labels["recurring.confirm.failed"],
+      },
+      ignore: {
+        title: labels["recurring.ignore.title"], description: labels["recurring.ignore.description"], submit: labels["recurring.ignore.submit"], pending: labels["recurring.ignore.ignoring"], failed: labels["recurring.ignore.failed"], reason: labels["recurring.ignore.reason"], reasonPlaceholder: labels["recurring.ignore.reasonPlaceholder"],
+      },
+      cancel: labels["recurring.actions.cancel"],
+      reloadLatest: labels["recurring.action.reloadLatest"],
+      conflict: labels["recurring.action.conflict"],
+      notAvailable: labels["recurring.action.notAllowed"],
     },
     confidence: { HIGH: labels["inbox.detail.confidence.high"], REVIEW: labels["inbox.detail.confidence.review"] },
     whyAttention: labels["inbox.detail.whyAttention"],

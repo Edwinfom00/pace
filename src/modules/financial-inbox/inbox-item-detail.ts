@@ -77,6 +77,9 @@ export type InboxItemDetail = {
       readonly id: string;
       readonly displayName: string | null;
       readonly status: RecurringPaymentRecord["status"];
+      readonly lifecycle: RecurringPaymentRecord["lifecycle"];
+      readonly typicalAmountMinor: string;
+      readonly currency: string;
       readonly cadenceDays: number;
       readonly updatedAt: string;
     } | null;

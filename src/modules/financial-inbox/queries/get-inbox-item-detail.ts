@@ -119,6 +119,9 @@ export function buildInboxItemDetail(
             id: record.recurring.id,
             displayName: record.recurring.displayName,
             status: record.recurring.status,
+            lifecycle: record.recurring.lifecycle,
+            typicalAmountMinor: record.recurring.typicalAmountMinor.toString(),
+            currency: record.recurring.currency,
             cadenceDays: record.recurring.cadenceDays,
             updatedAt: record.recurring.updatedAt.toISOString(),
           }
