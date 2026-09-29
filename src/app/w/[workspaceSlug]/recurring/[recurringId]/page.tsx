@@ -19,35 +19,50 @@ type RecurringDetailPageProps = {
   searchParams: Promise<{ tab?: string | string[] }>;
 };
 
-export default async function RecurringDetailPage({ params, searchParams }: RecurringDetailPageProps) {
-  const [{ workspaceSlug, recurringId }, query] = await Promise.all([params, searchParams]);
+export default async function RecurringDetailPage({
+  params,
+  searchParams,
+}: RecurringDetailPageProps) {
+  const [{ workspaceSlug, recurringId }, query] = await Promise.all([
+    params,
+    searchParams,
+  ]);
   const destination = `/w/${workspaceSlug}/recurring/${recurringId}`;
   const actor = await getAuthenticatedActor();
   if (!actor) redirect(loginPathForReturnTo(destination));
 
-  const workspace = await new DatabaseWorkspaceRepository().findMemberContextBySlug(workspaceSlug, actor.userId);
+  const workspace =
+    await new DatabaseWorkspaceRepository().findMemberContextBySlug(
+      workspaceSlug,
+      actor.userId,
+    );
   // Intentionally return the canonical not-found response for a missing or
   // inaccessible workspace, preserving the same non-enumerating boundary as
   // every workspace detail route.
   if (!workspace) notFound();
 
-  const [language, detail, recurringAccounts, recurringCategories] = await Promise.all([
-    getPersistedDashboardLanguage(actor.userId),
-    getRecurringDetail({
-      actor,
-      workspaceId: workspace.workspace.id,
-      recurringId,
-      timeZone: workspace.preferences.timezone,
-    }),
-    loadTransactionAccountOptions(() => getServerTransactionAccountOptions({
-      actor,
-      workspaceId: workspace.workspace.id,
-    })),
-    loadTransactionCategoryOptions(() => getServerTransactionCategoryOptions({
-      actor,
-      workspaceId: workspace.workspace.id,
-    })),
-  ]);
+  const [language, detail, recurringAccounts, recurringCategories] =
+    await Promise.all([
+      getPersistedDashboardLanguage(actor.userId),
+      getRecurringDetail({
+        actor,
+        workspaceId: workspace.workspace.id,
+        recurringId,
+        timeZone: workspace.preferences.timezone,
+      }),
+      loadTransactionAccountOptions(() =>
+        getServerTransactionAccountOptions({
+          actor,
+          workspaceId: workspace.workspace.id,
+        }),
+      ),
+      loadTransactionCategoryOptions(() =>
+        getServerTransactionCategoryOptions({
+          actor,
+          workspaceId: workspace.workspace.id,
+        }),
+      ),
+    ]);
   // The composed reader only searches recurring records within workspaceId.
   if (!detail) notFound();
 

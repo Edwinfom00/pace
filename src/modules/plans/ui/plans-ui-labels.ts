@@ -2,87 +2,157 @@ export type PlansUiLabels = {
   readonly title: string;
   readonly subtitle: string;
   readonly budgets: string;
-  readonly savings: string;
-  readonly overall: string;
-  readonly period: string;
-  readonly amount: string;
+  readonly all: string;
+  readonly goals: string;
+  readonly forecasts: string;
+  readonly rules: string;
+  readonly askPace: string;
+  readonly newPlan: string;
+  readonly monthlyBudgets: string;
+  readonly monthlyBudgetsSubtitle: string;
+  readonly budgeted: string;
   readonly spent: string;
   readonly remaining: string;
-  readonly progress: string;
-  readonly target: string;
-  readonly current: string;
-  readonly targetDate: string;
-  readonly active: string;
+  readonly used: string;
+  readonly overall: string;
+  readonly status: string;
   readonly onTrack: string;
+  readonly attention: string;
   readonly overBudget: string;
   readonly inactive: string;
+  readonly savings: string;
+  readonly savingsSubtitle: string;
+  readonly seeAll: string;
+  readonly target: string;
+  readonly saved: string;
+  readonly left: string;
+  readonly targetDate: string;
   readonly budgetEmpty: string;
   readonly savingsEmpty: string;
+  readonly planInsights: string;
+  readonly insightOverBudget: string;
+  readonly insightAttention: string;
+  readonly insightOnTrack: string;
+  readonly unavailable: string;
+  readonly loading: string;
 };
 
 const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
   en: {
     title: "Plans",
-    subtitle: "Keep your monthly budgets and savings targets in view.",
-    budgets: "Active budgets",
-    savings: "Savings plans",
-    overall: "Overall spending",
-    period: "Period",
-    amount: "Budget",
+    subtitle: "Plan your budgets and savings goals with clarity.",
+    budgets: "Budgets",
+    all: "All",
+    goals: "Goals",
+    forecasts: "Forecasts",
+    rules: "Rules",
+    askPace: "Ask Pace",
+    newPlan: "New plan",
+    monthlyBudgets: "Monthly budgets",
+    monthlyBudgetsSubtitle: "Track your category spending this month.",
+    budgeted: "Budgeted",
     spent: "Spent",
     remaining: "Remaining",
-    progress: "Progress",
-    target: "Target",
-    current: "Current progress",
-    targetDate: "Target date",
-    active: "Active",
+    used: "% used",
+    overall: "Overall spending",
+    status: "Status",
     onTrack: "On track",
+    attention: "Attention",
     overBudget: "Over budget",
-    inactive: "Inactive this period",
+    inactive: "Inactive",
+    savings: "Savings goals",
+    savingsSubtitle: "Move your projects forward faster.",
+    seeAll: "See all",
+    target: "Target",
+    saved: "saved",
+    left: "left",
+    targetDate: "Target date",
     budgetEmpty: "No active budgets for this period.",
-    savingsEmpty: "No savings plans yet.",
+    savingsEmpty: "No savings goals yet.",
+    planInsights: "Plan insights",
+    insightOverBudget: "A budget needs attention",
+    insightAttention: "A category is nearing its budget",
+    insightOnTrack: "Your budgets are on track",
+    unavailable: "This section is not available yet.",
+    loading: "Updating plan…",
   },
   fr: {
     title: "Plans",
-    subtitle: "Gardez vos budgets mensuels et objectifs d’épargne à portée de vue.",
-    budgets: "Budgets actifs",
-    savings: "Plans d’épargne",
-    overall: "Dépenses globales",
-    period: "Période",
-    amount: "Budget",
+    subtitle: "Planifiez vos budgets et objectifs d’épargne en toute clarté.",
+    budgets: "Budgets",
+    all: "Tout",
+    goals: "Objectifs",
+    forecasts: "Prévisions",
+    rules: "Règles",
+    askPace: "Demander à Pace",
+    newPlan: "Nouveau plan",
+    monthlyBudgets: "Budgets mensuels",
+    monthlyBudgetsSubtitle:
+      "Suivez vos dépenses par catégorie pour ce mois-ci.",
+    budgeted: "Budgété",
     spent: "Dépensé",
     remaining: "Restant",
-    progress: "Progression",
-    target: "Objectif",
-    current: "Épargne actuelle",
-    targetDate: "Date cible",
-    active: "Actif",
-    onTrack: "Dans les temps",
+    used: "% utilisé",
+    overall: "Dépenses globales",
+    status: "Statut",
+    onTrack: "Sur la bonne voie",
+    attention: "Attention",
     overBudget: "Budget dépassé",
-    inactive: "Inactif pour cette période",
+    inactive: "Inactif",
+    savings: "Objectifs d’épargne",
+    savingsSubtitle: "Avancez vers vos projets plus rapidement.",
+    seeAll: "Tout voir",
+    target: "Objectif",
+    saved: "épargnés",
+    left: "restant",
+    targetDate: "Date cible",
     budgetEmpty: "Aucun budget actif pour cette période.",
-    savingsEmpty: "Aucun plan d’épargne pour le moment.",
+    savingsEmpty: "Aucun objectif d’épargne pour le moment.",
+    planInsights: "Aperçus du plan",
+    insightOverBudget: "Un budget demande votre attention",
+    insightAttention: "Une catégorie approche de son budget",
+    insightOnTrack: "Vos budgets sont sur la bonne voie",
+    unavailable: "Cette section n’est pas encore disponible.",
+    loading: "Mise à jour du plan…",
   },
   de: {
     title: "Pläne",
-    subtitle: "Behalten Sie Ihre Monatsbudgets und Sparziele im Blick.",
-    budgets: "Aktive Budgets",
-    savings: "Sparpläne",
-    overall: "Gesamtausgaben",
-    period: "Zeitraum",
-    amount: "Budget",
+    subtitle: "Planen Sie Ihre Budgets und Sparziele mit Klarheit.",
+    budgets: "Budgets",
+    all: "Alle",
+    goals: "Ziele",
+    forecasts: "Prognosen",
+    rules: "Regeln",
+    askPace: "Pace fragen",
+    newPlan: "Neuer Plan",
+    monthlyBudgets: "Monatliche Budgets",
+    monthlyBudgetsSubtitle:
+      "Verfolgen Sie Ihre Ausgaben nach Kategorie in diesem Monat.",
+    budgeted: "Budgetiert",
     spent: "Ausgegeben",
     remaining: "Verbleibend",
-    progress: "Fortschritt",
-    target: "Ziel",
-    current: "Aktueller Stand",
-    targetDate: "Zieldatum",
-    active: "Aktiv",
+    used: "% verwendet",
+    overall: "Gesamtausgaben",
+    status: "Status",
     onTrack: "Im Plan",
+    attention: "Achtung",
     overBudget: "Budget überschritten",
-    inactive: "In diesem Zeitraum inaktiv",
+    inactive: "Inaktiv",
+    savings: "Sparziele",
+    savingsSubtitle: "Bringen Sie Ihre Projekte schneller voran.",
+    seeAll: "Alle anzeigen",
+    target: "Ziel",
+    saved: "gespart",
+    left: "übrig",
+    targetDate: "Zieldatum",
     budgetEmpty: "Keine aktiven Budgets für diesen Zeitraum.",
-    savingsEmpty: "Noch keine Sparpläne.",
+    savingsEmpty: "Noch keine Sparziele.",
+    planInsights: "Planübersicht",
+    insightOverBudget: "Ein Budget braucht Aufmerksamkeit",
+    insightAttention: "Eine Kategorie nähert sich ihrem Budget",
+    insightOnTrack: "Ihre Budgets liegen im Plan",
+    unavailable: "Dieser Bereich ist noch nicht verfügbar.",
+    loading: "Plan wird aktualisiert…",
   },
 };
 
