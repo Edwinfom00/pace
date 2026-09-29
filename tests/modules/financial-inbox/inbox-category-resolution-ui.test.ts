@@ -158,4 +158,5 @@ test("Inbox detail category UI reuses canonical responsive and selector primitiv
   assert.match(detailPage, /getServerTransactionCategoryOptions/);
   assert.match(route, /presentInboxCategoryResolution/);
   assert.match(route, /revalidatePath\("\/w\/\[workspaceSlug\]\/inbox"/);
+  assert.match(route, /revalidatePath\("\/w\/\[workspaceSlug\]\/overview"/);
 });

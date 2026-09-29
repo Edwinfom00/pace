@@ -13,6 +13,8 @@ test("Inbox recurring detail uses only the M10.6B bridge with local pending and 
   assert.match(actions, /\/inbox\/\$\{encodeURIComponent\(inboxItemId\)\}\/recurring/);
   assert.match(actions, /method: "POST"/);
   assert.match(actions, /expectedInboxUpdatedAt/);
+  assert.match(actions, /useRef<string \| null>/);
+  assert.match(actions, /idempotencyKey\.current \?\? \(idempotencyKey\.current = createIdempotencyKey\(\)\)/);
   assert.match(actions, /router\.refresh\(\)/);
   assert.match(actions, /INBOX_ITEM_STALE/);
   assert.match(actions, /INBOX_REASON_ALREADY_RESOLVED/);

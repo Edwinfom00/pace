@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -57,6 +57,7 @@ export function InboxRecurringResolutionActions({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
+  const idempotencyKey = useRef<string | null>(null);
 
   if (!capabilities.canConfirm && !capabilities.canIgnore) return null;
 
@@ -66,6 +67,7 @@ export function InboxRecurringResolutionActions({
 
   function open(nextAction: Action) {
     setAction(nextAction);
+    idempotencyKey.current = null;
     setReason("");
     setError(null);
     setConflict(false);
@@ -100,7 +102,7 @@ export function InboxRecurringResolutionActions({
           body: JSON.stringify({
             action,
             expectedInboxUpdatedAt,
-            idempotencyKey: createIdempotencyKey(),
+            idempotencyKey: idempotencyKey.current ?? (idempotencyKey.current = createIdempotencyKey()),
             ...(action === "IGNORE" && reason.trim() ? { reason: reason.trim() } : {}),
           }),
         },

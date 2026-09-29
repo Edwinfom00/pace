@@ -40,6 +40,7 @@ export async function POST(
         });
     revalidatePath("/w/[workspaceSlug]/inbox", "page");
     revalidatePath("/w/[workspaceSlug]/inbox/[inboxItemId]", "page");
+    revalidatePath("/w/[workspaceSlug]/overview", "page");
     return Response.json({ result: presentInboxCategoryResolution(result) });
   } catch (error) {
     return jsonError(error);
