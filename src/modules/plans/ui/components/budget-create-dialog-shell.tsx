@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import {
   FiCalendar,
   FiChevronDown,
@@ -18,6 +20,11 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import type { PlansUiLabels } from "../plans-ui-labels";
+import {
+  BudgetIconPicker,
+  DEFAULT_BUDGET_VISUAL_IDENTITY,
+  type BudgetVisualIdentity,
+} from "./budget-icon-picker";
 
 function SectionHeading({
   number,
@@ -77,6 +84,9 @@ export function BudgetCreateDialogShell({
   readonly onOpenChange: (open: boolean) => void;
   readonly open: boolean;
 }) {
+  const [visualIdentity, setVisualIdentity] = useState<BudgetVisualIdentity>(
+    DEFAULT_BUDGET_VISUAL_IDENTITY,
+  );
   const t = (key: string) => labels[key] ?? "";
   return (
     <ResponsiveDialog onOpenChange={onOpenChange} open={open}>
@@ -126,14 +136,7 @@ export function BudgetCreateDialogShell({
                   <p className="mb-1.5 text-[13px] font-medium text-[#263550]">
                     {t("iconAndColour")}
                   </p>
-                  <div className="flex gap-2">
-                    <span className="grid size-10 place-items-center rounded-[8px] border border-[#9ec0ff] bg-[#fff0eb] text-[#ff6b35]">
-                      <FiShoppingBag className="size-4" />
-                    </span>
-                    <span className="size-10 rounded-[8px] bg-[#edf4ff]" />
-                    <span className="size-10 rounded-[8px] bg-[#f1efff]" />
-                    <span className="size-10 rounded-[8px] bg-[#fff5e6]" />
-                  </div>
+                  <BudgetIconPicker onChange={setVisualIdentity} value={visualIdentity} />
                 </div>
               </div>
               <div className="mt-3">

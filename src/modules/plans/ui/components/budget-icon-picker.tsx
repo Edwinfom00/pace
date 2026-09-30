@@ -1,0 +1,201 @@
+"use client";
+
+import { useRef } from "react";
+import {
+  FiBookOpen,
+  FiCheck,
+  FiCoffee,
+  FiFileText,
+  FiFilm,
+  FiHeart,
+  FiHome,
+  FiMapPin,
+  FiMoreHorizontal,
+  FiRepeat,
+  FiShoppingBag,
+  FiTruck,
+} from "react-icons/fi";
+import type { IconType } from "react-icons";
+import { cn } from "cn";
+
+export const BUDGET_ICON_KEYS = [
+  "food",
+  "transport",
+  "shopping",
+  "home",
+  "health",
+  "entertainment",
+  "subscriptions",
+  "bills",
+  "education",
+  "travel",
+  "other",
+] as const;
+
+export type BudgetIconKey = (typeof BUDGET_ICON_KEYS)[number];
+
+export const BUDGET_ACCENT_KEYS = [
+  "coral",
+  "blue",
+  "violet",
+  "amber",
+  "rose",
+  "indigo",
+] as const;
+
+export type BudgetAccentKey = (typeof BUDGET_ACCENT_KEYS)[number];
+
+export type BudgetVisualIdentity = {
+  readonly iconKey: BudgetIconKey;
+  readonly accentKey: BudgetAccentKey;
+};
+
+type BudgetIconOption = {
+  readonly iconKey: BudgetIconKey;
+  readonly accentKey: BudgetAccentKey;
+  readonly Icon: IconType;
+  readonly label: string;
+};
+
+export const BUDGET_ICON_OPTIONS: readonly BudgetIconOption[] = [
+  { iconKey: "food", accentKey: "coral", Icon: FiCoffee, label: "Food" },
+  {
+    iconKey: "transport",
+    accentKey: "blue",
+    Icon: FiTruck,
+    label: "Transport",
+  },
+  {
+    iconKey: "shopping",
+    accentKey: "violet",
+    Icon: FiShoppingBag,
+    label: "Shopping",
+  },
+  { iconKey: "home", accentKey: "amber", Icon: FiHome, label: "Home" },
+  { iconKey: "health", accentKey: "rose", Icon: FiHeart, label: "Health" },
+  {
+    iconKey: "entertainment",
+    accentKey: "indigo",
+    Icon: FiFilm,
+    label: "Entertainment",
+  },
+  {
+    iconKey: "subscriptions",
+    accentKey: "violet",
+    Icon: FiRepeat,
+    label: "Subscriptions",
+  },
+  { iconKey: "bills", accentKey: "blue", Icon: FiFileText, label: "Bills" },
+  {
+    iconKey: "education",
+    accentKey: "amber",
+    Icon: FiBookOpen,
+    label: "Education",
+  },
+  { iconKey: "travel", accentKey: "blue", Icon: FiMapPin, label: "Travel" },
+  {
+    iconKey: "other",
+    accentKey: "indigo",
+    Icon: FiMoreHorizontal,
+    label: "Other",
+  },
+];
+
+export const DEFAULT_BUDGET_VISUAL_IDENTITY: BudgetVisualIdentity = {
+  iconKey: "food",
+  accentKey: "coral",
+};
+
+const accentStyles: Record<
+  BudgetAccentKey,
+  { background: string; foreground: string }
+> = {
+  coral: { background: "#fff0eb", foreground: "#ff6b35" },
+  blue: { background: "#edf4ff", foreground: "#2867e8" },
+  violet: { background: "#f1efff", foreground: "#7057d9" },
+  amber: { background: "#fff5e6", foreground: "#e58b16" },
+  rose: { background: "#fff0f3", foreground: "#e85d75" },
+  indigo: { background: "#eef0ff", foreground: "#5864d9" },
+};
+
+export function selectBudgetIcon(iconKey: BudgetIconKey): BudgetVisualIdentity {
+  const option = BUDGET_ICON_OPTIONS.find(
+    (candidate) => candidate.iconKey === iconKey,
+  );
+  if (!option) return DEFAULT_BUDGET_VISUAL_IDENTITY;
+  return { iconKey: option.iconKey, accentKey: option.accentKey };
+}
+
+export function BudgetIconPicker({
+  value,
+  onChange,
+  ariaLabel = "Budget icon and colour",
+}: {
+  readonly value: BudgetVisualIdentity;
+  readonly onChange: (value: BudgetVisualIdentity) => void;
+  readonly ariaLabel?: string;
+}) {
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const moveFocus = (currentIndex: number, direction: -1 | 1) => {
+    const nextIndex =
+      (currentIndex + direction + BUDGET_ICON_OPTIONS.length) %
+      BUDGET_ICON_OPTIONS.length;
+    const next = BUDGET_ICON_OPTIONS[nextIndex];
+    if (!next) return;
+    onChange(selectBudgetIcon(next.iconKey));
+    optionRefs.current[nextIndex]?.focus();
+  };
+
+  return (
+    <div
+      aria-label={ariaLabel}
+      className="flex flex-wrap gap-2"
+      role="radiogroup">
+      {BUDGET_ICON_OPTIONS.map(({ iconKey, accentKey, Icon, label }, index) => {
+        const selected = value.iconKey === iconKey;
+        const accent = accentStyles[selected ? value.accentKey : accentKey];
+        return (
+          <button
+            aria-checked={selected}
+            aria-label={label}
+            className={cn(
+              "relative grid size-10 shrink-0 cursor-pointer place-items-center rounded-[8px] border text-[16px] transition-[border-color,box-shadow,transform] outline-none focus-visible:ring-2 focus-visible:ring-[#2867e8] focus-visible:ring-offset-2",
+              selected
+                ? "border-[#2867e8] shadow-[inset_0_0_0_1px_#2867e8]"
+                : "border-transparent hover:border-[#c9d8f3]",
+            )}
+            key={iconKey}
+            onClick={() => onChange(selectBudgetIcon(iconKey))}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                event.preventDefault();
+                moveFocus(index, 1);
+              }
+              if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                event.preventDefault();
+                moveFocus(index, -1);
+              }
+            }}
+            ref={(element) => {
+              optionRefs.current[index] = element;
+            }}
+            role="radio"
+            style={{
+              backgroundColor: accent.background,
+              color: accent.foreground,
+            }}
+            tabIndex={selected ? 0 : -1}
+            type="button">
+            <Icon aria-hidden="true" className="size-4" />
+            {selected ? (
+              <span className="absolute -right-1 -bottom-1 grid size-3.5 place-items-center rounded-full border border-white bg-[#2867e8] text-white">
+                <FiCheck aria-hidden="true" className="size-2.5 stroke-3" />
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
