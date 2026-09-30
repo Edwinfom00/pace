@@ -13,8 +13,26 @@ import {
   selectBudgetIcon,
 } from "@/modules/plans/ui/components/budget-icon-picker";
 
+const labels = {
+  groupLabel: "Budget icon",
+  icons: {
+    food: "Food",
+    transport: "Transport",
+    shopping: "Shopping",
+    home: "Home",
+    health: "Health",
+    entertainment: "Entertainment",
+    subscriptions: "Subscriptions",
+    bills: "Bills",
+    education: "Education",
+    travel: "Travel",
+    other: "Other",
+  },
+};
+
 test("budget icon picker renders its compact default selection", () => {
   const markup = renderToStaticMarkup(createElement(BudgetIconPicker, {
+    labels,
     onChange: () => undefined,
     value: DEFAULT_BUDGET_VISUAL_IDENTITY,
   }));
@@ -33,6 +51,7 @@ test("budget icon selection is controlled and uses stable semantic values", () =
 
 test("budget icon picker exposes keyboard-operable radio controls and clear selected state", () => {
   const markup = renderToStaticMarkup(createElement(BudgetIconPicker, {
+    labels,
     onChange: () => undefined,
     value: selectBudgetIcon("home"),
   }));

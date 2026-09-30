@@ -52,6 +52,7 @@ export type BudgetCategoryScopeLabels = Readonly<
     | "selectSubcategories"
     | "noSubcategoriesAvailable"
     | "loadingCategories"
+    | "categoryLoadError"
     | "removeSubcategory",
     string
   >
@@ -80,7 +81,7 @@ export function sanitizeBudgetCategoryScope(
 }
 
 export function BudgetCategoryScopeField({
-  children,
+  childCategories,
   childrenState,
   labels,
   onScopeChange,
@@ -88,7 +89,7 @@ export function BudgetCategoryScopeField({
   rootsState,
   scope,
 }: {
-  readonly children: readonly BudgetCategoryOption[];
+  readonly childCategories: readonly BudgetCategoryOption[];
   readonly childrenState: BudgetCategoryLoadState;
   readonly labels: BudgetCategoryScopeLabels;
   readonly onScopeChange: (scope: BudgetCategoryScope | null) => void;
@@ -104,30 +105,26 @@ export function BudgetCategoryScopeField({
       icon: <CategoryIcon category={category} />,
     }),
   );
-  const hasChildren = childrenState.status === "ready" && children.length > 0;
+  const hasChildren =
+    childrenState.status === "ready" && childCategories.length > 0;
   const [showSubcategoryPicker, setShowSubcategoryPicker] = useState(false);
-
-  useEffect(
-    () => setShowSubcategoryPicker(scope?.mode === "SUBCATEGORIES"),
-    [scope?.categoryId, scope?.mode],
-  );
 
   useEffect(() => {
     if (rootsState.status !== "ready") return;
     const sanitized = sanitizeBudgetCategoryScope(
       scope,
       roots,
-      scope?.categoryId ? children : [],
+      scope?.categoryId ? childCategories : [],
     );
     if (JSON.stringify(sanitized) !== JSON.stringify(scope))
       onScopeChange(sanitized);
-  }, [children, onScopeChange, roots, rootsState.status, scope]);
+  }, [childCategories, onScopeChange, roots, rootsState.status, scope]);
 
   useEffect(() => {
     if (
       scope &&
       childrenState.status === "ready" &&
-      !children.length &&
+      !childCategories.length &&
       scope.mode !== "CATEGORY"
     ) {
       onScopeChange({
@@ -136,7 +133,7 @@ export function BudgetCategoryScopeField({
         subcategoryIds: [],
       });
     }
-  }, [children.length, childrenState.status, onScopeChange, scope]);
+  }, [childCategories.length, childrenState.status, onScopeChange, scope]);
 
   return (
     <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
@@ -146,17 +143,20 @@ export function BudgetCategoryScopeField({
         </label>
         {rootsState.status === "loading" ? (
           <FieldLoading label={labels.loadingCategories} />
+        ) : rootsState.status === "error" ? (
+          <FieldError label={labels.categoryLoadError} />
         ) : (
           <PaceSearchSelect
             ariaLabel={labels.category}
             emptyLabel={labels.noSubcategoriesAvailable}
-            onValueChange={(categoryId) =>
+            onValueChange={(categoryId) => {
+              setShowSubcategoryPicker(false);
               onScopeChange({
                 mode: "CATEGORY",
                 categoryId,
                 subcategoryIds: [],
-              })
-            }
+              });
+            }}
             options={rootOptions}
             placeholder={labels.selectCategory}
             searchPlaceholder={labels.selectCategory}
@@ -170,9 +170,13 @@ export function BudgetCategoryScopeField({
         <div className="min-w-0 sm:pt-6">
           {childrenState.status === "loading" ? (
             <FieldLoading label={labels.loadingCategories} />
+          ) : childrenState.status === "error" ? (
+            <FieldError label={labels.categoryLoadError} />
           ) : hasChildren ? (
             <fieldset aria-labelledby={scopeLabelId} className="min-w-0">
-              <legend className="mb-1.5 block text-[13px] font-medium text-[#263550]" id={scopeLabelId}>
+              <legend
+                className="mb-1.5 block text-[13px] font-medium text-[#263550]"
+                id={scopeLabelId}>
                 {labels.scope}
               </legend>
               <div className="grid h-10 grid-cols-2 overflow-hidden rounded-[8px] border border-[#dce4ef] text-[12px]">
@@ -205,7 +209,7 @@ export function BudgetCategoryScopeField({
             {labels.subcategories}
           </p>
           <SubcategorySelect
-            children={children}
+            categories={childCategories}
             labels={labels}
             onChange={(subcategoryIds) =>
               onScopeChange(
@@ -259,6 +263,14 @@ function FieldLoading({ label }: { readonly label: string }) {
   );
 }
 
+function FieldError({ label }: { readonly label: string }) {
+  return (
+    <p className="text-[12px] leading-5 text-[#c23445]" role="alert">
+      {label}
+    </p>
+  );
+}
+
 function ScopeButton({
   checked,
   label,
@@ -295,17 +307,17 @@ function ScopeButton({
 }
 
 function SubcategorySelect({
-  children,
+  categories,
   labels,
   onChange,
   selectedIds,
 }: {
-  readonly children: readonly BudgetCategoryOption[];
+  readonly categories: readonly BudgetCategoryOption[];
   readonly labels: BudgetCategoryScopeLabels;
   readonly onChange: (ids: readonly string[]) => void;
   readonly selectedIds: readonly string[];
 }) {
-  const selected = children.filter((child) => selectedIds.includes(child.id));
+  const selected = categories.filter((child) => selectedIds.includes(child.id));
   const listboxId = useId();
   return (
     <div className="min-w-0">
@@ -347,7 +359,7 @@ function SubcategorySelect({
             sideOffset={5}>
             <Command>
               <CommandList id={listboxId} role="listbox">
-                {children.map((child) => {
+                {categories.map((child) => {
                   const checked = selectedIds.includes(child.id);
                   return (
                     <CommandItem

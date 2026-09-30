@@ -54,50 +54,43 @@ type BudgetIconOption = {
   readonly iconKey: BudgetIconKey;
   readonly accentKey: BudgetAccentKey;
   readonly Icon: IconType;
-  readonly label: string;
 };
 
 export const BUDGET_ICON_OPTIONS: readonly BudgetIconOption[] = [
-  { iconKey: "food", accentKey: "coral", Icon: FiCoffee, label: "Food" },
+  { iconKey: "food", accentKey: "coral", Icon: FiCoffee },
   {
     iconKey: "transport",
     accentKey: "blue",
     Icon: FiTruck,
-    label: "Transport",
   },
   {
     iconKey: "shopping",
     accentKey: "violet",
     Icon: FiShoppingBag,
-    label: "Shopping",
   },
-  { iconKey: "home", accentKey: "amber", Icon: FiHome, label: "Home" },
-  { iconKey: "health", accentKey: "rose", Icon: FiHeart, label: "Health" },
+  { iconKey: "home", accentKey: "amber", Icon: FiHome },
+  { iconKey: "health", accentKey: "rose", Icon: FiHeart },
   {
     iconKey: "entertainment",
     accentKey: "indigo",
     Icon: FiFilm,
-    label: "Entertainment",
   },
   {
     iconKey: "subscriptions",
     accentKey: "violet",
     Icon: FiRepeat,
-    label: "Subscriptions",
   },
-  { iconKey: "bills", accentKey: "blue", Icon: FiFileText, label: "Bills" },
+  { iconKey: "bills", accentKey: "blue", Icon: FiFileText },
   {
     iconKey: "education",
     accentKey: "amber",
     Icon: FiBookOpen,
-    label: "Education",
   },
-  { iconKey: "travel", accentKey: "blue", Icon: FiMapPin, label: "Travel" },
+  { iconKey: "travel", accentKey: "blue", Icon: FiMapPin },
   {
     iconKey: "other",
     accentKey: "indigo",
     Icon: FiMoreHorizontal,
-    label: "Other",
   },
 ];
 
@@ -105,6 +98,11 @@ export const DEFAULT_BUDGET_VISUAL_IDENTITY: BudgetVisualIdentity = {
   iconKey: "food",
   accentKey: "coral",
 };
+
+export type BudgetIconPickerLabels = Readonly<{
+  groupLabel: string;
+  icons: Readonly<Record<BudgetIconKey, string>>;
+}>;
 
 const accentStyles: Record<
   BudgetAccentKey,
@@ -127,13 +125,13 @@ export function selectBudgetIcon(iconKey: BudgetIconKey): BudgetVisualIdentity {
 }
 
 export function BudgetIconPicker({
+  labels,
   value,
   onChange,
-  ariaLabel = "Budget icon and colour",
 }: {
+  readonly labels: BudgetIconPickerLabels;
   readonly value: BudgetVisualIdentity;
   readonly onChange: (value: BudgetVisualIdentity) => void;
-  readonly ariaLabel?: string;
 }) {
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -149,16 +147,16 @@ export function BudgetIconPicker({
 
   return (
     <div
-      aria-label={ariaLabel}
+      aria-label={labels.groupLabel}
       className="flex flex-wrap gap-2"
       role="radiogroup">
-      {BUDGET_ICON_OPTIONS.map(({ iconKey, accentKey, Icon, label }, index) => {
+      {BUDGET_ICON_OPTIONS.map(({ iconKey, accentKey, Icon }, index) => {
         const selected = value.iconKey === iconKey;
         const accent = accentStyles[selected ? value.accentKey : accentKey];
         return (
           <button
             aria-checked={selected}
-            aria-label={label}
+            aria-label={labels.icons[iconKey]}
             className={cn(
               "relative grid size-10 shrink-0 cursor-pointer place-items-center rounded-[8px] border text-[16px] transition-[border-color,box-shadow,transform] outline-none focus-visible:ring-2 focus-visible:ring-[#2867e8] focus-visible:ring-offset-2",
               selected
@@ -197,5 +195,29 @@ export function BudgetIconPicker({
         );
       })}
     </div>
+  );
+}
+
+export function BudgetVisualIcon({
+  ariaLabel,
+  value,
+}: {
+  readonly ariaLabel: string;
+  readonly value: BudgetVisualIdentity;
+}) {
+  const option =
+    BUDGET_ICON_OPTIONS.find(
+      (candidate) => candidate.iconKey === value.iconKey,
+    ) ?? BUDGET_ICON_OPTIONS[0]!;
+  const accent = accentStyles[value.accentKey];
+  const Icon = option.Icon;
+  return (
+    <span
+      aria-label={ariaLabel}
+      className="grid size-11 place-items-center rounded-[9px]"
+      role="img"
+      style={{ backgroundColor: accent.background, color: accent.foreground }}>
+      <Icon aria-hidden="true" className="size-5" />
+    </span>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { FiInfo, FiShoppingBag, FiX } from "react-icons/fi";
 
@@ -14,8 +14,10 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import type { PlansUiLabels } from "../plans-ui-labels";
+import { formatOverviewMoney } from "@/modules/overview/domain/overview-formatters";
 import {
   BudgetIconPicker,
+  BudgetVisualIcon,
   DEFAULT_BUDGET_VISUAL_IDENTITY,
   type BudgetVisualIdentity,
 } from "./budget-icon-picker";
@@ -29,6 +31,8 @@ import { BudgetAmountField, parseBudgetAmount } from "./budget-amount-field";
 import {
   BudgetPeriodField,
   budgetPeriodKey,
+  budgetPeriodStart,
+  formatBudgetPeriod,
   type BudgetPeriodKey,
 } from "./budget-period-field";
 import { BudgetAdvancedOptions } from "./budget-advanced-options";
@@ -126,7 +130,9 @@ export function BudgetCreateDialogShell({
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    setRootsState(loadingCategories);
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) setRootsState(loadingCategories);
+    });
     void loadBudgetCategories(workspaceId, "root", controller.signal)
       .then(
         (categories) =>
@@ -142,11 +148,13 @@ export function BudgetCreateDialogShell({
   }, [open, workspaceId]);
   useEffect(() => {
     if (!categoryScope) {
-      setChildrenState(emptyCategories);
+      queueMicrotask(() => setChildrenState(emptyCategories));
       return;
     }
     const controller = new AbortController();
-    setChildrenState(loadingCategories);
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) setChildrenState(loadingCategories);
+    });
     void loadBudgetCategories(
       workspaceId,
       categoryScope.categoryId,
@@ -163,8 +171,46 @@ export function BudgetCreateDialogShell({
           setChildrenState({ status: "error", categories: [] }),
       );
     return () => controller.abort();
-  }, [categoryScope?.categoryId, workspaceId]);
+  }, [categoryScope, workspaceId]);
   const t = (key: string) => labels[key] ?? "";
+  const parsedAmount = useMemo(
+    () => parseBudgetAmount(amount, currency),
+    [amount, currency],
+  );
+  const selectedCategory = rootsState.categories.find(
+    (category) => category.id === categoryScope?.categoryId,
+  );
+  const previewAmount =
+    parsedAmount && parsedAmount.minor > 0n
+      ? formatOverviewMoney(parsedAmount.minor, currency, locale)
+      : t("previewAmountFallback");
+  const previewPeriod = period
+    ? formatBudgetPeriod(period, locale)
+    : t("previewPeriodFallback");
+  const periodStart = budgetPeriodStart(period, timeZone);
+  const periodMatch = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(period);
+  const resetPeriod = periodMatch
+    ? `${Number(periodMatch[1]) + (periodMatch[2] === "12" ? 1 : 0)}-${String((Number(periodMatch[2]) % 12) + 1).padStart(2, "0")}`
+    : "";
+  const formatDate = (value: Date | null) =>
+    value
+      ? new Intl.DateTimeFormat(locale, {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone,
+        }).format(value)
+      : t("previewPeriodFallback");
+  const previewNotice = t("notice")
+    .replace("{startsOn}", formatDate(periodStart))
+    .replace(
+      "{resetsOn}",
+      formatDate(resetPeriod ? budgetPeriodStart(resetPeriod, timeZone) : null),
+    );
+  const progress = new Intl.NumberFormat(locale, {
+    style: "percent",
+    maximumFractionDigits: 0,
+  }).format(0);
   return (
     <ResponsiveDialog onOpenChange={onOpenChange} open={open}>
       <ResponsiveDialogContent
@@ -220,6 +266,22 @@ export function BudgetCreateDialogShell({
                     {t("iconAndColour")}
                   </p>
                   <BudgetIconPicker
+                    labels={{
+                      groupLabel: t("iconPicker"),
+                      icons: {
+                        food: t("iconFood"),
+                        transport: t("iconTransport"),
+                        shopping: t("iconShopping"),
+                        home: t("iconHome"),
+                        health: t("iconHealth"),
+                        entertainment: t("iconEntertainment"),
+                        subscriptions: t("iconSubscriptions"),
+                        bills: t("iconBills"),
+                        education: t("iconEducation"),
+                        travel: t("iconTravel"),
+                        other: t("iconOther"),
+                      },
+                    }}
                     onChange={setVisualIdentity}
                     value={visualIdentity}
                   />
@@ -244,7 +306,7 @@ export function BudgetCreateDialogShell({
             <FormSection>
               <SectionHeading number="2" title={t("categoryScope")} />
               <BudgetCategoryScopeField
-                children={childrenState.categories}
+                childCategories={childrenState.categories}
                 childrenState={childrenState}
                 labels={{
                   category: t("category"),
@@ -256,6 +318,7 @@ export function BudgetCreateDialogShell({
                   selectSubcategories: t("selectSubcategories"),
                   noSubcategoriesAvailable: t("noSubcategoriesAvailable"),
                   loadingCategories: t("loadingCategories"),
+                  categoryLoadError: t("categoryLoadError"),
                   removeSubcategory: t("removeSubcategory"),
                 }}
                 onScopeChange={setCategoryScope}
@@ -272,8 +335,7 @@ export function BudgetCreateDialogShell({
                     currency={currency}
                     error={
                       amountTouched &&
-                      (!parseBudgetAmount(amount, currency) ||
-                        parseBudgetAmount(amount, currency)!.minor <= 0n)
+                      (!parsedAmount || parsedAmount.minor <= 0n)
                         ? t("invalidAmount")
                         : undefined
                     }
@@ -311,15 +373,18 @@ export function BudgetCreateDialogShell({
             </h3>
             <div className="mt-4 rounded-[10px] border border-[#e3e9f2] bg-white p-4">
               <div className="flex items-center gap-3">
-                <span className="grid size-11 place-items-center rounded-[9px] bg-[#fff0eb] text-[#ff6b35]">
-                  <FiShoppingBag className="size-5" />
-                </span>
+                <BudgetVisualIcon
+                  ariaLabel={t(
+                    `icon${visualIdentity.iconKey[0].toUpperCase()}${visualIdentity.iconKey.slice(1)}`,
+                  )}
+                  value={visualIdentity}
+                />
                 <div>
                   <p className="text-[14px] font-semibold text-[#14213c]">
-                    {t("budgetNameValue")}
+                    {budgetName || t("budgetNameValue")}
                   </p>
                   <p className="mt-0.5 text-[12px] text-[#71809a]">
-                    {t("previewDescription")}
+                    {description || t("previewDescription")}
                   </p>
                 </div>
               </div>
@@ -327,36 +392,44 @@ export function BudgetCreateDialogShell({
                 <div className="flex justify-between gap-3">
                   <dt className="text-[#71809a]">{t("category")}</dt>
                   <dd className="font-medium text-[#263550]">
-                    {t("budgetNameValue")}
+                    {selectedCategory?.name ?? t("previewCategoryFallback")}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-[#71809a]">{t("amount")}</dt>
                   <dd className="font-medium text-[#263550]">
-                    {t("amountValue")} {t("currency")}
+                    {previewAmount}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-[#71809a]">{t("period")}</dt>
-                  <dd className="font-medium text-[#263550]">{t("monthly")}</dd>
+                  <dd className="font-medium text-[#263550]">
+                    {previewPeriod}
+                  </dd>
                 </div>
               </dl>
               <div className="mt-5 border-t border-[#e8edf4] pt-4">
                 <p className="text-[13px] font-semibold text-[#263550]">
                   {t("progressExample")}
                 </p>
+                <p className="mt-0.5 text-[12px] text-[#71809a]">
+                  {t("notStarted")}
+                </p>
                 <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#edf0f4]">
-                  <span className="block h-full w-[72%] rounded-full bg-[#ff969d]" />
+                  <span className="block h-full w-0 rounded-full bg-[#2867e8]" />
                 </div>
                 <div className="mt-2 flex justify-between text-[12px] text-[#71809a]">
-                  <span>{t("progressValue")}</span>
-                  <span>72%</span>
+                  <span>
+                    {formatOverviewMoney(0n, currency, locale)} /{" "}
+                    {previewAmount}
+                  </span>
+                  <span>{progress}</span>
                 </div>
               </div>
             </div>
             <div className="mt-4 flex gap-2 rounded-[8px] bg-[#edf4ff] p-3 text-[12px] leading-5 text-[#526987]">
               <FiInfo className="mt-0.5 size-4 shrink-0 text-[#2867e8]" />
-              {t("notice")}
+              {previewNotice}
             </div>
           </aside>
         </div>
