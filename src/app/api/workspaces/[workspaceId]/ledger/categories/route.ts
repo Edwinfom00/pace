@@ -9,25 +9,55 @@ interface RouteContext {
   params: Promise<{ workspaceId: string }>;
 }
 
-export async function GET(_request: Request, context: RouteContext): Promise<Response> {
+export async function GET(
+  request: Request,
+  context: RouteContext,
+): Promise<Response> {
   try {
-    const [{ workspaceId }, actor] = await Promise.all([context.params, requireAuthenticatedActor()]);
-    const categories = await getLedgerService().listCategories(actor, workspaceId);
-    return Response.json({ categories: categories.map(presentLedgerCategory) });
+    const [{ workspaceId }, actor] = await Promise.all([
+      context.params,
+      requireAuthenticatedActor(),
+    ]);
+    const categories = await getLedgerService().listCategories(
+      actor,
+      workspaceId,
+    );
+    const parentCategoryId = new URL(request.url).searchParams.get(
+      "parentCategoryId",
+    );
+    const scoped =
+      parentCategoryId === "root"
+        ? categories.filter((category) => !category.parentCategoryId)
+        : parentCategoryId
+          ? categories.filter(
+              (category) => category.parentCategoryId === parentCategoryId,
+            )
+          : categories;
+    return Response.json({ categories: scoped.map(presentLedgerCategory) });
   } catch (error) {
     return jsonError(error);
   }
 }
 
-export async function POST(request: Request, context: RouteContext): Promise<Response> {
+export async function POST(
+  request: Request,
+  context: RouteContext,
+): Promise<Response> {
   try {
     const [{ workspaceId }, actor, input] = await Promise.all([
       context.params,
       requireAuthenticatedActor(),
       parseJson(request, createLedgerCategorySchema),
     ]);
-    const category = await getLedgerService().createCategory(actor, workspaceId, input);
-    return Response.json({ category: presentLedgerCategory(category) }, { status: 201 });
+    const category = await getLedgerService().createCategory(
+      actor,
+      workspaceId,
+      input,
+    );
+    return Response.json(
+      { category: presentLedgerCategory(category) },
+      { status: 201 },
+    );
   } catch (error) {
     return jsonError(error);
   }

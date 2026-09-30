@@ -218,6 +218,13 @@
       "when": 1790100000006,
       "tag": "0030_category_hierarchy",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790100000007,
+      "tag": "0031_budget_category_subcategories",
+      "breakpoints": true
     }
   ]
 }

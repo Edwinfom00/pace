@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   FiCalendar,
@@ -25,6 +25,35 @@ import {
   DEFAULT_BUDGET_VISUAL_IDENTITY,
   type BudgetVisualIdentity,
 } from "./budget-icon-picker";
+import {
+  BudgetCategoryScopeField,
+  type BudgetCategoryLoadState,
+  type BudgetCategoryOption,
+  type BudgetCategoryScope,
+} from "./budget-category-scope-field";
+
+const loadingCategories: BudgetCategoryLoadState = {
+  status: "loading",
+  categories: [],
+};
+const emptyCategories: BudgetCategoryLoadState = {
+  status: "ready",
+  categories: [],
+};
+
+async function loadBudgetCategories(
+  workspaceId: string,
+  parentCategoryId: string | "root",
+  signal: AbortSignal,
+) {
+  const response = await fetch(
+    `/api/workspaces/${workspaceId}/ledger/categories?parentCategoryId=${encodeURIComponent(parentCategoryId)}`,
+    { signal },
+  );
+  if (!response.ok) throw new Error("Unable to load categories.");
+  return ((await response.json()) as { categories: BudgetCategoryOption[] })
+    .categories;
+}
 
 function SectionHeading({
   number,
@@ -79,14 +108,63 @@ export function BudgetCreateDialogShell({
   labels,
   onOpenChange,
   open,
+  workspaceId,
 }: {
   readonly labels: PlansUiLabels["createBudget"];
   readonly onOpenChange: (open: boolean) => void;
   readonly open: boolean;
+  readonly workspaceId: string;
 }) {
   const [visualIdentity, setVisualIdentity] = useState<BudgetVisualIdentity>(
     DEFAULT_BUDGET_VISUAL_IDENTITY,
   );
+  const [categoryScope, setCategoryScope] =
+    useState<BudgetCategoryScope | null>(null);
+  const [rootsState, setRootsState] =
+    useState<BudgetCategoryLoadState>(emptyCategories);
+  const [childrenState, setChildrenState] =
+    useState<BudgetCategoryLoadState>(emptyCategories);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setRootsState(loadingCategories);
+    void loadBudgetCategories(workspaceId, "root", controller.signal)
+      .then(
+        (categories) =>
+          !controller.signal.aborted &&
+          setRootsState({ status: "ready", categories }),
+      )
+      .catch(
+        () =>
+          !controller.signal.aborted &&
+          setRootsState({ status: "error", categories: [] }),
+      );
+    return () => controller.abort();
+  }, [open, workspaceId]);
+  useEffect(() => {
+    if (!categoryScope) {
+      setChildrenState(emptyCategories);
+      return;
+    }
+    const controller = new AbortController();
+    setChildrenState(loadingCategories);
+    void loadBudgetCategories(
+      workspaceId,
+      categoryScope.categoryId,
+      controller.signal,
+    )
+      .then(
+        (categories) =>
+          !controller.signal.aborted &&
+          setChildrenState({ status: "ready", categories }),
+      )
+      .catch(
+        () =>
+          !controller.signal.aborted &&
+          setChildrenState({ status: "error", categories: [] }),
+      );
+    return () => controller.abort();
+  }, [categoryScope?.categoryId, workspaceId]);
   const t = (key: string) => labels[key] ?? "";
   return (
     <ResponsiveDialog onOpenChange={onOpenChange} open={open}>
@@ -136,7 +214,10 @@ export function BudgetCreateDialogShell({
                   <p className="mb-1.5 text-[13px] font-medium text-[#263550]">
                     {t("iconAndColour")}
                   </p>
-                  <BudgetIconPicker onChange={setVisualIdentity} value={visualIdentity} />
+                  <BudgetIconPicker
+                    onChange={setVisualIdentity}
+                    value={visualIdentity}
+                  />
                 </div>
               </div>
               <div className="mt-3">
@@ -151,32 +232,26 @@ export function BudgetCreateDialogShell({
             </FormSection>
             <FormSection>
               <SectionHeading number="2" title={t("categoryScope")} />
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <div>
-                  <p className="mb-1.5 text-[13px] font-medium text-[#263550]">
-                    {t("mainCategory")}
-                  </p>
-                  <FieldPlaceholder className="justify-between">
-                    <span className="flex items-center gap-2">
-                      <FiShoppingBag className="text-[#ff6b35]" />{" "}
-                      {t("budgetNameValue")}
-                    </span>
-                    <FiChevronDown />
-                  </FieldPlaceholder>
-                </div>
-                <div>
-                  <p className="mb-1.5 text-[13px] font-medium text-[#263550]">
-                    {t("subcategories")}{" "}
-                    <span className="font-normal text-[#71809a]">
-                      {t("optional")}
-                    </span>
-                  </p>
-                  <FieldPlaceholder className="justify-between">
-                    <span className="truncate">{t("subcategoriesValue")}</span>
-                    <FiChevronDown />
-                  </FieldPlaceholder>
-                </div>
-              </div>
+              <BudgetCategoryScopeField
+                children={childrenState.categories}
+                childrenState={childrenState}
+                labels={{
+                  category: t("category"),
+                  scope: t("scope"),
+                  entireCategory: t("entireCategory"),
+                  selectedSubcategories: t("selectedSubcategories"),
+                  subcategories: t("subcategories"),
+                  selectCategory: t("selectCategory"),
+                  selectSubcategories: t("selectSubcategories"),
+                  noSubcategoriesAvailable: t("noSubcategoriesAvailable"),
+                  loadingCategories: t("loadingCategories"),
+                  removeSubcategory: t("removeSubcategory"),
+                }}
+                onScopeChange={setCategoryScope}
+                roots={rootsState.categories}
+                rootsState={rootsState}
+                scope={categoryScope}
+              />
             </FormSection>
             <FormSection>
               <SectionHeading number="3" title={t("amountPeriod")} />

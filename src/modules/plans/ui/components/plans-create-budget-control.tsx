@@ -8,8 +8,10 @@ import { BudgetCreateDialogShell } from "./budget-create-dialog-shell";
 
 export function PlansCreateBudgetControl({
   labels,
+  workspaceId,
 }: {
   readonly labels: PlansUiLabels;
+  readonly workspaceId: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -26,6 +28,7 @@ export function PlansCreateBudgetControl({
         labels={labels.createBudget}
         onOpenChange={setOpen}
         open={open}
+        workspaceId={workspaceId}
       />
     </>
   );

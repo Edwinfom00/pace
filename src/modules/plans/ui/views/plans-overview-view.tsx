@@ -439,7 +439,10 @@ export function PlansOverviewView({
               timeZone={timeZone}
               workspaceId={workspaceId}
             />
-            <PlansCreateBudgetControl labels={labels} />
+            <PlansCreateBudgetControl
+              labels={labels}
+              workspaceId={workspaceId}
+            />
           </div>
         </header>
         <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_clamp(300px,25vw,360px)] xl:items-start">
