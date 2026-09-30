@@ -1,4 +1,5 @@
 export type PlansUiLabels = {
+  readonly createBudget: Readonly<Record<string, string>>;
   readonly title: string;
   readonly subtitle: string;
   readonly budgets: string;
@@ -47,8 +48,18 @@ export type PlansUiLabels = {
   readonly category: string;
 };
 
+const createBudgetLabels = {
+  close: "Close", title: "New budget", subtitle: "Set a spending limit for a category and track your progress.",
+  basicInfo: "Basic info", budgetName: "Budget name", budgetNameValue: "Food & dining", budgetNameHint: "Choose a clear name for this budget.", iconAndColour: "Icon and colour",
+  description: "Description", optional: "(optional)", descriptionValue: "Restaurants, groceries, cafés and get-togethers…", categoryScope: "Category & scope", mainCategory: "Main category", subcategories: "Subcategories", subcategoriesValue: "Restaurants · Groceries · Cafés",
+  amountPeriod: "Amount & period", budgetAmount: "Budget amount", amountValue: "120,000", currency: "FCFA", period: "Period", monthly: "Monthly", weekly: "Weekly", custom: "Custom", periodValue: "September 2026",
+  advancedOptions: "Advanced options", notifyTitle: "Notify me when I’m nearing the limit", notifyHint: "Receive a reminder at 80% of your budget.", resetTitle: "Automatic reset", resetHint: "Start fresh at the beginning of each period.",
+  preview: "Preview", previewDescription: "Restaurants, groceries, cafés…", category: "Category", amount: "Amount", progressExample: "Progress example", progressValue: "86,400 / 120,000 FCFA", notice: "This budget will begin on 1 September 2026 and reset automatically on 1 October 2026.", cancel: "Cancel", create: "Create budget",
+};
+
 const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
   en: {
+    createBudget: createBudgetLabels,
     title: "Plans",
     subtitle: "Plan your budgets and savings goals with clarity.",
     budgets: "Budgets",
@@ -89,6 +100,7 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
     more: "More options", actualSpending: "Actual posted spending", period: "Period", category: "Category",
   },
   fr: {
+    createBudget: createBudgetLabels,
     title: "Plans",
     subtitle: "Planifiez vos budgets et objectifs d’épargne en toute clarté.",
     budgets: "Budgets",
@@ -130,6 +142,7 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
     more: "Plus d’options", actualSpending: "Dépenses comptabilisées réelles", period: "Période", category: "Catégorie",
   },
   de: {
+    createBudget: createBudgetLabels,
     title: "Pläne",
     subtitle: "Planen Sie Ihre Budgets und Sparziele mit Klarheit.",
     budgets: "Budgets",

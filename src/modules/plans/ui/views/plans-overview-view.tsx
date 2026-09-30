@@ -3,7 +3,6 @@ import {
   FiCreditCard,
   FiMoreHorizontal,
   FiPieChart,
-  FiPlus,
   FiTarget,
   FiTrendingDown,
   FiTrendingUp,
@@ -16,6 +15,7 @@ import type { BudgetSummary, SavingsGoalSummary } from "@/modules/plans/domain";
 
 import type { PlansOverview } from "../../queries/get-plans-overview";
 import { PlansAskPaceButton } from "../components/plans-ask-pace-button";
+import { PlansCreateBudgetControl } from "../components/plans-create-budget-control";
 import { PlansTabs } from "../components/plans-tabs";
 import type { PlansUiLabels } from "../plans-ui-labels";
 
@@ -439,14 +439,7 @@ export function PlansOverviewView({
               timeZone={timeZone}
               workspaceId={workspaceId}
             />
-            <button
-              aria-disabled="true"
-              className="inline-flex h-9 items-center gap-2 rounded-[8px] bg-[#2867e8] px-3 text-[13px] font-medium text-white opacity-70"
-              title={labels.unavailable}
-              type="button">
-              <FiPlus className="size-4" />
-              {labels.newPlan}
-            </button>
+            <PlansCreateBudgetControl labels={labels} />
           </div>
         </header>
         <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_clamp(300px,25vw,360px)] xl:items-start">
