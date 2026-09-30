@@ -407,6 +407,7 @@ export function PlansOverviewView({
   timeZone,
   language,
   workspaceId,
+  workspaceCurrency,
   workspaceSlug,
 }: {
   readonly overview: PlansOverview;
@@ -415,6 +416,7 @@ export function PlansOverviewView({
   readonly timeZone: string;
   readonly language: "en" | "fr" | "de";
   readonly workspaceId: string;
+  readonly workspaceCurrency: string;
   readonly workspaceSlug: string;
 }) {
   const budgets = overview.budgets.filter((item) => item.activeForPeriod);
@@ -440,7 +442,10 @@ export function PlansOverviewView({
               workspaceId={workspaceId}
             />
             <PlansCreateBudgetControl
+              currency={workspaceCurrency}
               labels={labels}
+              locale={locale}
+              timeZone={timeZone}
               workspaceId={workspaceId}
             />
           </div>

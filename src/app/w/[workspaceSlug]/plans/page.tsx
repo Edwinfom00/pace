@@ -38,6 +38,7 @@ export default async function PlansPage({
       locale={workspace.preferences.locale}
       overview={overview}
       timeZone={workspace.preferences.timezone}
+      workspaceCurrency={workspace.preferences.currency}
       workspaceId={workspace.workspace.id}
       workspaceSlug={workspaceSlug}
     />

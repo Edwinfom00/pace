@@ -2,13 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import {
-  FiCalendar,
-  FiChevronDown,
-  FiInfo,
-  FiShoppingBag,
-  FiX,
-} from "react-icons/fi";
+import { FiInfo, FiShoppingBag, FiX } from "react-icons/fi";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +25,12 @@ import {
   type BudgetCategoryOption,
   type BudgetCategoryScope,
 } from "./budget-category-scope-field";
+import { BudgetAmountField, parseBudgetAmount } from "./budget-amount-field";
+import {
+  BudgetPeriodField,
+  budgetPeriodKey,
+  type BudgetPeriodKey,
+} from "./budget-period-field";
 
 const loadingCategories: BudgetCategoryLoadState = {
   status: "loading",
@@ -108,11 +108,17 @@ export function BudgetCreateDialogShell({
   labels,
   onOpenChange,
   open,
+  currency,
+  locale,
+  timeZone,
   workspaceId,
 }: {
   readonly labels: PlansUiLabels["createBudget"];
   readonly onOpenChange: (open: boolean) => void;
   readonly open: boolean;
+  readonly currency: string;
+  readonly locale: string;
+  readonly timeZone: string;
   readonly workspaceId: string;
 }) {
   const [visualIdentity, setVisualIdentity] = useState<BudgetVisualIdentity>(
@@ -124,6 +130,11 @@ export function BudgetCreateDialogShell({
     useState<BudgetCategoryLoadState>(emptyCategories);
   const [childrenState, setChildrenState] =
     useState<BudgetCategoryLoadState>(emptyCategories);
+  const [amount, setAmount] = useState("");
+  const [period, setPeriod] = useState<BudgetPeriodKey>(() =>
+    budgetPeriodKey(new Date(), timeZone),
+  );
+  const [amountTouched, setAmountTouched] = useState(false);
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -256,41 +267,31 @@ export function BudgetCreateDialogShell({
             <FormSection>
               <SectionHeading number="3" title={t("amountPeriod")} />
               <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                <div>
-                  <p className="mb-1.5 text-[13px] font-medium text-[#263550]">
-                    {t("budgetAmount")}
-                  </p>
-                  <div className="flex gap-2">
-                    <FieldPlaceholder className="flex-1 text-[#14213c]">
-                      {t("amountValue")}
-                    </FieldPlaceholder>
-                    <FieldPlaceholder className="w-25 justify-between">
-                      {t("currency")} <FiChevronDown />
-                    </FieldPlaceholder>
-                  </div>
+                <div onBlur={() => setAmountTouched(true)}>
+                  <BudgetAmountField
+                    currency={currency}
+                    error={
+                      amountTouched &&
+                      (!parseBudgetAmount(amount, currency) ||
+                        parseBudgetAmount(amount, currency)!.minor <= 0n)
+                        ? t("invalidAmount")
+                        : undefined
+                    }
+                    helperText={t("amountHint")}
+                    label={t("budgetAmount")}
+                    onChange={setAmount}
+                    value={amount}
+                  />
                 </div>
-                <div>
-                  <p className="mb-1.5 text-[13px] font-medium text-[#263550]">
-                    {t("period")}
-                  </p>
-                  <div className="flex h-8 overflow-hidden rounded-[7px] border border-[#dce4ef] text-[12px]">
-                    <span className="flex flex-1 items-center justify-center bg-[#e8f1ff] font-medium text-[#2867e8]">
-                      {t("monthly")}
-                    </span>
-                    <span className="flex flex-1 items-center justify-center border-l border-[#dce4ef]">
-                      {t("weekly")}
-                    </span>
-                    <span className="flex flex-1 items-center justify-center border-l border-[#dce4ef]">
-                      {t("custom")}
-                    </span>
-                  </div>
-                  <FieldPlaceholder className="mt-2 justify-between">
-                    <span className="flex items-center gap-2">
-                      <FiCalendar /> {t("periodValue")}
-                    </span>
-                    <FiChevronDown />
-                  </FieldPlaceholder>
-                </div>
+                <BudgetPeriodField
+                  error={period ? undefined : t("invalidPeriod")}
+                  label={t("period")}
+                  locale={locale}
+                  onChange={setPeriod}
+                  period={period}
+                  selectPeriod={t("selectPeriod")}
+                  timeZone={timeZone}
+                />
               </div>
             </FormSection>
             <FormSection className="border-b-0">
