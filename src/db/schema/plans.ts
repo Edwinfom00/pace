@@ -25,10 +25,8 @@ export const savingsGoalStatus = pgEnum("savings_goal_status", [
   "ARCHIVED",
 ]);
 
-/**
- * A budget is a monthly limit. Its calculations live in the deterministic
- * Money Engine; this table intentionally contains no derived balance.
- */
+
+
 export const budgets = pgTable(
   "budget",
   {
@@ -40,6 +38,7 @@ export const budgets = pgTable(
     categoryId: text("category_id").references(() => ledgerCategories.id, {
       onDelete: "restrict",
     }),
+    subcategoryIds: text("subcategory_ids").array().notNull().default(sql`'{}'::text[]`),
     amountMinor: bigint("amount_minor", { mode: "bigint" }).notNull(),
     currency: varchar("currency", { length: 3 }).notNull(),
     frequency: budgetFrequency("frequency").notNull().default("MONTHLY"),

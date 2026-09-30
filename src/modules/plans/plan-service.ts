@@ -33,6 +33,7 @@ import type {
 } from "./domain";
 import type {
   BudgetUpdate,
+  CreateBudgetRecord,
   PlansRepository,
   SavingsGoalUpdate,
 } from "./repositories/plans-repository";
@@ -40,6 +41,7 @@ import type {
 export interface CreateBudgetInput {
   scope: BudgetScope;
   categoryId: string | null;
+  subcategoryIds?: readonly string[];
   amountMinor: bigint;
   startsOn: Date;
   endsOn: Date | null;
@@ -126,11 +128,19 @@ export class PlansService {
   ): Promise<BudgetRecord> {
     const context = await this.requireManageContext(actor, workspaceId);
     await this.assertBudgetInput(workspaceId, input);
-    return this.plans.createBudget({
+    if (input.agentActionId) {
+      const prior = await this.plans.findBudgetByAgentAction(
+        workspaceId,
+        input.agentActionId,
+      );
+      if (prior) return prior;
+    }
+    const record: CreateBudgetRecord = {
       id: randomUUID(),
       workspaceId,
       scope: input.scope,
       categoryId: input.categoryId,
+      subcategoryIds: input.subcategoryIds ?? [],
       amountMinor: input.amountMinor,
       currency: context.preferences.currency,
       frequency: "MONTHLY",
@@ -140,7 +150,16 @@ export class PlansService {
       createdByUserId: actor.userId,
       updatedByUserId: actor.userId,
       createdByAgentActionId: input.agentActionId ?? null,
-    });
+    };
+    try {
+      return await this.plans.createBudget(record);
+    } catch (error) {
+      if (input.agentActionId) {
+        const prior = await this.plans.findBudgetByAgentAction(workspaceId, input.agentActionId);
+        if (prior) return prior;
+      }
+      throw error;
+    }
   }
 
   async updateBudget(
@@ -159,6 +178,8 @@ export class PlansService {
         input.scope === "OVERALL"
           ? null
           : (input.categoryId ?? existing.categoryId),
+      subcategoryIds:
+        input.scope === "OVERALL" ? [] : (existing.subcategoryIds ?? []),
       amountMinor: input.amountMinor ?? existing.amountMinor,
       startsOn: input.startsOn ?? existing.startsOn,
       endsOn: input.endsOn === undefined ? existing.endsOn : input.endsOn,
@@ -291,12 +312,13 @@ export class PlansService {
     now = new Date(),
   ): Promise<BudgetSummary[]> {
     const context = await this.requireReadContext(actor, workspaceId);
-    const [records, transactions] = await Promise.all([
+    const [records, transactions, categories] = await Promise.all([
       this.plans.listBudgets(workspaceId),
       this.ledger.listTransactions(workspaceId, { statuses: ["POSTED"] }),
+      this.ledger.listCategories(workspaceId),
     ]);
     return records.map((budget) =>
-      summarizeBudget(budget, transactions, context.preferences.timezone, now),
+      summarizeBudget(budget, transactions, context.preferences.timezone, now, categories),
     );
   }
 
@@ -307,12 +329,13 @@ export class PlansService {
     now = new Date(),
   ): Promise<BudgetSummary | null> {
     const context = await this.requireReadContext(actor, workspaceId);
-    const [budget, transactions] = await Promise.all([
+    const [budget, transactions, categories] = await Promise.all([
       this.plans.findBudget(workspaceId, budgetId),
       this.ledger.listTransactions(workspaceId, { statuses: ["POSTED"] }),
+      this.ledger.listCategories(workspaceId),
     ]);
     return budget
-      ? summarizeBudget(budget, transactions, context.preferences.timezone, now)
+      ? summarizeBudget(budget, transactions, context.preferences.timezone, now, categories)
       : null;
   }
 
@@ -353,6 +376,24 @@ export class PlansService {
     if (!category || category.kind !== "EXPENSE") {
       throw new NotFoundError("Budget category not found in this workspace.");
     }
+    const selected = [...new Set(input.subcategoryIds ?? [])];
+    if (selected.length !== (input.subcategoryIds ?? []).length)
+      throw new ConflictError("Budget subcategories must be unique.");
+    if (!selected.length) return;
+    const categories = await this.ledger.listCategories(workspaceId);
+    const children = new Map(categories.map((item) => [item.id, item]));
+    if (
+      selected.some((id) => {
+        const child = children.get(id);
+        return (
+          !child ||
+          child.kind !== "EXPENSE" ||
+          child.parentCategoryId !== input.categoryId
+        );
+      })
+    ) {
+      throw new NotFoundError("Budget subcategory not found in this category.");
+    }
   }
 
   private async requireReadContext(
@@ -384,6 +425,7 @@ export function summarizeBudget(
   transactions: readonly LedgerTransactionRecord[],
   timeZone: string,
   now = new Date(),
+  categories: readonly LedgerCategoryRecord[] = [],
 ): BudgetSummary {
   const monthly = monthPeriod(now, timeZone);
   const effectiveStart =
@@ -406,11 +448,17 @@ export function summarizeBudget(
     currency: budget.currency,
     statuses: ["POSTED"],
   });
-  const spend =
-    budget.scope === "OVERALL"
-      ? summary.totals.spending.minor
-      : (summary.categories.find((entry) => entry.id === budget.categoryId)
-          ?.spending.minor ?? 0n);
+  const categoryIds = new Set<string>();
+  if (budget.scope === "CATEGORY" && budget.categoryId) {
+    if (budget.subcategoryIds.length) budget.subcategoryIds.forEach((id) => categoryIds.add(id));
+    else {
+      categoryIds.add(budget.categoryId);
+      categories.filter((category) => category.parentCategoryId === budget.categoryId).forEach((category) => categoryIds.add(category.id));
+    }
+  }
+  const spend = budget.scope === "OVERALL"
+    ? summary.totals.spending.minor
+    : summary.categories.reduce((total, entry) => categoryIds.has(entry.id) ? total + entry.spending.minor : total, 0n);
   const dailyPace = calculateDailyPace(
     financialTransactions,
     period,

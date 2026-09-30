@@ -114,6 +114,10 @@ const createBudgetLabels = {
   notice: "This budget will begin on {startsOn} and reset automatically on {resetsOn}.",
   cancel: "Cancel",
   create: "Create budget",
+  creating: "Creating…",
+  invalidCategory: "Select a valid category.",
+  invalidCurrency: "This currency is not available for this workspace.",
+  createError: "We could not create this budget. Please try again.",
 };
 
 const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
@@ -226,6 +230,10 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
       notice: "Ce budget commencera le {startsOn} et se réinitialisera automatiquement le {resetsOn}.",
       cancel: "Annuler",
       create: "Créer le budget",
+      creating: "Création…",
+      invalidCategory: "Sélectionnez une catégorie valide.",
+      invalidCurrency: "Cette devise n’est pas disponible pour cet espace de travail.",
+      createError: "Impossible de créer ce budget. Veuillez réessayer.",
     },
     title: "Plans",
     subtitle: "Planifiez vos budgets et objectifs d’épargne en toute clarté.",
@@ -334,6 +342,10 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
       notice: "Dieses Budget beginnt am {startsOn} und wird am {resetsOn} automatisch zurückgesetzt.",
       cancel: "Abbrechen",
       create: "Budget erstellen",
+      creating: "Wird erstellt…",
+      invalidCategory: "Wählen Sie eine gültige Kategorie aus.",
+      invalidCurrency: "Diese Währung ist für diesen Arbeitsbereich nicht verfügbar.",
+      createError: "Dieses Budget konnte nicht erstellt werden. Bitte versuchen Sie es erneut.",
     },
     title: "Pläne",
     subtitle: "Planen Sie Ihre Budgets und Sparziele mit Klarheit.",

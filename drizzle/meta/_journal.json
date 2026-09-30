@@ -225,6 +225,13 @@
       "when": 1790100000007,
       "tag": "0031_budget_category_subcategories",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790100000008,
+      "tag": "0032_budget_subcategory_scope",
+      "breakpoints": true
     }
   ]
 }

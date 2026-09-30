@@ -15,6 +15,7 @@ export interface BudgetRecord {
   readonly workspaceId: string;
   readonly scope: BudgetScope;
   readonly categoryId: string | null;
+  readonly subcategoryIds: readonly string[];
   readonly amountMinor: bigint;
   readonly currency: string;
   readonly frequency: BudgetFrequency;

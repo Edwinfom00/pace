@@ -11,7 +11,7 @@ export type CreateSavingsGoalRecord = Omit<SavingsGoalRecord, "createdAt" | "upd
 export type BudgetUpdate = Partial<
   Pick<
     BudgetRecord,
-    "scope" | "categoryId" | "amountMinor" | "status" | "startsOn" | "endsOn" | "updatedByUserId"
+    "scope" | "categoryId" | "subcategoryIds" | "amountMinor" | "status" | "startsOn" | "endsOn" | "updatedByUserId"
   >
 >;
 export type SavingsGoalUpdate = Partial<
@@ -43,7 +43,7 @@ export interface PlansRepository {
 
 export class DatabasePlansRepository implements PlansRepository {
   async createBudget(input: CreateBudgetRecord): Promise<BudgetRecord> {
-    const [record] = await db.insert(budgets).values(input).returning();
+    const [record] = await db.insert(budgets).values({ ...input, subcategoryIds: [...input.subcategoryIds] }).returning();
     if (!record) throw new Error("Failed to create budget.");
     return record;
   }
@@ -71,9 +71,10 @@ export class DatabasePlansRepository implements PlansRepository {
   }
 
   async updateBudget(workspaceId: string, budgetId: string, input: BudgetUpdate): Promise<BudgetRecord | null> {
+    const { subcategoryIds, ...update } = input;
     const [record] = await db
       .update(budgets)
-      .set({ ...input, updatedAt: new Date() })
+      .set({ ...update, ...(subcategoryIds ? { subcategoryIds: [...subcategoryIds] } : {}), updatedAt: new Date() })
       .where(and(eq(budgets.workspaceId, workspaceId), eq(budgets.id, budgetId)))
       .returning();
     return record ?? null;

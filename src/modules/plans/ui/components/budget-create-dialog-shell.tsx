@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { FiInfo, FiShoppingBag, FiX } from "react-icons/fi";
 
@@ -117,6 +118,7 @@ export function BudgetCreateDialogShell({
   readonly timeZone: string;
   readonly workspaceId: string;
 }) {
+  const router = useRouter();
   const [visualIdentity, setVisualIdentity] = useState<BudgetVisualIdentity>(
     DEFAULT_BUDGET_VISUAL_IDENTITY,
   );
@@ -133,6 +135,9 @@ export function BudgetCreateDialogShell({
     budgetPeriodKey(new Date(), timeZone),
   );
   const [amountTouched, setAmountTouched] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const idempotencyKey = useRef<string | null>(null);
   const categoryCache = useRef(
     new BudgetCategoryRequestCache<BudgetCategoryOption>(),
   );
@@ -232,12 +237,41 @@ export function BudgetCreateDialogShell({
       "{resetsOn}",
       formatDate(resetPeriod ? budgetPeriodStart(resetPeriod, timeZone) : null),
     );
+  const submit = async () => {
+    if (isSubmitting) return;
+    setAmountTouched(true);
+    if (!parsedAmount || parsedAmount.minor <= 0n || !period || !categoryScope) {
+      setFormError(!categoryScope ? t("invalidCategory") : null);
+      return;
+    }
+    setFormError(null);
+    setIsSubmitting(true);
+    const key = idempotencyKey.current ?? crypto.randomUUID();
+    idempotencyKey.current = key;
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/plans/budgets`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ categoryId: categoryScope.categoryId, subcategoryIds: categoryScope.subcategoryIds, amountMinor: parsedAmount.minor.toString(), currency, period, idempotencyKey: key }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { code?: string } | null;
+        setFormError(payload?.code === "CURRENCY_MISMATCH" ? t("invalidCurrency") : t("createError"));
+        return;
+      }
+      idempotencyKey.current = null;
+      onOpenChange(false);
+      router.refresh();
+    } catch { setFormError(t("createError")); }
+    finally { setIsSubmitting(false); }
+  };
   const progress = new Intl.NumberFormat(locale, {
     style: "percent",
     maximumFractionDigits: 0,
   }).format(0);
   return (
-    <ResponsiveDialog onOpenChange={onOpenChange} open={open}>
+    <ResponsiveDialog onOpenChange={(nextOpen) => {
+      if (!isSubmitting) onOpenChange(nextOpen);
+    }} open={open}>
       <ResponsiveDialogContent
         className="flex! max-h-[calc(100dvh-1rem)]! min-h-0 w-[calc(100%-1rem)]! max-w-265! flex-col gap-0 overflow-hidden rounded-[12px] border border-[#dfe6ef] bg-white p-0 text-[#101a35] shadow-[0_18px_45px_rgb(15_23_42/14%)] lg:max-h-[calc(100dvh-3rem)] lg:w-[calc(100%-3rem)]"
         drawerClassName="w-full max-w-none rounded-none rounded-t-[14px] border-x-0 border-b-0 shadow-[0_-12px_32px_rgb(15_23_42/12%)] data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-1rem)]">
@@ -245,6 +279,7 @@ export function BudgetCreateDialogShell({
           <Button
             aria-label={t("close")}
             className="absolute top-4 right-4 z-10 size-8 rounded-[7px] text-[#61708a] hover:bg-[#f3f6fa]"
+            disabled={isSubmitting}
             size="icon"
             type="button"
             variant="ghost">
@@ -349,6 +384,7 @@ export function BudgetCreateDialogShell({
                 rootsState={rootsState}
                 scope={categoryScope}
               />
+              {formError === t("invalidCategory") ? <p className="mt-2 text-[12px] text-[#c23445]" role="alert">{formError}</p> : null}
             </FormSection>
             <FormSection>
               <SectionHeading number="3" title={t("amountPeriod")} />
@@ -457,18 +493,21 @@ export function BudgetCreateDialogShell({
           </aside>
         </div>
         <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-[#e7ecf3] bg-white px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-7 sm:py-4">
-          <ResponsiveDialogClose>
-            <Button
+          <Button
               className="h-9 rounded-[8px] border-[#dce4ef] px-3.5 text-[13px] text-[#263550]"
+              disabled={isSubmitting}
+              onClick={() => onOpenChange(false)}
               type="button"
               variant="outline">
               {t("cancel")}
-            </Button>
-          </ResponsiveDialogClose>
+          </Button>
+          {formError && formError !== t("invalidCategory") ? <p className="mr-auto text-[12px] text-[#c23445]" role="alert">{formError}</p> : null}
           <Button
             className="h-9 rounded-[8px] bg-[#2867e8] px-3.5 text-[13px] font-medium text-white shadow-none hover:bg-[#1e55d1]"
+            disabled={isSubmitting}
+            onClick={() => void submit()}
             type="button">
-            {t("create")}
+            {isSubmitting ? t("creating") : t("create")}
           </Button>
         </footer>
       </ResponsiveDialogContent>
