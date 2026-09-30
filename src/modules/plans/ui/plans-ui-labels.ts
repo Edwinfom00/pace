@@ -1,5 +1,6 @@
 export type PlansUiLabels = {
   readonly createBudget: Readonly<Record<string, string>>;
+  readonly budgetManagement: Readonly<Record<string, string>>;
   readonly title: string;
   readonly subtitle: string;
   readonly budgets: string;
@@ -111,7 +112,8 @@ const createBudgetLabels = {
   notStarted: "Not started",
   amount: "Amount",
   progressExample: "Progress example",
-  notice: "This budget will begin on {startsOn} and reset automatically on {resetsOn}.",
+  notice:
+    "This budget will begin on {startsOn} and reset automatically on {resetsOn}.",
   cancel: "Cancel",
   create: "Create budget",
   creating: "Creating…",
@@ -120,9 +122,29 @@ const createBudgetLabels = {
   createError: "We could not create this budget. Please try again.",
 };
 
+const budgetManagementLabels = {
+  edit: "Edit budget",
+  archive: "Archive budget",
+  editTitle: "Edit budget",
+  editDescription: "Update the planning details for this budget.",
+  overall: "Overall spending",
+  archived: "Archived",
+  save: "Save changes",
+  saving: "Saving…",
+  editError: "We could not save your changes. Please try again.",
+  changed: "This budget changed since you opened it.",
+  reload: "Reload latest",
+  archiveTitle: "Archive budget",
+  archiveDescription:
+    "This budget will be removed from active plans, but its history will be preserved. No transactions or balances will be changed.",
+  archiving: "Archiving…",
+  archiveError: "We could not archive this budget. Please try again.",
+};
+
 const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
   en: {
     createBudget: createBudgetLabels,
+    budgetManagement: budgetManagementLabels,
     title: "Plans",
     subtitle: "Plan your budgets and savings goals with clarity.",
     budgets: "Budgets",
@@ -213,7 +235,8 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
       subcategoriesHint: "Laissez vide pour inclure toute la catégorie.",
       noSubcategoriesAvailable: "Aucune sous-catégorie disponible",
       loadingCategories: "Chargement des catégories…",
-      categoryLoadError: "Les catégories n’ont pas pu être chargées. Veuillez réessayer.",
+      categoryLoadError:
+        "Les catégories n’ont pas pu être chargées. Veuillez réessayer.",
       removeSubcategory: "Supprimer la sous-catégorie",
       advancedOptions: "Options avancées",
       monthlyResetTitle: "Réinitialisation mensuelle",
@@ -227,13 +250,35 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
       notStarted: "Pas encore commencé",
       amount: "Montant",
       progressExample: "Exemple de progression",
-      notice: "Ce budget commencera le {startsOn} et se réinitialisera automatiquement le {resetsOn}.",
+      notice:
+        "Ce budget commencera le {startsOn} et se réinitialisera automatiquement le {resetsOn}.",
       cancel: "Annuler",
       create: "Créer le budget",
       creating: "Création…",
       invalidCategory: "Sélectionnez une catégorie valide.",
-      invalidCurrency: "Cette devise n’est pas disponible pour cet espace de travail.",
+      invalidCurrency:
+        "Cette devise n’est pas disponible pour cet espace de travail.",
       createError: "Impossible de créer ce budget. Veuillez réessayer.",
+    },
+    budgetManagement: {
+      edit: "Modifier le budget",
+      archive: "Archiver le budget",
+      editTitle: "Modifier le budget",
+      editDescription:
+        "Mettez à jour les informations de planification de ce budget.",
+      overall: "Dépenses globales",
+      archived: "Archivé",
+      save: "Enregistrer les modifications",
+      saving: "Enregistrement…",
+      editError:
+        "Impossible d’enregistrer vos modifications. Veuillez réessayer.",
+      changed: "Ce budget a changé depuis son ouverture.",
+      reload: "Recharger la dernière version",
+      archiveTitle: "Archiver le budget",
+      archiveDescription:
+        "Ce budget sera retiré des plans actifs, mais son historique sera conservé. Aucune transaction ni aucun solde ne seront modifiés.",
+      archiving: "Archivage…",
+      archiveError: "Impossible d’archiver ce budget. Veuillez réessayer.",
     },
     title: "Plans",
     subtitle: "Planifiez vos budgets et objectifs d’épargne en toute clarté.",
@@ -287,7 +332,8 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
     createBudget: {
       close: "Schließen",
       title: "Neues Budget",
-      subtitle: "Legen Sie ein Ausgabenlimit für eine Kategorie fest und verfolgen Sie Ihren Fortschritt.",
+      subtitle:
+        "Legen Sie ein Ausgabenlimit für eine Kategorie fest und verfolgen Sie Ihren Fortschritt.",
       basicInfo: "Grundinformationen",
       budgetName: "Budgetname",
       budgetNameValue: "Essen und Ausgehen",
@@ -323,10 +369,12 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
       subcategories: "Unterkategorien",
       selectCategory: "Kategorie auswählen",
       selectSubcategories: "Unterkategorien auswählen",
-      subcategoriesHint: "Leer lassen, um die gesamte Kategorie einzuschließen.",
+      subcategoriesHint:
+        "Leer lassen, um die gesamte Kategorie einzuschließen.",
       noSubcategoriesAvailable: "Keine Unterkategorien verfügbar",
       loadingCategories: "Kategorien werden geladen…",
-      categoryLoadError: "Kategorien konnten nicht geladen werden. Bitte versuchen Sie es erneut.",
+      categoryLoadError:
+        "Kategorien konnten nicht geladen werden. Bitte versuchen Sie es erneut.",
       removeSubcategory: "Unterkategorie entfernen",
       advancedOptions: "Erweiterte Optionen",
       monthlyResetTitle: "Monatliche Zurücksetzung",
@@ -339,13 +387,36 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
       notStarted: "Noch nicht begonnen",
       amount: "Betrag",
       progressExample: "Fortschrittsbeispiel",
-      notice: "Dieses Budget beginnt am {startsOn} und wird am {resetsOn} automatisch zurückgesetzt.",
+      notice:
+        "Dieses Budget beginnt am {startsOn} und wird am {resetsOn} automatisch zurückgesetzt.",
       cancel: "Abbrechen",
       create: "Budget erstellen",
       creating: "Wird erstellt…",
       invalidCategory: "Wählen Sie eine gültige Kategorie aus.",
-      invalidCurrency: "Diese Währung ist für diesen Arbeitsbereich nicht verfügbar.",
-      createError: "Dieses Budget konnte nicht erstellt werden. Bitte versuchen Sie es erneut.",
+      invalidCurrency:
+        "Diese Währung ist für diesen Arbeitsbereich nicht verfügbar.",
+      createError:
+        "Dieses Budget konnte nicht erstellt werden. Bitte versuchen Sie es erneut.",
+    },
+    budgetManagement: {
+      edit: "Budget bearbeiten",
+      archive: "Budget archivieren",
+      editTitle: "Budget bearbeiten",
+      editDescription: "Aktualisieren Sie die Planungsdetails dieses Budgets.",
+      overall: "Gesamtausgaben",
+      archived: "Archiviert",
+      save: "Änderungen speichern",
+      saving: "Wird gespeichert…",
+      editError:
+        "Ihre Änderungen konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+      changed: "Dieses Budget wurde geändert, seit Sie es geöffnet haben.",
+      reload: "Neueste Version laden",
+      archiveTitle: "Budget archivieren",
+      archiveDescription:
+        "Dieses Budget wird aus den aktiven Plänen entfernt, sein Verlauf bleibt jedoch erhalten. Es werden keine Transaktionen oder Kontostände geändert.",
+      archiving: "Wird archiviert…",
+      archiveError:
+        "Das Budget konnte nicht archiviert werden. Bitte versuchen Sie es erneut.",
     },
     title: "Pläne",
     subtitle: "Planen Sie Ihre Budgets und Sparziele mit Klarheit.",

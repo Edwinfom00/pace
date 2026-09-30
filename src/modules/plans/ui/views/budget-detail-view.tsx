@@ -4,7 +4,6 @@ import {
   FiBarChart2,
   FiCalendar,
   FiCreditCard,
-  FiMoreHorizontal,
   FiPieChart,
   FiTrendingUp,
 } from "react-icons/fi";
@@ -18,6 +17,7 @@ import { getDashboardLabels } from "@/i18n/dashboard-messages";
 
 import type { getBudgetDetail } from "../../queries/get-budget-detail";
 import { getPlansUiLabels } from "../plans-ui-labels";
+import { BudgetManagementActions } from "../components/budget-management-actions";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getBudgetDetail>>>;
 const percent = (bps: bigint) =>
@@ -55,12 +55,16 @@ export function BudgetDetailView({
   const money = (value: bigint) =>
     formatOverviewMoney(value, budget.currency, locale);
   const near = summary.percentageUsedBps >= 8_000n && !summary.overBudget;
-  const status = summary.overBudget
+  const status = budget.status === "ARCHIVED"
+    ? labels.budgetManagement.archived
+    : summary.overBudget
     ? labels.overBudget
     : near
       ? labels.attention
       : labels.onTrack;
-  const statusTone = summary.overBudget
+  const statusTone = budget.status === "ARCHIVED"
+    ? "bg-[#eef1f5] text-[#526788]"
+    : summary.overBudget
     ? "bg-[#fff0f2] text-[#c83d50]"
     : near
       ? "bg-[#fff7e6] text-[#aa7100]"
@@ -134,12 +138,14 @@ export function BudgetDetailView({
               <FiCalendar />
               {date}
             </span>
-            <button
-              aria-label={labels.more}
-              className="grid size-10 place-items-center rounded-[9px] border border-[#e5e9f0] text-[#53627b]"
-              type="button">
-              <FiMoreHorizontal />
-            </button>
+            <BudgetManagementActions
+              budget={budget}
+              capabilities={summary.capabilities}
+              labels={labels}
+              locale={locale}
+              timeZone={timeZone}
+              workspaceId={workspaceId}
+            />
           </div>
         </header>
         <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_clamp(300px,25vw,360px)]">

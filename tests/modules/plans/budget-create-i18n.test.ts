@@ -27,6 +27,17 @@ test("Create Budget labels are complete and localized in EN, FR, and DE", () => 
   }
 });
 
+test("Budget management labels are present in EN, FR, and DE", () => {
+  for (const language of ["en", "fr", "de"] as const) {
+    const labels = getPlansUiLabels(language).budgetManagement;
+    assert.ok(labels.edit);
+    assert.ok(labels.archive);
+    assert.ok(labels.save);
+    assert.ok(labels.changed);
+    assert.ok(labels.archiveDescription);
+  }
+});
+
 test("Create Budget preview formats months and money for the workspace locale", () => {
   assert.match(formatBudgetPeriod("2026-09", "en-US"), /September 2026/);
   assert.match(formatBudgetPeriod("2026-09", "fr-FR"), /septembre 2026/i);
