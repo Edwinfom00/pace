@@ -70,6 +70,8 @@ export interface LedgerAccountBalance {
 export interface LedgerCategoryRecord {
   id: string;
   workspaceId: string | null;
+  /** V1 permits one root-to-child relationship only; roots use null. */
+  parentCategoryId?: string | null;
   name: string;
   kind: LedgerCategoryKind;
   isSystem: boolean;
@@ -77,6 +79,26 @@ export interface LedgerCategoryRecord {
   createdByUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export type LedgerCategoryHierarchy = {
+  readonly roots: readonly LedgerCategoryRecord[];
+  readonly childrenByParentId: ReadonlyMap<string, readonly LedgerCategoryRecord[]>;
+};
+
+export function toLedgerCategoryHierarchy(categories: readonly LedgerCategoryRecord[]): LedgerCategoryHierarchy {
+  const roots: LedgerCategoryRecord[] = [];
+  const childrenByParentId = new Map<string, LedgerCategoryRecord[]>();
+  for (const category of categories) {
+    if (!category.parentCategoryId) {
+      roots.push(category);
+      continue;
+    }
+    const children = childrenByParentId.get(category.parentCategoryId) ?? [];
+    children.push(category);
+    childrenByParentId.set(category.parentCategoryId, children);
+  }
+  return { roots, childrenByParentId };
 }
 
 export interface LedgerMerchantRecord {

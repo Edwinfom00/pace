@@ -36,6 +36,7 @@ export async function getTransactionCategoryOptions(
 export function mapTransactionCategoryOption(category: LedgerCategoryRecord): TransactionCategoryOption {
   return {
     id: category.id,
+    parentCategoryId: category.parentCategoryId ?? null,
     name: category.name,
     kind: category.kind,
     systemKey: category.systemKey,

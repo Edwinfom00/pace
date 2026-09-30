@@ -68,6 +68,10 @@ export const ledgerCategories = pgTable(
     workspaceId: text("workspace_id").references(() => workspaces.id, {
       onDelete: "cascade",
     }),
+    parentCategoryId: text("parent_category_id").references(
+      (): AnyPgColumn => ledgerCategories.id,
+      { onDelete: "restrict" },
+    ),
     name: varchar("name", { length: 120 }).notNull(),
     kind: ledgerCategoryKind("kind").notNull(),
     isSystem: boolean("is_system").notNull().default(false),
@@ -84,6 +88,7 @@ export const ledgerCategories = pgTable(
   },
   (table) => [
     index("ledger_category_workspace_idx").on(table.workspaceId),
+    index("ledger_category_parent_idx").on(table.workspaceId, table.parentCategoryId),
     uniqueIndex("ledger_category_system_key_unique").on(table.systemKey),
     uniqueIndex("ledger_category_workspace_name_unique")
       .on(table.workspaceId, table.kind, table.name)

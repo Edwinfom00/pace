@@ -57,6 +57,7 @@ export const createLedgerCategorySchema = z
   .object({
     name: z.string().trim().min(1).max(120),
     kind: z.enum(LEDGER_CATEGORY_KINDS),
+    parentCategoryId: id.nullish().transform((value) => value ?? null),
   })
   .strict();
 

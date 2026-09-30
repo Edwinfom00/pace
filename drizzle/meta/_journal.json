@@ -211,6 +211,13 @@
       "when": 1790100000005,
       "tag": "0029_recurring_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790100000006,
+      "tag": "0030_category_hierarchy",
+      "breakpoints": true
     }
   ]
 }

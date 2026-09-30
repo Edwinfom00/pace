@@ -16,6 +16,7 @@ import type { AuthenticatedActor } from "@/authorization/session";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 import { getTransactionCapabilities } from "@/modules/transactions/domain/transaction-action-policy";
 
+import { toLedgerCategoryHierarchy } from "./domain";
 import type {
   LedgerAccountBalance,
   LedgerAccountRecord,
@@ -642,10 +643,23 @@ export class LedgerService {
   ): Promise<LedgerCategoryRecord> {
     const parsed = createLedgerCategorySchema.parse(input);
     await this.requireWorkspacePermission(actor.userId, workspaceId, "manage_ledger");
+    if (parsed.parentCategoryId) {
+      const parent = await this.repository.findCategory(workspaceId, parsed.parentCategoryId);
+      if (!parent || parent.workspaceId !== workspaceId) {
+        throw new DomainConflictError("INVALID_CATEGORY_PARENT", "Parent category must belong to this workspace.");
+      }
+      if (parent.kind !== parsed.kind) {
+        throw new DomainConflictError("INVALID_CATEGORY_PARENT", "Parent category kind must match the child category kind.");
+      }
+      if (parent.parentCategoryId) {
+        throw new DomainConflictError("INVALID_CATEGORY_PARENT", "Category hierarchy supports roots and one child level only.");
+      }
+    }
 
     return this.repository.createCategory({
       id: randomUUID(),
       workspaceId,
+      parentCategoryId: parsed.parentCategoryId,
       name: parsed.name,
       kind: parsed.kind,
       isSystem: false,
@@ -657,6 +671,11 @@ export class LedgerService {
   async listCategories(actor: AuthenticatedActor, workspaceId: string): Promise<LedgerCategoryRecord[]> {
     await this.requireWorkspacePermission(actor.userId, workspaceId, "read");
     return this.repository.listCategories(workspaceId);
+  }
+
+  async listCategoryHierarchy(actor: AuthenticatedActor, workspaceId: string) {
+    await this.requireWorkspacePermission(actor.userId, workspaceId, "read");
+    return toLedgerCategoryHierarchy(await this.repository.listCategories(workspaceId));
   }
 
   async createMerchant(

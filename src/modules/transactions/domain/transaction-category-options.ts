@@ -3,6 +3,7 @@ import type { LedgerCategoryKind } from "@/modules/ledger/domain";
 
 export type TransactionCategoryOption = {
   readonly id: string;
+  readonly parentCategoryId?: string | null;
   readonly name: string;
   readonly kind: LedgerCategoryKind;
   readonly systemKey: string | null;
