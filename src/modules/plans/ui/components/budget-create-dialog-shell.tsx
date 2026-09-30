@@ -138,12 +138,12 @@ export function BudgetCreateDialogShell({
               </div>
               <div className="mt-3">
                 <p className="mb-1.5 text-[13px] font-medium text-[#263550]">
-                    {t("description")} {" "}
-                    <span className="font-normal text-[#71809a]">{t("optional")}</span>
+                  {t("description")}{" "}
+                  <span className="font-normal text-[#71809a]">
+                    {t("optional")}
+                  </span>
                 </p>
-                <FieldPlaceholder>
-                  {t("descriptionValue")}
-                </FieldPlaceholder>
+                <FieldPlaceholder>{t("descriptionValue")}</FieldPlaceholder>
               </div>
             </FormSection>
             <FormSection>
@@ -155,22 +155,21 @@ export function BudgetCreateDialogShell({
                   </p>
                   <FieldPlaceholder className="justify-between">
                     <span className="flex items-center gap-2">
-                      <FiShoppingBag className="text-[#ff6b35]" /> {t("budgetNameValue")}
+                      <FiShoppingBag className="text-[#ff6b35]" />{" "}
+                      {t("budgetNameValue")}
                     </span>
                     <FiChevronDown />
                   </FieldPlaceholder>
                 </div>
                 <div>
                   <p className="mb-1.5 text-[13px] font-medium text-[#263550]">
-                    {t("subcategories")} {" "}
+                    {t("subcategories")}{" "}
                     <span className="font-normal text-[#71809a]">
                       {t("optional")}
                     </span>
                   </p>
                   <FieldPlaceholder className="justify-between">
-                    <span className="truncate">
-                      {t("subcategoriesValue")}
-                    </span>
+                    <span className="truncate">{t("subcategoriesValue")}</span>
                     <FiChevronDown />
                   </FieldPlaceholder>
                 </div>
@@ -267,11 +266,15 @@ export function BudgetCreateDialogShell({
               <dl className="mt-5 space-y-2 text-[12px]">
                 <div className="flex justify-between gap-3">
                   <dt className="text-[#71809a]">{t("category")}</dt>
-                  <dd className="font-medium text-[#263550]">{t("budgetNameValue")}</dd>
+                  <dd className="font-medium text-[#263550]">
+                    {t("budgetNameValue")}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-[#71809a]">{t("amount")}</dt>
-                  <dd className="font-medium text-[#263550]">{t("amountValue")} {t("currency")}</dd>
+                  <dd className="font-medium text-[#263550]">
+                    {t("amountValue")} {t("currency")}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-[#71809a]">{t("period")}</dt>
