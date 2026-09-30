@@ -31,6 +31,7 @@ import {
   budgetPeriodKey,
   type BudgetPeriodKey,
 } from "./budget-period-field";
+import { BudgetAdvancedOptions } from "./budget-advanced-options";
 
 const loadingCategories: BudgetCategoryLoadState = {
   status: "loading",
@@ -70,21 +71,6 @@ function SectionHeading({
       <h3 className="text-[15px] font-semibold tracking-tight text-[#14213c]">
         {title}
       </h3>
-    </div>
-  );
-}
-
-function FieldPlaceholder({
-  children,
-  className = "",
-}: {
-  readonly children: React.ReactNode;
-  readonly className?: string;
-}) {
-  return (
-    <div
-      className={`flex h-10 items-center rounded-[8px] border border-[#dce4ef] bg-white px-3 text-[13px] text-[#526987] ${className}`}>
-      {children}
     </div>
   );
 }
@@ -131,6 +117,8 @@ export function BudgetCreateDialogShell({
   const [childrenState, setChildrenState] =
     useState<BudgetCategoryLoadState>(emptyCategories);
   const [amount, setAmount] = useState("");
+  const [budgetName, setBudgetName] = useState("");
+  const [description, setDescription] = useState("");
   const [period, setPeriod] = useState<BudgetPeriodKey>(() =>
     budgetPeriodKey(new Date(), timeZone),
   );
@@ -216,7 +204,13 @@ export function BudgetCreateDialogShell({
                   <p className="mb-1.5 text-[13px] font-medium text-[#263550]">
                     {t("budgetName")}
                   </p>
-                  <FieldPlaceholder>{t("budgetNameValue")}</FieldPlaceholder>
+                  <input
+                    aria-label={t("budgetName")}
+                    className="h-10 w-full rounded-[8px] border border-[#dce4ef] bg-white px-3 text-[13px] text-[#263550] outline-none placeholder:text-[#71809a] focus-visible:border-[#2867e8] focus-visible:ring-2 focus-visible:ring-[#2867e8]/15"
+                    onChange={(event) => setBudgetName(event.target.value)}
+                    placeholder={t("budgetNameValue")}
+                    value={budgetName}
+                  />
                   <p className="mt-1 text-[12px] text-[#71809a]">
                     {t("budgetNameHint")}
                   </p>
@@ -238,7 +232,13 @@ export function BudgetCreateDialogShell({
                     {t("optional")}
                   </span>
                 </p>
-                <FieldPlaceholder>{t("descriptionValue")}</FieldPlaceholder>
+                <input
+                  aria-label={t("description")}
+                  className="h-10 w-full rounded-[8px] border border-[#dce4ef] bg-white px-3 text-[13px] text-[#263550] outline-none placeholder:text-[#71809a] focus-visible:border-[#2867e8] focus-visible:ring-2 focus-visible:ring-[#2867e8]/15"
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder={t("descriptionValue")}
+                  value={description}
+                />
               </div>
             </FormSection>
             <FormSection>
@@ -296,32 +296,13 @@ export function BudgetCreateDialogShell({
             </FormSection>
             <FormSection className="border-b-0">
               <SectionHeading number="4" title={t("advancedOptions")} />
-              <div className="mt-3 space-y-3">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 h-5 w-10 rounded-full bg-[#2867e8] p-0.5">
-                    <span className="block ml-auto size-4 rounded-full bg-white" />
-                  </span>
-                  <p className="text-[13px] font-medium text-[#263550]">
-                    {t("notifyTitle")}
-                    <br />
-                    <span className="font-normal text-[#71809a]">
-                      {t("notifyHint")}
-                    </span>
-                  </p>
-                </div>
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 h-5 w-10 rounded-full bg-[#cbd5e3] p-0.5">
-                    <span className="block size-4 rounded-full bg-white" />
-                  </span>
-                  <p className="text-[13px] font-medium text-[#263550]">
-                    {t("resetTitle")}
-                    <br />
-                    <span className="font-normal text-[#71809a]">
-                      {t("resetHint")}
-                    </span>
-                  </p>
-                </div>
-              </div>
+              <BudgetAdvancedOptions
+                frequency="MONTHLY"
+                labels={{
+                  monthlyResetTitle: t("monthlyResetTitle"),
+                  monthlyResetHint: t("monthlyResetHint"),
+                }}
+              />
             </FormSection>
           </div>
           <aside className="border-t border-[#e8edf4] bg-[#fbfcfe] p-4 sm:p-5 lg:border-t-0 lg:border-l">
