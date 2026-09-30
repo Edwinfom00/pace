@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { FiInfo, FiShoppingBag, FiX } from "react-icons/fi";
 
@@ -36,6 +36,7 @@ import {
   type BudgetPeriodKey,
 } from "./budget-period-field";
 import { BudgetAdvancedOptions } from "./budget-advanced-options";
+import { BudgetCategoryRequestCache } from "./budget-category-request-cache";
 
 const loadingCategories: BudgetCategoryLoadState = {
   status: "loading",
@@ -49,15 +50,20 @@ const emptyCategories: BudgetCategoryLoadState = {
 async function loadBudgetCategories(
   workspaceId: string,
   parentCategoryId: string | "root",
-  signal: AbortSignal,
 ) {
   const response = await fetch(
     `/api/workspaces/${workspaceId}/ledger/categories?parentCategoryId=${encodeURIComponent(parentCategoryId)}`,
-    { signal },
   );
   if (!response.ok) throw new Error("Unable to load categories.");
   return ((await response.json()) as { categories: BudgetCategoryOption[] })
     .categories;
+}
+
+function categoryCacheKey(
+  workspaceId: string,
+  parentCategoryId: string | "root",
+) {
+  return `${workspaceId}:${parentCategoryId}`;
 }
 
 function SectionHeading({
@@ -127,51 +133,70 @@ export function BudgetCreateDialogShell({
     budgetPeriodKey(new Date(), timeZone),
   );
   const [amountTouched, setAmountTouched] = useState(false);
+  const categoryCache = useRef(
+    new BudgetCategoryRequestCache<BudgetCategoryOption>(),
+  );
+  const selectedCategoryId = categoryScope?.categoryId;
   useEffect(() => {
     if (!open) return;
-    const controller = new AbortController();
-    queueMicrotask(() => {
-      if (!controller.signal.aborted) setRootsState(loadingCategories);
-    });
-    void loadBudgetCategories(workspaceId, "root", controller.signal)
+    const cached = categoryCache.current.get(
+      categoryCacheKey(workspaceId, "root"),
+    );
+    if (cached) {
+      queueMicrotask(() =>
+        setRootsState({ status: "ready", categories: cached }),
+      );
+      return;
+    }
+    let cancelled = false;
+    queueMicrotask(() => !cancelled && setRootsState(loadingCategories));
+    void categoryCache.current
+      .load(categoryCacheKey(workspaceId, "root"), () =>
+        loadBudgetCategories(workspaceId, "root"),
+      )
       .then(
         (categories) =>
-          !controller.signal.aborted &&
-          setRootsState({ status: "ready", categories }),
+          !cancelled && setRootsState({ status: "ready", categories }),
       )
       .catch(
-        () =>
-          !controller.signal.aborted &&
-          setRootsState({ status: "error", categories: [] }),
+        () => !cancelled && setRootsState({ status: "error", categories: [] }),
       );
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, [open, workspaceId]);
   useEffect(() => {
-    if (!categoryScope) {
+    if (!selectedCategoryId) {
       queueMicrotask(() => setChildrenState(emptyCategories));
       return;
     }
-    const controller = new AbortController();
-    queueMicrotask(() => {
-      if (!controller.signal.aborted) setChildrenState(loadingCategories);
-    });
-    void loadBudgetCategories(
-      workspaceId,
-      categoryScope.categoryId,
-      controller.signal,
-    )
+    const cached = categoryCache.current.get(
+      categoryCacheKey(workspaceId, selectedCategoryId),
+    );
+    if (cached) {
+      queueMicrotask(() =>
+        setChildrenState({ status: "ready", categories: cached }),
+      );
+      return;
+    }
+    let cancelled = false;
+    queueMicrotask(() => !cancelled && setChildrenState(loadingCategories));
+    void categoryCache.current
+      .load(categoryCacheKey(workspaceId, selectedCategoryId), () =>
+        loadBudgetCategories(workspaceId, selectedCategoryId),
+      )
       .then(
         (categories) =>
-          !controller.signal.aborted &&
-          setChildrenState({ status: "ready", categories }),
+          !cancelled && setChildrenState({ status: "ready", categories }),
       )
       .catch(
         () =>
-          !controller.signal.aborted &&
-          setChildrenState({ status: "error", categories: [] }),
+          !cancelled && setChildrenState({ status: "error", categories: [] }),
       );
-    return () => controller.abort();
-  }, [categoryScope, workspaceId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCategoryId, workspaceId]);
   const t = (key: string) => labels[key] ?? "";
   const parsedAmount = useMemo(
     () => parseBudgetAmount(amount, currency),
@@ -309,17 +334,15 @@ export function BudgetCreateDialogShell({
                 childCategories={childrenState.categories}
                 childrenState={childrenState}
                 labels={{
-                  category: t("category"),
-                  scope: t("scope"),
-                  entireCategory: t("entireCategory"),
-                  selectedSubcategories: t("selectedSubcategories"),
+                  category: t("mainCategory"),
                   subcategories: t("subcategories"),
+                  optional: t("optional"),
                   selectCategory: t("selectCategory"),
                   selectSubcategories: t("selectSubcategories"),
+                  subcategoriesHint: t("subcategoriesHint"),
                   noSubcategoriesAvailable: t("noSubcategoriesAvailable"),
                   loadingCategories: t("loadingCategories"),
                   categoryLoadError: t("categoryLoadError"),
-                  removeSubcategory: t("removeSubcategory"),
                 }}
                 onScopeChange={setCategoryScope}
                 roots={rootsState.categories}

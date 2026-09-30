@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
-import { Command, CommandItem, CommandList } from "cmdk";
-import { Popover } from "radix-ui";
-import { FiCheck, FiChevronDown, FiX } from "react-icons/fi";
+import { useEffect } from "react";
 
 import {
   PaceSearchSelect,
   type SelectOption,
 } from "@/components/pace/forms/pace-search-select";
+import {
+  PaceMultiSelect,
+  type MultiSelectOption,
+} from "@/components/pace/forms/pace-multi-select";
 import { TransactionIcon } from "@/components/pace/transaction-visuals/transaction-icon";
 import type { LedgerCategoryKind } from "@/modules/ledger/domain";
-import { cn } from "@/lib/utils";
 
 export type BudgetCategoryOption = {
   readonly id: string;
@@ -44,16 +44,14 @@ export type BudgetCategoryLoadState =
 export type BudgetCategoryScopeLabels = Readonly<
   Record<
     | "category"
-    | "scope"
-    | "entireCategory"
-    | "selectedSubcategories"
     | "subcategories"
+    | "optional"
     | "selectCategory"
     | "selectSubcategories"
+    | "subcategoriesHint"
     | "noSubcategoriesAvailable"
     | "loadingCategories"
-    | "categoryLoadError"
-    | "removeSubcategory",
+    | "categoryLoadError",
     string
   >
 >;
@@ -97,7 +95,6 @@ export function BudgetCategoryScopeField({
   readonly rootsState: BudgetCategoryLoadState;
   readonly scope: BudgetCategoryScope | null;
 }) {
-  const scopeLabelId = useId();
   const rootOptions = roots.map(
     (category): SelectOption => ({
       value: category.id,
@@ -107,7 +104,6 @@ export function BudgetCategoryScopeField({
   );
   const hasChildren =
     childrenState.status === "ready" && childCategories.length > 0;
-  const [showSubcategoryPicker, setShowSubcategoryPicker] = useState(false);
 
   useEffect(() => {
     if (rootsState.status !== "ready") return;
@@ -136,7 +132,7 @@ export function BudgetCategoryScopeField({
   }, [childCategories.length, childrenState.status, onScopeChange, scope]);
 
   return (
-    <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
+    <div className="mt-3 grid min-w-0 gap-4 sm:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
       <div className="min-w-0">
         <label className="mb-1.5 block text-[13px] font-medium text-[#263550]">
           {labels.category}
@@ -150,7 +146,6 @@ export function BudgetCategoryScopeField({
             ariaLabel={labels.category}
             emptyLabel={labels.noSubcategoriesAvailable}
             onValueChange={(categoryId) => {
-              setShowSubcategoryPicker(false);
               onScopeChange({
                 mode: "CATEGORY",
                 categoryId,
@@ -167,69 +162,54 @@ export function BudgetCategoryScopeField({
       </div>
 
       {scope ? (
-        <div className="min-w-0 sm:pt-6">
+        <div className="min-w-0">
           {childrenState.status === "loading" ? (
-            <FieldLoading label={labels.loadingCategories} />
+            <>
+              <label className="mb-1.5 block text-[13px] font-medium text-[#263550]">
+                {labels.subcategories}{" "}
+                <span className="font-normal text-[#71809a]">
+                  {labels.optional}
+                </span>
+              </label>
+              <FieldLoading label={labels.loadingCategories} />
+            </>
           ) : childrenState.status === "error" ? (
             <FieldError label={labels.categoryLoadError} />
           ) : hasChildren ? (
-            <fieldset aria-labelledby={scopeLabelId} className="min-w-0">
-              <legend
-                className="mb-1.5 block text-[13px] font-medium text-[#263550]"
-                id={scopeLabelId}>
-                {labels.scope}
-              </legend>
-              <div className="grid h-10 grid-cols-2 overflow-hidden rounded-[8px] border border-[#dce4ef] text-[12px]">
-                <ScopeButton
-                  checked={!showSubcategoryPicker}
-                  label={labels.entireCategory}
-                  onClick={() => {
-                    setShowSubcategoryPicker(false);
-                    onScopeChange({
-                      mode: "CATEGORY",
-                      categoryId: scope.categoryId,
-                      subcategoryIds: [],
-                    });
-                  }}
-                />
-                <ScopeButton
-                  checked={showSubcategoryPicker}
-                  label={labels.selectedSubcategories}
-                  onClick={() => setShowSubcategoryPicker(true)}
-                />
-              </div>
-            </fieldset>
+            <div className="min-w-0">
+              <label className="mb-1.5 block text-[13px] font-medium text-[#263550]">
+                {labels.subcategories}{" "}
+                <span className="font-normal text-[#71809a]">
+                  {labels.optional}
+                </span>
+              </label>
+              <SubcategorySelect
+                categories={childCategories}
+                labels={labels}
+                onChange={(subcategoryIds) =>
+                  onScopeChange(
+                    subcategoryIds.length
+                      ? {
+                          mode: "SUBCATEGORIES",
+                          categoryId: scope.categoryId,
+                          subcategoryIds,
+                        }
+                      : {
+                          mode: "CATEGORY",
+                          categoryId: scope.categoryId,
+                          subcategoryIds: [],
+                        },
+                  )
+                }
+                selectedIds={
+                  scope.mode === "SUBCATEGORIES" ? scope.subcategoryIds : []
+                }
+              />
+              <p className="mt-1.5 text-[12px] leading-4 text-[#71809a]">
+                {labels.subcategoriesHint}
+              </p>
+            </div>
           ) : null}
-        </div>
-      ) : null}
-
-      {scope && showSubcategoryPicker && hasChildren ? (
-        <div className="min-w-0 sm:col-span-2">
-          <p className="mb-1.5 text-[13px] font-medium text-[#263550]">
-            {labels.subcategories}
-          </p>
-          <SubcategorySelect
-            categories={childCategories}
-            labels={labels}
-            onChange={(subcategoryIds) =>
-              onScopeChange(
-                subcategoryIds.length
-                  ? {
-                      mode: "SUBCATEGORIES",
-                      categoryId: scope.categoryId,
-                      subcategoryIds,
-                    }
-                  : {
-                      mode: "CATEGORY",
-                      categoryId: scope.categoryId,
-                      subcategoryIds: [],
-                    },
-              )
-            }
-            selectedIds={
-              scope.mode === "SUBCATEGORIES" ? scope.subcategoryIds : []
-            }
-          />
         </div>
       ) : null}
     </div>
@@ -271,41 +251,6 @@ function FieldError({ label }: { readonly label: string }) {
   );
 }
 
-function ScopeButton({
-  checked,
-  label,
-  onClick,
-}: {
-  readonly checked: boolean;
-  readonly label: string;
-  readonly onClick: () => void;
-}) {
-  return (
-    <button
-      aria-checked={checked}
-      className={cn(
-        "flex min-w-0 items-center justify-center gap-1.5 px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2867e8]",
-        checked
-          ? "bg-[#e8f1ff] font-medium text-[#2867e8]"
-          : "border-l border-[#dce4ef] text-[#61708a]",
-      )}
-      onClick={onClick}
-      role="radio"
-      type="button">
-      <span
-        aria-hidden
-        className={cn(
-          "size-3 rounded-full border",
-          checked
-            ? "border-[#2867e8] bg-[#2867e8] shadow-[inset_0_0_0_3px_white]"
-            : "border-[#9aa9bd]",
-        )}
-      />{" "}
-      <span className="truncate">{label}</span>
-    </button>
-  );
-}
-
 function SubcategorySelect({
   categories,
   labels,
@@ -317,81 +262,24 @@ function SubcategorySelect({
   readonly onChange: (ids: readonly string[]) => void;
   readonly selectedIds: readonly string[];
 }) {
-  const selected = categories.filter((child) => selectedIds.includes(child.id));
-  const listboxId = useId();
+  const options = categories.map(
+    (category): MultiSelectOption => ({
+      value: category.id,
+      label: category.name,
+      icon: <CategoryIcon category={category} />,
+    }),
+  );
   return (
     <div className="min-w-0">
-      {selected.length ? (
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {selected.map((child) => (
-            <span
-              className="inline-flex max-w-full items-center gap-1 rounded-[6px] border border-[#dce4ef] bg-[#f6f8fb] py-1 pr-1 pl-2 text-[12px] text-[#40516d]"
-              key={child.id}>
-              <span className="truncate">{child.name}</span>
-              <button
-                aria-label={`${labels.removeSubcategory}: ${child.name}`}
-                className="grid size-4 shrink-0 place-items-center rounded text-[#71809a] hover:bg-[#e7edf5] focus-visible:outline-2 focus-visible:outline-[#2867e8]"
-                onClick={() =>
-                  onChange(selectedIds.filter((id) => id !== child.id))
-                }
-                type="button">
-                <FiX aria-hidden className="size-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
-      <Popover.Root>
-        <Popover.Trigger asChild>
-          <button
-            aria-controls={listboxId}
-            aria-haspopup="listbox"
-            className="flex h-10 w-full items-center justify-between rounded-[8px] border border-[#dce4ef] bg-white px-3 text-left text-[13px] text-[#71809a] outline-none hover:border-[#bac9df] focus-visible:border-[#2867e8] focus-visible:ring-2 focus-visible:ring-[#2867e8]/15"
-            type="button">
-            <span>{labels.selectSubcategories}</span>
-            <FiChevronDown aria-hidden className="size-4" />
-          </button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            align="start"
-            className="z-50 mt-1 w-(--radix-popover-trigger-width) rounded-[8px] border border-[#dce4ef] bg-white p-1 shadow-[0_12px_28px_rgb(15_23_42/12%)]"
-            sideOffset={5}>
-            <Command>
-              <CommandList id={listboxId} role="listbox">
-                {categories.map((child) => {
-                  const checked = selectedIds.includes(child.id);
-                  return (
-                    <CommandItem
-                      aria-selected={checked}
-                      className="flex min-h-9 cursor-pointer items-center gap-2 rounded-[6px] px-2 text-[13px] text-[#263550] data-[selected=true]:bg-[#edf3ff]"
-                      key={child.id}
-                      onSelect={() =>
-                        onChange(
-                          checked
-                            ? selectedIds.filter((id) => id !== child.id)
-                            : [...selectedIds, child.id],
-                        )
-                      }
-                      value={child.name}>
-                      <CategoryIcon category={child} />
-                      <span className="min-w-0 flex-1 truncate">
-                        {child.name}
-                      </span>
-                      {checked ? (
-                        <FiCheck
-                          aria-hidden
-                          className="size-4 text-[#2867e8]"
-                        />
-                      ) : null}
-                    </CommandItem>
-                  );
-                })}
-              </CommandList>
-            </Command>
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+      <PaceMultiSelect
+        ariaLabel={labels.subcategories}
+        emptyLabel={labels.noSubcategoriesAvailable}
+        onValueChange={onChange}
+        options={options}
+        placeholder={labels.selectSubcategories}
+        searchPlaceholder={labels.selectSubcategories}
+        value={selectedIds}
+      />
     </div>
   );
 }
