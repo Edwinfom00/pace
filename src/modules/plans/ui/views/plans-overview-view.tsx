@@ -8,6 +8,7 @@ import {
   FiTrendingDown,
   FiTrendingUp,
 } from "react-icons/fi";
+import Link from "next/link";
 
 import { formatOverviewMoney } from "@/modules/overview/domain/overview-formatters";
 import { OverviewAskPace } from "@/modules/overview/ui/components/overview-ask-pace";
@@ -117,11 +118,13 @@ function BudgetList({
   categoryNames,
   labels,
   locale,
+  workspaceSlug,
 }: {
   readonly summaries: readonly BudgetSummary[];
   readonly categoryNames: ReadonlyMap<string, string>;
   readonly labels: PlansUiLabels;
   readonly locale: string;
+  readonly workspaceSlug: string;
 }) {
   return (
     <section
@@ -183,9 +186,11 @@ function BudgetList({
                         <span className="grid size-7 place-items-center rounded-[7px] bg-[#edf4ff] text-[#2867e8]">
                           <FiPieChart className="size-3.5" />
                         </span>
-                        <span className="text-[13px] font-medium text-[#1a2944]">
+                        <Link
+                          className="rounded-[7px] text-[13px] font-medium text-[#1a2944] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#2563eb]"
+                          href={`/w/${workspaceSlug}/plans/budgets/${summary.budget.id}`}>
                           {name}
-                        </span>
+                        </Link>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-[12px] text-[#6e7d96]">
@@ -402,6 +407,7 @@ export function PlansOverviewView({
   timeZone,
   language,
   workspaceId,
+  workspaceSlug,
 }: {
   readonly overview: PlansOverview;
   readonly labels: PlansUiLabels;
@@ -409,6 +415,7 @@ export function PlansOverviewView({
   readonly timeZone: string;
   readonly language: "en" | "fr" | "de";
   readonly workspaceId: string;
+  readonly workspaceSlug: string;
 }) {
   const budgets = overview.budgets.filter((item) => item.activeForPeriod);
   const goals = overview.savingsGoals.filter(
@@ -425,7 +432,13 @@ export function PlansOverviewView({
             <p className="mt-1 text-[13px] text-[#71809a]">{labels.subtitle}</p>
           </div>
           <div className="flex gap-2">
-            <PlansAskPaceButton label={labels.askPace} language={language} locale={locale} timeZone={timeZone} workspaceId={workspaceId} />
+            <PlansAskPaceButton
+              label={labels.askPace}
+              language={language}
+              locale={locale}
+              timeZone={timeZone}
+              workspaceId={workspaceId}
+            />
             <button
               aria-disabled="true"
               className="inline-flex h-9 items-center gap-2 rounded-[8px] bg-[#2867e8] px-3 text-[13px] font-medium text-white opacity-70"
@@ -439,20 +452,67 @@ export function PlansOverviewView({
         <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_clamp(300px,25vw,360px)] xl:items-start">
           <div className="min-w-0">
             <PlansTabs
-              budgetContent={<><Kpis budgets={budgets} labels={labels} locale={locale} /><div className="mt-4"><BudgetList
-                categoryNames={overview.categoryNames}
-                labels={labels}
-                locale={locale}
-                summaries={budgets}
-              /></div></>}
-              goalContent={<Goals
-                labels={labels}
-                locale={locale}
-                summaries={goals}
-                timeZone={timeZone}
-              />}
-              allContent={<div className="space-y-4"><Kpis budgets={budgets} labels={labels} locale={locale} /><BudgetList categoryNames={overview.categoryNames} labels={labels} locale={locale} summaries={budgets} /><Goals labels={labels} locale={locale} summaries={goals} timeZone={timeZone} /><section className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-5"><h2 className="text-[14px] font-semibold text-[#1a2944]">{labels.forecasts}</h2><p className="mt-1 text-[13px] text-[#71809a]">{labels.unavailable}</p></section><section className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-5"><h2 className="text-[14px] font-semibold text-[#1a2944]">{labels.rules}</h2><p className="mt-1 text-[13px] text-[#71809a]">{labels.unavailable}</p></section></div>}
-              unavailableContent={<p className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-10 text-center text-[13px] text-[#71809a]">{labels.unavailable}</p>}
+              budgetContent={
+                <>
+                  <Kpis budgets={budgets} labels={labels} locale={locale} />
+                  <div className="mt-4">
+                    <BudgetList
+                      categoryNames={overview.categoryNames}
+                      labels={labels}
+                      locale={locale}
+                      summaries={budgets}
+                      workspaceSlug={workspaceSlug}
+                    />
+                  </div>
+                </>
+              }
+              goalContent={
+                <Goals
+                  labels={labels}
+                  locale={locale}
+                  summaries={goals}
+                  timeZone={timeZone}
+                />
+              }
+              allContent={
+                <div className="space-y-4">
+                  <Kpis budgets={budgets} labels={labels} locale={locale} />
+                  <BudgetList
+                    categoryNames={overview.categoryNames}
+                    labels={labels}
+                    locale={locale}
+                    summaries={budgets}
+                    workspaceSlug={workspaceSlug}
+                  />
+                  <Goals
+                    labels={labels}
+                    locale={locale}
+                    summaries={goals}
+                    timeZone={timeZone}
+                  />
+                  <section className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-5">
+                    <h2 className="text-[14px] font-semibold text-[#1a2944]">
+                      {labels.forecasts}
+                    </h2>
+                    <p className="mt-1 text-[13px] text-[#71809a]">
+                      {labels.unavailable}
+                    </p>
+                  </section>
+                  <section className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-5">
+                    <h2 className="text-[14px] font-semibold text-[#1a2944]">
+                      {labels.rules}
+                    </h2>
+                    <p className="mt-1 text-[13px] text-[#71809a]">
+                      {labels.unavailable}
+                    </p>
+                  </section>
+                </div>
+              }
+              unavailableContent={
+                <p className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-10 text-center text-[13px] text-[#71809a]">
+                  {labels.unavailable}
+                </p>
+              }
               labels={labels}
             />
           </div>

@@ -39,6 +39,7 @@ export default async function PlansPage({
       overview={overview}
       timeZone={workspace.preferences.timezone}
       workspaceId={workspace.workspace.id}
+      workspaceSlug={workspaceSlug}
     />
   );
 }

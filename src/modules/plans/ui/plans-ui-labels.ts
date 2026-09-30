@@ -35,6 +35,16 @@ export type PlansUiLabels = {
   readonly insightOnTrack: string;
   readonly unavailable: string;
   readonly loading: string;
+  readonly progress: string;
+  readonly timeline: string;
+  readonly transactions: string;
+  readonly insights: string;
+  readonly details: string;
+  readonly emptyTransactions: string;
+  readonly more: string;
+  readonly actualSpending: string;
+  readonly period: string;
+  readonly category: string;
 };
 
 const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
@@ -75,6 +85,8 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
     insightOnTrack: "Your budgets are on track",
     unavailable: "This section is not available yet.",
     loading: "Updating plan…",
+    progress: "Budget progress", timeline: "Spending over time", transactions: "Budget transactions", insights: "Budget insights", details: "Budget details", emptyTransactions: "No contributing transactions yet.",
+    more: "More options", actualSpending: "Actual posted spending", period: "Period", category: "Category",
   },
   fr: {
     title: "Plans",
@@ -114,6 +126,8 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
     insightOnTrack: "Vos budgets sont sur la bonne voie",
     unavailable: "Cette section n’est pas encore disponible.",
     loading: "Mise à jour du plan…",
+    progress: "Progression du budget", timeline: "Dépenses dans le temps", transactions: "Transactions de ce budget", insights: "Aperçus du budget", details: "Détails du budget", emptyTransactions: "Aucune transaction contributrice pour le moment.",
+    more: "Plus d’options", actualSpending: "Dépenses comptabilisées réelles", period: "Période", category: "Catégorie",
   },
   de: {
     title: "Pläne",
@@ -153,6 +167,8 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
     insightOnTrack: "Ihre Budgets liegen im Plan",
     unavailable: "Dieser Bereich ist noch nicht verfügbar.",
     loading: "Plan wird aktualisiert…",
+    progress: "Budgetfortschritt", timeline: "Ausgaben im Zeitverlauf", transactions: "Budgettransaktionen", insights: "Budgeteinblicke", details: "Budgetdetails", emptyTransactions: "Noch keine berücksichtigten Transaktionen.",
+    more: "Weitere Optionen", actualSpending: "Tatsächlich gebuchte Ausgaben", period: "Zeitraum", category: "Kategorie",
   },
 };
 
