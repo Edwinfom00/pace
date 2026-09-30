@@ -6,6 +6,7 @@ import {
   pgEnum,
   pgTable,
   text,
+  jsonb,
   timestamp,
   uniqueIndex,
   varchar,
@@ -25,8 +26,6 @@ export const savingsGoalStatus = pgEnum("savings_goal_status", [
   "ARCHIVED",
 ]);
 
-
-
 export const budgets = pgTable(
   "budget",
   {
@@ -38,7 +37,10 @@ export const budgets = pgTable(
     categoryId: text("category_id").references(() => ledgerCategories.id, {
       onDelete: "restrict",
     }),
-    subcategoryIds: text("subcategory_ids").array().notNull().default(sql`'{}'::text[]`),
+    subcategoryIds: text("subcategory_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     amountMinor: bigint("amount_minor", { mode: "bigint" }).notNull(),
     currency: varchar("currency", { length: 3 }).notNull(),
     frequency: budgetFrequency("frequency").notNull().default("MONTHLY"),
@@ -61,7 +63,10 @@ export const budgets = pgTable(
   },
   (table) => [
     index("budget_workspace_status_idx").on(table.workspaceId, table.status),
-    index("budget_workspace_category_idx").on(table.workspaceId, table.categoryId),
+    index("budget_workspace_category_idx").on(
+      table.workspaceId,
+      table.categoryId,
+    ),
     uniqueIndex("budget_workspace_agent_action_unique")
       .on(table.workspaceId, table.createdByAgentActionId)
       .where(sql`${table.createdByAgentActionId} IS NOT NULL`),
@@ -94,7 +99,9 @@ export const savingsGoals = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 160 }).notNull(),
-    targetAmountMinor: bigint("target_amount_minor", { mode: "bigint" }).notNull(),
+    targetAmountMinor: bigint("target_amount_minor", {
+      mode: "bigint",
+    }).notNull(),
     currentSavedMinor: bigint("current_saved_minor", { mode: "bigint" })
       .notNull()
       .default(sql`0`),
@@ -116,12 +123,55 @@ export const savingsGoals = pgTable(
       .defaultNow(),
   },
   (table) => [
-    index("savings_goal_workspace_status_idx").on(table.workspaceId, table.status),
+    index("savings_goal_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
     uniqueIndex("savings_goal_workspace_agent_action_unique")
       .on(table.workspaceId, table.createdByAgentActionId)
       .where(sql`${table.createdByAgentActionId} IS NOT NULL`),
-    check("savings_goal_target_positive_check", sql`${table.targetAmountMinor} > 0`),
-    check("savings_goal_saved_nonnegative_check", sql`${table.currentSavedMinor} >= 0`),
+    check(
+      "savings_goal_target_positive_check",
+      sql`${table.targetAmountMinor} > 0`,
+    ),
+    check(
+      "savings_goal_saved_nonnegative_check",
+      sql`${table.currentSavedMinor} >= 0`,
+    ),
     check("savings_goal_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
+  ],
+);
+
+export const budgetManagementAudits = pgTable(
+  "budget_management_audit",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    budgetId: text("budget_id")
+      .notNull()
+      .references(() => budgets.id, { onDelete: "restrict" }),
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    action: varchar("action", { length: 16 }).notNull(),
+    commandFingerprint: varchar("command_fingerprint", {
+      length: 128,
+    }).notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }).notNull(),
+    metadata: jsonb("metadata")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("budget_management_audit_workspace_actor_key_unique").on(
+      table.workspaceId,
+      table.actorUserId,
+      table.idempotencyKey,
+    ),
   ],
 );

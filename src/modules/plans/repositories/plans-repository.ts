@@ -1,34 +1,78 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { budgets, savingsGoals } from "@/db/schema";
+import { budgetManagementAudits, budgets, savingsGoals } from "@/db/schema";
 
 import type { BudgetRecord, SavingsGoalRecord } from "../domain";
 
 export type CreateBudgetRecord = Omit<BudgetRecord, "createdAt" | "updatedAt">;
-export type CreateSavingsGoalRecord = Omit<SavingsGoalRecord, "createdAt" | "updatedAt">;
+export type CreateSavingsGoalRecord = Omit<
+  SavingsGoalRecord,
+  "createdAt" | "updatedAt"
+>;
 
 export type BudgetUpdate = Partial<
   Pick<
     BudgetRecord,
-    "scope" | "categoryId" | "subcategoryIds" | "amountMinor" | "status" | "startsOn" | "endsOn" | "updatedByUserId"
+    | "scope"
+    | "categoryId"
+    | "subcategoryIds"
+    | "amountMinor"
+    | "status"
+    | "startsOn"
+    | "endsOn"
+    | "updatedByUserId"
   >
 >;
+export interface BudgetManagementAudit {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly budgetId: string;
+  readonly actorUserId: string;
+  readonly action: "EDIT" | "ARCHIVE";
+  readonly commandFingerprint: string;
+  readonly idempotencyKey: string;
+}
 export type SavingsGoalUpdate = Partial<
   Pick<
     SavingsGoalRecord,
-    "name" | "targetAmountMinor" | "currentSavedMinor" | "targetDate" | "status" | "updatedByUserId"
+    | "name"
+    | "targetAmountMinor"
+    | "currentSavedMinor"
+    | "targetDate"
+    | "status"
+    | "updatedByUserId"
   >
 >;
 
 export interface PlansRepository {
   createBudget(input: CreateBudgetRecord): Promise<BudgetRecord>;
-  findBudget(workspaceId: string, budgetId: string): Promise<BudgetRecord | null>;
-  findBudgetByAgentAction(workspaceId: string, agentActionId: string): Promise<BudgetRecord | null>;
+  findBudget(
+    workspaceId: string,
+    budgetId: string,
+  ): Promise<BudgetRecord | null>;
+  findBudgetByAgentAction(
+    workspaceId: string,
+    agentActionId: string,
+  ): Promise<BudgetRecord | null>;
   listBudgets(workspaceId: string): Promise<BudgetRecord[]>;
-  updateBudget(workspaceId: string, budgetId: string, input: BudgetUpdate): Promise<BudgetRecord | null>;
+  updateBudget(
+    workspaceId: string,
+    budgetId: string,
+    input: BudgetUpdate,
+    expectedUpdatedAt?: Date,
+  ): Promise<BudgetRecord | null>;
+  findBudgetManagementAudit(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<BudgetManagementAudit | null>;
+  createBudgetManagementAudit(input: BudgetManagementAudit): Promise<void>;
   createSavingsGoal(input: CreateSavingsGoalRecord): Promise<SavingsGoalRecord>;
-  findSavingsGoal(workspaceId: string, goalId: string): Promise<SavingsGoalRecord | null>;
+  findSavingsGoal(
+    workspaceId: string,
+    goalId: string,
+  ): Promise<SavingsGoalRecord | null>;
   findSavingsGoalByAgentAction(
     workspaceId: string,
     agentActionId: string,
@@ -43,54 +87,137 @@ export interface PlansRepository {
 
 export class DatabasePlansRepository implements PlansRepository {
   async createBudget(input: CreateBudgetRecord): Promise<BudgetRecord> {
-    const [record] = await db.insert(budgets).values({ ...input, subcategoryIds: [...input.subcategoryIds] }).returning();
+    const [record] = await db
+      .insert(budgets)
+      .values({ ...input, subcategoryIds: [...input.subcategoryIds] })
+      .returning();
     if (!record) throw new Error("Failed to create budget.");
     return record;
   }
 
-  async findBudget(workspaceId: string, budgetId: string): Promise<BudgetRecord | null> {
+  async findBudget(
+    workspaceId: string,
+    budgetId: string,
+  ): Promise<BudgetRecord | null> {
     const [record] = await db
       .select()
       .from(budgets)
-      .where(and(eq(budgets.workspaceId, workspaceId), eq(budgets.id, budgetId)))
+      .where(
+        and(eq(budgets.workspaceId, workspaceId), eq(budgets.id, budgetId)),
+      )
       .limit(1);
     return record ?? null;
   }
 
-  async findBudgetByAgentAction(workspaceId: string, agentActionId: string): Promise<BudgetRecord | null> {
+  async findBudgetByAgentAction(
+    workspaceId: string,
+    agentActionId: string,
+  ): Promise<BudgetRecord | null> {
     const [record] = await db
       .select()
       .from(budgets)
-      .where(and(eq(budgets.workspaceId, workspaceId), eq(budgets.createdByAgentActionId, agentActionId)))
+      .where(
+        and(
+          eq(budgets.workspaceId, workspaceId),
+          eq(budgets.createdByAgentActionId, agentActionId),
+        ),
+      )
       .limit(1);
     return record ?? null;
   }
 
   async listBudgets(workspaceId: string): Promise<BudgetRecord[]> {
-    return db.select().from(budgets).where(eq(budgets.workspaceId, workspaceId)).orderBy(asc(budgets.createdAt));
+    return db
+      .select()
+      .from(budgets)
+      .where(eq(budgets.workspaceId, workspaceId))
+      .orderBy(asc(budgets.createdAt));
   }
 
-  async updateBudget(workspaceId: string, budgetId: string, input: BudgetUpdate): Promise<BudgetRecord | null> {
+  async updateBudget(
+    workspaceId: string,
+    budgetId: string,
+    input: BudgetUpdate,
+    expectedUpdatedAt?: Date,
+  ): Promise<BudgetRecord | null> {
     const { subcategoryIds, ...update } = input;
     const [record] = await db
       .update(budgets)
-      .set({ ...update, ...(subcategoryIds ? { subcategoryIds: [...subcategoryIds] } : {}), updatedAt: new Date() })
-      .where(and(eq(budgets.workspaceId, workspaceId), eq(budgets.id, budgetId)))
+      .set({
+        ...update,
+        ...(subcategoryIds ? { subcategoryIds: [...subcategoryIds] } : {}),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(budgets.workspaceId, workspaceId),
+          eq(budgets.id, budgetId),
+          ...(expectedUpdatedAt
+            ? [
+                sql`date_trunc('milliseconds', ${budgets.updatedAt}) = ${expectedUpdatedAt}`,
+              ]
+            : []),
+        ),
+      )
       .returning();
     return record ?? null;
   }
 
-  async createSavingsGoal(input: CreateSavingsGoalRecord): Promise<SavingsGoalRecord> {
+  async findBudgetManagementAudit(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<BudgetManagementAudit | null> {
+    const [record] = await db
+      .select()
+      .from(budgetManagementAudits)
+      .where(
+        and(
+          eq(budgetManagementAudits.workspaceId, workspaceId),
+          eq(budgetManagementAudits.actorUserId, actorUserId),
+          eq(budgetManagementAudits.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+    return record
+      ? {
+          id: record.id,
+          workspaceId: record.workspaceId,
+          budgetId: record.budgetId,
+          actorUserId: record.actorUserId,
+          action: record.action as BudgetManagementAudit["action"],
+          commandFingerprint: record.commandFingerprint,
+          idempotencyKey: record.idempotencyKey,
+        }
+      : null;
+  }
+  async createBudgetManagementAudit(
+    input: BudgetManagementAudit,
+  ): Promise<void> {
+    await db.insert(budgetManagementAudits).values({ ...input, metadata: {} });
+  }
+
+  async createSavingsGoal(
+    input: CreateSavingsGoalRecord,
+  ): Promise<SavingsGoalRecord> {
     const [record] = await db.insert(savingsGoals).values(input).returning();
     if (!record) throw new Error("Failed to create savings goal.");
     return record;
   }
 
-  async findSavingsGoal(workspaceId: string, goalId: string): Promise<SavingsGoalRecord | null> {
+  async findSavingsGoal(
+    workspaceId: string,
+    goalId: string,
+  ): Promise<SavingsGoalRecord | null> {
     const [record] = await db
       .select()
       .from(savingsGoals)
-      .where(and(eq(savingsGoals.workspaceId, workspaceId), eq(savingsGoals.id, goalId)))
+      .where(
+        and(
+          eq(savingsGoals.workspaceId, workspaceId),
+          eq(savingsGoals.id, goalId),
+        ),
+      )
       .limit(1);
     return record ?? null;
   }
@@ -128,7 +255,12 @@ export class DatabasePlansRepository implements PlansRepository {
     const [record] = await db
       .update(savingsGoals)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(savingsGoals.workspaceId, workspaceId), eq(savingsGoals.id, goalId)))
+      .where(
+        and(
+          eq(savingsGoals.workspaceId, workspaceId),
+          eq(savingsGoals.id, goalId),
+        ),
+      )
       .returning();
     return record ?? null;
   }

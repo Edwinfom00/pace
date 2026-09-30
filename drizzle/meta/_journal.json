@@ -232,6 +232,13 @@
       "when": 1790100000008,
       "tag": "0032_budget_subcategory_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790100000009,
+      "tag": "0033_budget_management_audit",
+      "breakpoints": true
     }
   ]
 }

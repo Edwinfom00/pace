@@ -7,7 +7,12 @@ export type BudgetFrequency = (typeof BUDGET_FREQUENCIES)[number];
 export const BUDGET_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
 export type BudgetStatus = (typeof BUDGET_STATUSES)[number];
 
-export const SAVINGS_GOAL_STATUSES = ["ACTIVE", "COMPLETED", "PAUSED", "ARCHIVED"] as const;
+export const SAVINGS_GOAL_STATUSES = [
+  "ACTIVE",
+  "COMPLETED",
+  "PAUSED",
+  "ARCHIVED",
+] as const;
 export type SavingsGoalStatus = (typeof SAVINGS_GOAL_STATUSES)[number];
 
 export interface BudgetRecord {
@@ -56,6 +61,13 @@ export interface BudgetSummary {
   readonly expectedUsageBps: bigint;
   readonly overBudget: boolean;
   readonly activeForPeriod: boolean;
+  /** Server-authoritative management affordances; UI must not infer lifecycle. */
+  readonly capabilities: {
+    readonly canEdit: boolean;
+    readonly canArchive: boolean;
+    readonly canPause: false;
+    readonly canResume: false;
+  };
 }
 
 export interface SavingsGoalSummary {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AuthorizationError, NotFoundError } from "@/authorization/errors";
+import { AuthorizationError, ConflictError, NotFoundError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { toCurrencyCode } from "@/money/currency";
 import { CurrencyMismatchError } from "@/money/money";
@@ -172,4 +172,30 @@ test("plan mutations and records stay isolated to authorized workspace members",
   });
   assert.deepEqual(await plans.listBudgetSummaries(owner, workspaceTwo), []);
   await assert.rejects(plans.updateBudget(owner, workspaceTwo, budget.id, { amountMinor: 600n }), NotFoundError);
+});
+
+test("budget management edits only planning fields, honors scope hierarchy, and never mutates ledger records", async () => {
+  const { cash, ledger, ledgerRecords, plans } = await createFixture();
+  const budget = await plans.createBudget(owner, workspaceOne, { scope: "CATEGORY", categoryId: SYSTEM_GROCERIES_ID, amountMinor: 1_000n, startsOn: new Date("2027-06-01T00:00:00.000Z"), endsOn: null });
+  await ledger.createTransaction(owner, workspaceOne, { kind: "EXPENSE", amountMinor: "300", currency: "XAF", occurredAt: "2026-06-10T12:00:00.000Z", accountId: cash.id, categoryId: SYSTEM_GROCERIES_ID });
+  const beforeTransactions = JSON.stringify([...ledgerRecords.transactions.values()], (_, value) => typeof value === "bigint" ? value.toString() : value);
+  const edited = await plans.editBudget(owner, workspaceOne, budget.id, { amountMinor: 1_200n, expectedUpdatedAt: budget.updatedAt, idempotencyKey: "budget-edit-1" });
+  assert.equal(edited.amountMinor, 1_200n);
+  assert.equal(JSON.stringify([...ledgerRecords.transactions.values()], (_, value) => typeof value === "bigint" ? value.toString() : value), beforeTransactions);
+  await assert.rejects(plans.editBudget(owner, workspaceOne, budget.id, { categoryId: "not-a-category", expectedUpdatedAt: edited.updatedAt, idempotencyKey: "budget-edit-invalid" }), NotFoundError);
+});
+
+test("budget archive is idempotent, version-checked, authorized, and retains its history", async () => {
+  const { plans, plansRecords } = await createFixture();
+  const budget = await plans.createBudget(owner, workspaceOne, { scope: "OVERALL", categoryId: null, amountMinor: 500n, startsOn: new Date("2026-06-01T00:00:00.000Z"), endsOn: null });
+  await assert.rejects(plans.archiveBudget(viewer, workspaceOne, budget.id, { expectedUpdatedAt: budget.updatedAt, idempotencyKey: "budget-archive-viewer" }), AuthorizationError);
+  await assert.rejects(plans.archiveBudget(owner, workspaceOne, budget.id, { expectedUpdatedAt: new Date(0), idempotencyKey: "budget-archive-stale" }), ConflictError);
+  const archived = await plans.archiveBudget(owner, workspaceOne, budget.id, { expectedUpdatedAt: budget.updatedAt, idempotencyKey: "budget-archive-1" });
+  const replay = await plans.archiveBudget(owner, workspaceOne, budget.id, { expectedUpdatedAt: budget.updatedAt, idempotencyKey: "budget-archive-1" });
+  assert.equal(archived.status, "ARCHIVED");
+  assert.equal(replay.id, budget.id);
+  assert.equal(plansRecords.budgets.get(budget.id)?.startsOn.getTime(), budget.startsOn.getTime());
+  const summary = await plans.getBudgetSummary(owner, workspaceOne, budget.id, new Date("2026-06-15T00:00:00.000Z"));
+  assert.equal(summary?.capabilities.canArchive, false);
+  assert.equal(summary?.capabilities.canPause, false);
 });

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   AuthorizationError,
@@ -55,6 +55,12 @@ export interface UpdateBudgetInput {
   status?: BudgetStatus;
   startsOn?: Date;
   endsOn?: Date | null;
+}
+
+export interface ManageBudgetInput extends UpdateBudgetInput {
+  readonly subcategoryIds?: readonly string[];
+  readonly expectedUpdatedAt: Date;
+  readonly idempotencyKey: string;
 }
 
 export interface CreateSavingsGoalInput {
@@ -155,7 +161,10 @@ export class PlansService {
       return await this.plans.createBudget(record);
     } catch (error) {
       if (input.agentActionId) {
-        const prior = await this.plans.findBudgetByAgentAction(workspaceId, input.agentActionId);
+        const prior = await this.plans.findBudgetByAgentAction(
+          workspaceId,
+          input.agentActionId,
+        );
         if (prior) return prior;
       }
       throw error;
@@ -201,6 +210,106 @@ export class PlansService {
     );
     if (!updated)
       throw new ConflictError("Budget changed before it could be updated.");
+    return updated;
+  }
+
+  /** Canonical M11 budget edit. It changes planning configuration only. */
+  async editBudget(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    budgetId: string,
+    input: ManageBudgetInput,
+  ): Promise<BudgetRecord> {
+    return this.manageBudget(actor, workspaceId, budgetId, input, "EDIT");
+  }
+
+  /** Archives the budget record; it never deletes or alters ledger history. */
+  async archiveBudget(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    budgetId: string,
+    input: Pick<ManageBudgetInput, "expectedUpdatedAt" | "idempotencyKey">,
+  ): Promise<BudgetRecord> {
+    return this.manageBudget(actor, workspaceId, budgetId, input, "ARCHIVE");
+  }
+
+  private async manageBudget(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    budgetId: string,
+    input: Partial<ManageBudgetInput>,
+    action: "EDIT" | "ARCHIVE",
+  ): Promise<BudgetRecord> {
+    await this.requireManageContext(actor, workspaceId);
+    if (
+      !input.expectedUpdatedAt ||
+      !Number.isFinite(input.expectedUpdatedAt.getTime())
+    )
+      throw new ConflictError("An expected budget version is required.");
+    const idempotencyKey = input.idempotencyKey?.trim();
+    if (!idempotencyKey || idempotencyKey.length > 180)
+      throw new ConflictError("An idempotency key is required.");
+    const existing = await this.plans.findBudget(workspaceId, budgetId);
+    if (!existing)
+      throw new NotFoundError("Budget not found in this workspace.");
+    const fingerprint = budgetCommandFingerprint(action, budgetId, input);
+    const replay = await this.plans.findBudgetManagementAudit(
+      workspaceId,
+      actor.userId,
+      idempotencyKey,
+    );
+    if (replay) {
+      if (replay.commandFingerprint !== fingerprint)
+        throw new ConflictError(
+          "This idempotency key was already used for another budget action.",
+        );
+      const prior = await this.plans.findBudget(workspaceId, replay.budgetId);
+      if (prior) return prior;
+      throw new ConflictError("Budget action replay could not be resolved.");
+    }
+    if (existing.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
+      throw new ConflictError("Budget changed before it could be updated.");
+    if (action === "ARCHIVE" && existing.status === "ARCHIVED") return existing;
+    if (action === "EDIT" && existing.status !== "ACTIVE")
+      throw new ConflictError("Archived budgets cannot be edited.");
+    if (action === "EDIT" && existing.startsOn < currentMonthStart())
+      throw new ConflictError("Only budgets that have not started can be edited; create a new budget for a future period.");
+    const merged: CreateBudgetInput = {
+      scope: input.scope ?? existing.scope,
+      categoryId:
+        input.scope === "OVERALL"
+          ? null
+          : (input.categoryId ?? existing.categoryId),
+      subcategoryIds:
+        input.scope === "OVERALL"
+          ? []
+          : (input.subcategoryIds ?? existing.subcategoryIds),
+      amountMinor: input.amountMinor ?? existing.amountMinor,
+      startsOn: input.startsOn ?? existing.startsOn,
+      endsOn: input.endsOn === undefined ? existing.endsOn : input.endsOn,
+    };
+    await this.assertBudgetInput(workspaceId, merged);
+    const updated = await this.plans.updateBudget(
+      workspaceId,
+      budgetId,
+      {
+        ...merged,
+        updatedByUserId: actor.userId,
+        ...(action === "ARCHIVE" ? { status: "ARCHIVED" as const } : {}),
+      },
+      input.expectedUpdatedAt,
+    );
+    if (!updated)
+      throw new ConflictError("Budget changed before it could be updated.");
+    await this.plans.createBudgetManagementAudit({
+      id: randomUUID(),
+      workspaceId,
+      budgetId,
+      actorUserId: actor.userId,
+      action,
+      commandFingerprint: fingerprint,
+      idempotencyKey,
+    });
     return updated;
   }
 
@@ -318,7 +427,13 @@ export class PlansService {
       this.ledger.listCategories(workspaceId),
     ]);
     return records.map((budget) =>
-      summarizeBudget(budget, transactions, context.preferences.timezone, now, categories),
+      summarizeBudget(
+        budget,
+        transactions,
+        context.preferences.timezone,
+        now,
+        categories,
+      ),
     );
   }
 
@@ -335,7 +450,13 @@ export class PlansService {
       this.ledger.listCategories(workspaceId),
     ]);
     return budget
-      ? summarizeBudget(budget, transactions, context.preferences.timezone, now, categories)
+      ? summarizeBudget(
+          budget,
+          transactions,
+          context.preferences.timezone,
+          now,
+          categories,
+        )
       : null;
   }
 
@@ -450,15 +571,23 @@ export function summarizeBudget(
   });
   const categoryIds = new Set<string>();
   if (budget.scope === "CATEGORY" && budget.categoryId) {
-    if (budget.subcategoryIds.length) budget.subcategoryIds.forEach((id) => categoryIds.add(id));
+    if (budget.subcategoryIds.length)
+      budget.subcategoryIds.forEach((id) => categoryIds.add(id));
     else {
       categoryIds.add(budget.categoryId);
-      categories.filter((category) => category.parentCategoryId === budget.categoryId).forEach((category) => categoryIds.add(category.id));
+      categories
+        .filter((category) => category.parentCategoryId === budget.categoryId)
+        .forEach((category) => categoryIds.add(category.id));
     }
   }
-  const spend = budget.scope === "OVERALL"
-    ? summary.totals.spending.minor
-    : summary.categories.reduce((total, entry) => categoryIds.has(entry.id) ? total + entry.spending.minor : total, 0n);
+  const spend =
+    budget.scope === "OVERALL"
+      ? summary.totals.spending.minor
+      : summary.categories.reduce(
+          (total, entry) =>
+            categoryIds.has(entry.id) ? total + entry.spending.minor : total,
+          0n,
+        );
   const dailyPace = calculateDailyPace(
     financialTransactions,
     period,
@@ -481,6 +610,12 @@ export function summarizeBudget(
       BigInt(dailyPace.totalDayCount),
     overBudget: spend > budget.amountMinor,
     activeForPeriod: true,
+    capabilities: {
+      canEdit: budget.status === "ACTIVE",
+      canArchive: budget.status === "ACTIVE",
+      canPause: false,
+      canResume: false,
+    },
   };
 }
 
@@ -525,7 +660,38 @@ function emptyBudgetSummary(
     expectedUsageBps: 0n,
     overBudget: false,
     activeForPeriod: false,
+    capabilities: {
+      canEdit: budget.status === "ACTIVE",
+      canArchive: budget.status === "ACTIVE",
+      canPause: false,
+      canResume: false,
+    },
   };
+}
+
+function budgetCommandFingerprint(
+  action: "EDIT" | "ARCHIVE",
+  budgetId: string,
+  input: Partial<ManageBudgetInput>,
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        action,
+        budgetId,
+        scope: input.scope ?? null,
+        categoryId: input.categoryId ?? null,
+        subcategoryIds: input.subcategoryIds ?? null,
+        amountMinor: input.amountMinor?.toString() ?? null,
+        startsOn: input.startsOn?.toISOString() ?? null,
+        endsOn:
+          input.endsOn === undefined
+            ? null
+            : (input.endsOn?.toISOString() ?? null),
+        expectedUpdatedAt: input.expectedUpdatedAt?.toISOString() ?? null,
+      }),
+    )
+    .digest("hex");
 }
 
 function monthPeriod(now: Date, timeZone: string): { start: Date; end: Date } {
@@ -538,6 +704,11 @@ function monthPeriod(now: Date, timeZone: string): { start: Date; end: Date } {
     .toString()
     .padStart(2, "0")}-01`;
   return periodForLocalDates(start, end, timeZone);
+}
+
+function currentMonthStart(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }
 
 function calendarDaysUntil(
