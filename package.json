@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed:category-children": "tsx scripts/backfill-system-category-children.ts"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.44",
