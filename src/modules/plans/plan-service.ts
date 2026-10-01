@@ -1190,6 +1190,7 @@ export function summarizeSavingsGoal(
       // M5 has no manual reopen transition. Raising a completed goal's target
       // through EDIT resumes it under the canonical status resolution rule.
       canReopen: false,
+      canContribute: goal.status !== "ARCHIVED",
     },
   };
 }

@@ -14,6 +14,7 @@ import { OverviewAskPace } from "@/modules/overview/ui/components/overview-ask-p
 import type { getSavingsGoalDetail } from "../../queries/get-savings-goal-detail";
 import { getPlansUiLabels } from "../plans-ui-labels";
 import { SavingsGoalManagementActions } from "../components/savings-goal-management-actions";
+import { SavingsGoalContributionDialog } from "../components/savings-goal-contribution-dialog";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getSavingsGoalDetail>>>;
 const replace = (template: string, values: Record<string, string>) =>
@@ -124,20 +125,29 @@ export function SavingsGoalDetailView({
               </div>
             </div>
           </div>
-          {capabilities.actionsAvailable ? (
-            <SavingsGoalManagementActions
-              capabilities={capabilities}
-              goal={goal}
-              labels={labels}
-              workspaceId={workspaceId}
-            />
-          ) : (
-            <span
-              aria-label={labels.more}
-              className="grid size-10 place-items-center rounded-[9px] border border-[#e5e9f0] bg-white text-[#526788]">
-              <FiMoreHorizontal aria-hidden />
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {capabilities.canContribute ? (
+              <SavingsGoalContributionDialog
+                goal={goal}
+                labels={labels}
+                workspaceId={workspaceId}
+              />
+            ) : null}
+            {capabilities.actionsAvailable ? (
+              <SavingsGoalManagementActions
+                capabilities={capabilities}
+                goal={goal}
+                labels={labels}
+                workspaceId={workspaceId}
+              />
+            ) : (
+              <span
+                aria-label={labels.more}
+                className="grid size-10 place-items-center rounded-[9px] border border-[#e5e9f0] bg-white text-[#526788]">
+                <FiMoreHorizontal aria-hidden />
+              </span>
+            )}
+          </div>
         </header>
         <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_clamp(300px,25vw,360px)]">
           <div className="min-w-0 space-y-4">
@@ -257,9 +267,35 @@ export function SavingsGoalDetailView({
                 className="text-[17px] font-semibold tracking-tight text-[#14213c]">
                 {labels.contributions}
               </h2>
-              <p className="mt-3 text-[13px] leading-5 text-[#71809a]">
-                {labels.contributionsEmpty}
-              </p>
+              {detail.contributions.items.length ? (
+                <ul className="mt-3 divide-y divide-[#e8edf4]" role="list">
+                  {detail.contributions.items.map((item) => (
+                    <li
+                      className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-3 text-[13px]"
+                      key={item.id}>
+                      <div>
+                        <p className="font-medium text-[#1a2944]">
+                          {item.kind === "REVERSAL" ? "−" : "+"}
+                          {money(item.amountMinor)}{" "}
+                          <span className="font-normal text-[#71809a]">
+                            {item.kind === "REVERSAL"
+                              ? labels.reversal
+                              : labels.contribution}
+                          </span>
+                        </p>
+                        <p className="mt-0.5 text-[#71809a]">
+                          {formatDate(item.effectiveAt)}
+                          {item.note ? ` · ${item.note}` : ""}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-[13px] leading-5 text-[#71809a]">
+                  {labels.contributionsEmpty}
+                </p>
+              )}
             </section>
             <section className="rounded-[12px] border border-[#e5e9f0] bg-white p-5 xl:hidden">
               <h2 className="text-[17px] font-semibold text-[#14213c]">

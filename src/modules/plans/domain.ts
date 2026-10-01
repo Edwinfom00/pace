@@ -102,5 +102,6 @@ export interface SavingsGoalSummary {
     readonly canArchive: boolean;
     readonly canComplete: boolean;
     readonly canReopen: false;
+    readonly canContribute: boolean;
   };
 }
