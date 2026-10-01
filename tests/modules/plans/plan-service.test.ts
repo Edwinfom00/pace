@@ -151,6 +151,25 @@ test("savings progress is explicit and required pace is deterministic", async ()
   assert.equal(completed.currentSavedMinor, 1_000n);
 });
 
+test("savings-goal detail summary is workspace-scoped and never infers account balances", async () => {
+  const { cash, ledger, plans } = await createFixture();
+  const goal = await plans.createSavingsGoal(owner, workspaceOne, {
+    name: "Trip",
+    targetAmountMinor: 1_000n,
+    currentSavedMinor: 250n,
+    targetDate: new Date("2026-06-20T00:00:00.000Z"),
+  });
+  await ledger.createTransaction(owner, workspaceOne, {
+    kind: "INCOME", amountMinor: "900", currency: "XAF", occurredAt: "2026-06-10T00:00:00.000Z", accountId: cash.id,
+  });
+  const detail = await plans.getSavingsGoalSummary(owner, workspaceOne, goal.id, new Date("2026-06-15T00:00:00.000Z"));
+  assert.equal(detail?.remainingMinor, 750n);
+  assert.equal(detail?.progressBps, 2_500n);
+  assert.equal(detail?.targetDateDaysRemaining, 6n);
+  assert.equal(detail?.requiredDailyMinor, 125n);
+  assert.equal(await plans.getSavingsGoalSummary(owner, workspaceTwo, goal.id), null);
+});
+
 test("plan mutations and records stay isolated to authorized workspace members", async () => {
   const { plans } = await createFixture();
   await assert.rejects(

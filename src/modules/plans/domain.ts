@@ -76,5 +76,7 @@ export interface SavingsGoalSummary {
   readonly progressBps: bigint;
   /** Required minor units per calendar day, rounded up; null with no target date. */
   readonly requiredDailyMinor: bigint | null;
+  /** Calendar days remaining, inclusive of today; null when no target date exists. */
+  readonly targetDateDaysRemaining: bigint | null;
   readonly completed: boolean;
 }

@@ -38,6 +38,17 @@ test("Budget management labels are present in EN, FR, and DE", () => {
   }
 });
 
+test("Savings-goal detail labels are complete in EN, FR, and DE", () => {
+  for (const language of ["en", "fr", "de"] as const) {
+    const labels = getPlansUiLabels(language).goalDetail;
+    assert.ok(labels.back);
+    assert.ok(labels.progress);
+    assert.ok(labels.historyEmpty);
+    assert.ok(labels.contributionsEmpty);
+    assert.match(labels.daysRemaining, /\{days\}/);
+  }
+});
+
 test("Create Budget preview formats months and money for the workspace locale", () => {
   assert.match(formatBudgetPeriod("2026-09", "en-US"), /September 2026/);
   assert.match(formatBudgetPeriod("2026-09", "fr-FR"), /septembre 2026/i);

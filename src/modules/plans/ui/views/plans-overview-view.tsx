@@ -264,11 +264,13 @@ function Goals({
   labels,
   locale,
   timeZone,
+  workspaceSlug,
 }: {
   readonly summaries: readonly SavingsGoalSummary[];
   readonly labels: PlansUiLabels;
   readonly locale: string;
   readonly timeZone: string;
+  readonly workspaceSlug: string;
 }) {
   return (
     <section
@@ -292,7 +294,8 @@ function Goals({
       {summaries.length ? (
         <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
           {summaries.map(({ goal, progressBps, remainingMinor }) => (
-            <article
+            <Link
+              href={`/w/${workspaceSlug}/plans/goals/${goal.id}`}
               className="rounded-[10px] border border-[#e5e9f0] p-3.5"
               key={goal.id}>
               <div className="flex gap-2.5">
@@ -327,7 +330,7 @@ function Goals({
                   ? ` · ${date(goal.targetDate, locale, timeZone)}`
                   : ""}
               </p>
-            </article>
+            </Link>
           ))}
         </div>
       ) : (
@@ -473,6 +476,7 @@ export function PlansOverviewView({
                   locale={locale}
                   summaries={goals}
                   timeZone={timeZone}
+                  workspaceSlug={workspaceSlug}
                 />
               }
               allContent={
@@ -490,6 +494,7 @@ export function PlansOverviewView({
                     locale={locale}
                     summaries={goals}
                     timeZone={timeZone}
+                    workspaceSlug={workspaceSlug}
                   />
                   <section className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-5">
                     <h2 className="text-[14px] font-semibold text-[#1a2944]">

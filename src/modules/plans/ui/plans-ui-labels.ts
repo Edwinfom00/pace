@@ -47,6 +47,7 @@ export type PlansUiLabels = {
   readonly actualSpending: string;
   readonly period: string;
   readonly category: string;
+  readonly goalDetail: Readonly<Record<string, string>>;
 };
 
 const createBudgetLabels = {
@@ -191,6 +192,7 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
     actualSpending: "Actual posted spending",
     period: "Period",
     category: "Category",
+    goalDetail: { back: "Back to Plans", targetAmount: "Target amount", contributed: "Saved", progressPercent: "Progress", completed: "Completed", active: "Active", paused: "Paused", archived: "Archived", progress: "Goal progress", remaining: "remaining", history: "Progress over time", historyEmpty: "Progress history is not available yet.", contributions: "Contributions", contributionsEmpty: "No canonical contribution history is available for this goal.", insights: "Goal insights", details: "Goal details", created: "Created", currency: "Currency", daysRemaining: "{days} days remaining", requiredDaily: "Required daily pace", targetDate: "Target date", noTargetDate: "No target date", completedDescription: "This goal has reached its target.", more: "More options", status: "Status" },
   },
   fr: {
     createBudget: {
@@ -327,6 +329,7 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
     actualSpending: "Dépenses comptabilisées réelles",
     period: "Période",
     category: "Catégorie",
+    goalDetail: { back: "Retour aux plans", targetAmount: "Montant cible", contributed: "Épargné", progressPercent: "Progression", completed: "Terminé", active: "Actif", paused: "En pause", archived: "Archivé", progress: "Progression de l’objectif", remaining: "restant", history: "Progression dans le temps", historyEmpty: "L’historique de progression n’est pas encore disponible.", contributions: "Contributions", contributionsEmpty: "Aucun historique de contributions canonique n’est disponible pour cet objectif.", insights: "Aperçus de l’objectif", details: "Détails de l’objectif", created: "Créé", currency: "Devise", daysRemaining: "{days} jours restants", requiredDaily: "Rythme quotidien requis", targetDate: "Date cible", noTargetDate: "Aucune date cible", completedDescription: "Cet objectif a atteint son montant cible.", more: "Plus d’options", status: "Statut" },
   },
   de: {
     createBudget: {
@@ -465,6 +468,7 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
     actualSpending: "Tatsächlich gebuchte Ausgaben",
     period: "Zeitraum",
     category: "Kategorie",
+    goalDetail: { back: "Zurück zu Plänen", targetAmount: "Zielbetrag", contributed: "Gespart", progressPercent: "Fortschritt", completed: "Abgeschlossen", active: "Aktiv", paused: "Pausiert", archived: "Archiviert", progress: "Zielfortschritt", remaining: "verbleibend", history: "Fortschritt im Zeitverlauf", historyEmpty: "Ein Fortschrittsverlauf ist noch nicht verfügbar.", contributions: "Beiträge", contributionsEmpty: "Für dieses Ziel ist kein kanonischer Beitragsverlauf verfügbar.", insights: "Zieleinblicke", details: "Zieldetails", created: "Erstellt", currency: "Währung", daysRemaining: "{days} Tage verbleibend", requiredDaily: "Erforderliches Tagesziel", targetDate: "Zieldatum", noTargetDate: "Kein Zieldatum", completedDescription: "Dieses Ziel hat seinen Zielbetrag erreicht.", more: "Weitere Optionen", status: "Status" },
   },
 };
 

@@ -472,6 +472,19 @@ export class PlansService {
     );
   }
 
+  async getSavingsGoalSummary(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    goalId: string,
+    now = new Date(),
+  ): Promise<SavingsGoalSummary | null> {
+    const context = await this.requireReadContext(actor, workspaceId);
+    const goal = await this.plans.findSavingsGoal(workspaceId, goalId);
+    return goal
+      ? summarizeSavingsGoal(goal, context.preferences.timezone, now)
+      : null;
+  }
+
   private async assertBudgetInput(
     workspaceId: string,
     input: CreateBudgetInput,
@@ -628,6 +641,9 @@ export function summarizeSavingsGoal(
     goal.targetAmountMinor > goal.currentSavedMinor
       ? goal.targetAmountMinor - goal.currentSavedMinor
       : 0n;
+  const targetDateDaysRemaining = goal.targetDate
+    ? calendarDaysUntil(goal.targetDate, timeZone, now)
+    : null;
   return {
     goal,
     remainingMinor,
@@ -636,9 +652,10 @@ export function summarizeSavingsGoal(
       goal.targetDate && remainingMinor > 0n
         ? divideCeiling(
             remainingMinor,
-            calendarDaysUntil(goal.targetDate, timeZone, now),
+            targetDateDaysRemaining!,
           )
         : null,
+    targetDateDaysRemaining,
     completed:
       goal.status === "COMPLETED" ||
       goal.currentSavedMinor >= goal.targetAmountMinor,
