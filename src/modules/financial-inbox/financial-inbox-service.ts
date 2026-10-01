@@ -97,6 +97,8 @@ export interface RecurringPaymentView {
   lifecycle: RecurringPaymentRecord["lifecycle"];
   cadenceDays: number;
   typicalAmountMinor: string;
+  /** A non-zero tolerance means the canonical amount is variable, not guaranteed. */
+  amountToleranceBps?: number;
   currency: string;
   firstOccurredAt: string;
   lastOccurredAt: string;
@@ -1606,6 +1608,7 @@ export class FinancialInboxService {
       lifecycle: payment.lifecycle,
       cadenceDays: payment.cadenceDays,
       typicalAmountMinor: payment.typicalAmountMinor.toString(),
+      amountToleranceBps: payment.amountToleranceBps,
       currency: payment.currency,
       firstOccurredAt: payment.firstOccurredAt.toISOString(),
       lastOccurredAt: payment.lastOccurredAt.toISOString(),
