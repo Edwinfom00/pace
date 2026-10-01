@@ -186,8 +186,7 @@ export function SavingsGoalContributionActions({
         ) : null}
       </div>
       <ResponsiveDialog
-        mobilePresentation="dialog"
-        onOpenChange={(next) => !next && close()}
+        onOpenChange={(next) => next || close()}
         open={action !== null}>
         <ResponsiveDialogContent
           className="w-[calc(100%-1rem)]! max-w-xl! rounded-[12px] border border-[#dfe6ef] bg-white p-0 text-[#101a35] sm:w-[calc(100%-3rem)]!"
@@ -274,8 +273,7 @@ export function SavingsGoalContributionActions({
               className={contributionActionClass}
               disabled={pending || !valid || conflict}
               onClick={() => void submit()}
-              type="button"
-              variant="default">
+              type="button">
               {pending
                 ? correcting
                   ? labels.correctingContribution
