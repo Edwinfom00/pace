@@ -239,6 +239,13 @@
       "when": 1790100000009,
       "tag": "0033_budget_management_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790100000010,
+      "tag": "0034_savings_goal_management_audit",
+      "breakpoints": true
     }
   ]
 }

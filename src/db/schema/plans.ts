@@ -175,3 +175,37 @@ export const budgetManagementAudits = pgTable(
     ),
   ],
 );
+
+export const savingsGoalManagementAudits = pgTable(
+  "savings_goal_management_audit",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => savingsGoals.id, { onDelete: "restrict" }),
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    action: varchar("action", { length: 16 }).notNull(),
+    commandFingerprint: varchar("command_fingerprint", {
+      length: 128,
+    }).notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }).notNull(),
+    metadata: jsonb("metadata")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("savings_goal_management_audit_workspace_actor_key_unique").on(
+      table.workspaceId,
+      table.actorUserId,
+      table.idempotencyKey,
+    ),
+  ],
+);

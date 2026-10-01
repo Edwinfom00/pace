@@ -42,6 +42,6 @@ export async function getSavingsGoalDetail({
     history: null,
     contributions: null,
     linkedAccount: null,
-    capabilities: { actionsAvailable: false },
+    capabilities: { ...summary.capabilities, actionsAvailable: false },
   } as const;
 }

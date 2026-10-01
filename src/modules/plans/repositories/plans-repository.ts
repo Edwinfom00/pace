@@ -1,7 +1,12 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { budgetManagementAudits, budgets, savingsGoals } from "@/db/schema";
+import {
+  budgetManagementAudits,
+  budgets,
+  savingsGoalManagementAudits,
+  savingsGoals,
+} from "@/db/schema";
 
 import type { BudgetRecord, SavingsGoalRecord } from "../domain";
 
@@ -30,6 +35,15 @@ export interface BudgetManagementAudit {
   readonly budgetId: string;
   readonly actorUserId: string;
   readonly action: "EDIT" | "ARCHIVE";
+  readonly commandFingerprint: string;
+  readonly idempotencyKey: string;
+}
+export interface SavingsGoalManagementAudit {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly goalId: string;
+  readonly actorUserId: string;
+  readonly action: "EDIT" | "ARCHIVE" | "COMPLETE";
   readonly commandFingerprint: string;
   readonly idempotencyKey: string;
 }
@@ -82,7 +96,16 @@ export interface PlansRepository {
     workspaceId: string,
     goalId: string,
     input: SavingsGoalUpdate,
+    expectedUpdatedAt?: Date,
   ): Promise<SavingsGoalRecord | null>;
+  findSavingsGoalManagementAudit(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<SavingsGoalManagementAudit | null>;
+  createSavingsGoalManagementAudit(
+    input: SavingsGoalManagementAudit,
+  ): Promise<void>;
 }
 
 export class DatabasePlansRepository implements PlansRepository {
@@ -251,6 +274,7 @@ export class DatabasePlansRepository implements PlansRepository {
     workspaceId: string,
     goalId: string,
     input: SavingsGoalUpdate,
+    expectedUpdatedAt?: Date,
   ): Promise<SavingsGoalRecord | null> {
     const [record] = await db
       .update(savingsGoals)
@@ -259,9 +283,51 @@ export class DatabasePlansRepository implements PlansRepository {
         and(
           eq(savingsGoals.workspaceId, workspaceId),
           eq(savingsGoals.id, goalId),
+          ...(expectedUpdatedAt
+            ? [
+                sql`date_trunc('milliseconds', ${savingsGoals.updatedAt}) = ${expectedUpdatedAt}`,
+              ]
+            : []),
         ),
       )
       .returning();
     return record ?? null;
+  }
+
+  async findSavingsGoalManagementAudit(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<SavingsGoalManagementAudit | null> {
+    const [record] = await db
+      .select()
+      .from(savingsGoalManagementAudits)
+      .where(
+        and(
+          eq(savingsGoalManagementAudits.workspaceId, workspaceId),
+          eq(savingsGoalManagementAudits.actorUserId, actorUserId),
+          eq(savingsGoalManagementAudits.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+    return record
+      ? {
+          id: record.id,
+          workspaceId: record.workspaceId,
+          goalId: record.goalId,
+          actorUserId: record.actorUserId,
+          action: record.action as SavingsGoalManagementAudit["action"],
+          commandFingerprint: record.commandFingerprint,
+          idempotencyKey: record.idempotencyKey,
+        }
+      : null;
+  }
+
+  async createSavingsGoalManagementAudit(
+    input: SavingsGoalManagementAudit,
+  ): Promise<void> {
+    await db
+      .insert(savingsGoalManagementAudits)
+      .values({ ...input, metadata: {} });
   }
 }

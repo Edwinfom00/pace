@@ -6,12 +6,17 @@ import type {
   CreateSavingsGoalRecord,
   PlansRepository,
   SavingsGoalUpdate,
+  SavingsGoalManagementAudit,
 } from "@/modules/plans/repositories/plans-repository";
 
 export class InMemoryPlansRepository implements PlansRepository {
   readonly budgets = new Map<string, BudgetRecord>();
   readonly goals = new Map<string, SavingsGoalRecord>();
   readonly budgetManagementAudits = new Map<string, BudgetManagementAudit>();
+  readonly savingsGoalManagementAudits = new Map<
+    string,
+    SavingsGoalManagementAudit
+  >();
 
   async createBudget(input: CreateBudgetRecord): Promise<BudgetRecord> {
     const now = new Date();
@@ -137,9 +142,15 @@ export class InMemoryPlansRepository implements PlansRepository {
     workspaceId: string,
     goalId: string,
     input: SavingsGoalUpdate,
+    expectedUpdatedAt?: Date,
   ): Promise<SavingsGoalRecord | null> {
     const current = await this.findSavingsGoal(workspaceId, goalId);
     if (!current) return null;
+    if (
+      expectedUpdatedAt &&
+      current.updatedAt.getTime() !== expectedUpdatedAt.getTime()
+    )
+      return null;
     const updated: SavingsGoalRecord = {
       ...current,
       ...input,
@@ -147,5 +158,26 @@ export class InMemoryPlansRepository implements PlansRepository {
     };
     this.goals.set(goalId, updated);
     return updated;
+  }
+
+  async findSavingsGoalManagementAudit(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<SavingsGoalManagementAudit | null> {
+    return (
+      this.savingsGoalManagementAudits.get(
+        `${workspaceId}:${actorUserId}:${idempotencyKey}`,
+      ) ?? null
+    );
+  }
+
+  async createSavingsGoalManagementAudit(
+    input: SavingsGoalManagementAudit,
+  ): Promise<void> {
+    this.savingsGoalManagementAudits.set(
+      `${input.workspaceId}:${input.actorUserId}:${input.idempotencyKey}`,
+      input,
+    );
   }
 }

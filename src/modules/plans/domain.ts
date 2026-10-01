@@ -79,4 +79,11 @@ export interface SavingsGoalSummary {
   /** Calendar days remaining, inclusive of today; null when no target date exists. */
   readonly targetDateDaysRemaining: bigint | null;
   readonly completed: boolean;
+  /** Server-authoritative management affordances; UI must not infer lifecycle. */
+  readonly capabilities: {
+    readonly canEdit: boolean;
+    readonly canArchive: boolean;
+    readonly canComplete: boolean;
+    readonly canReopen: false;
+  };
 }

@@ -79,6 +79,14 @@ export interface UpdateSavingsGoalInput {
   status?: SavingsGoalStatus;
 }
 
+export interface ManageSavingsGoalInput {
+  readonly name?: string;
+  readonly targetAmountMinor?: bigint;
+  readonly targetDate?: Date | null;
+  readonly expectedUpdatedAt: Date;
+  readonly idempotencyKey: string;
+}
+
 export interface PlansContext {
   readonly workspaceId: string;
   readonly currency: string;
@@ -418,6 +426,147 @@ export class PlansService {
     return updated;
   }
 
+  /** Canonical M11.5C edit. It changes future goal planning only. */
+  async editSavingsGoal(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    goalId: string,
+    input: ManageSavingsGoalInput,
+  ): Promise<SavingsGoalRecord> {
+    return this.manageSavingsGoal(actor, workspaceId, goalId, input, "EDIT");
+  }
+
+  /** Archives the goal record; it never deletes or alters explicit progress. */
+  async archiveSavingsGoal(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    goalId: string,
+    input: Pick<ManageSavingsGoalInput, "expectedUpdatedAt" | "idempotencyKey">,
+  ): Promise<SavingsGoalRecord> {
+    return this.manageSavingsGoal(actor, workspaceId, goalId, input, "ARCHIVE");
+  }
+
+  /** M5 permits completion only when the explicitly recorded progress reaches target. */
+  async completeSavingsGoal(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    goalId: string,
+    input: Pick<ManageSavingsGoalInput, "expectedUpdatedAt" | "idempotencyKey">,
+  ): Promise<SavingsGoalRecord> {
+    return this.manageSavingsGoal(
+      actor,
+      workspaceId,
+      goalId,
+      input,
+      "COMPLETE",
+    );
+  }
+
+  private async manageSavingsGoal(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    goalId: string,
+    input: Partial<ManageSavingsGoalInput>,
+    action: "EDIT" | "ARCHIVE" | "COMPLETE",
+  ): Promise<SavingsGoalRecord> {
+    await this.requireManageContext(actor, workspaceId);
+    if (
+      !input.expectedUpdatedAt ||
+      !Number.isFinite(input.expectedUpdatedAt.getTime())
+    )
+      throw new ConflictError("An expected savings-goal version is required.");
+    const idempotencyKey = input.idempotencyKey?.trim();
+    if (!idempotencyKey || idempotencyKey.length > 180)
+      throw new ConflictError("An idempotency key is required.");
+    const existing = await this.plans.findSavingsGoal(workspaceId, goalId);
+    if (!existing)
+      throw new NotFoundError("Savings goal not found in this workspace.");
+    const fingerprint = savingsGoalCommandFingerprint(action, goalId, input);
+    const replay = await this.plans.findSavingsGoalManagementAudit(
+      workspaceId,
+      actor.userId,
+      idempotencyKey,
+    );
+    if (replay) {
+      if (replay.commandFingerprint !== fingerprint)
+        throw new ConflictError(
+          "This idempotency key was already used for another savings-goal action.",
+        );
+      const prior = await this.plans.findSavingsGoal(
+        workspaceId,
+        replay.goalId,
+      );
+      if (prior) return prior;
+      throw new ConflictError(
+        "Savings-goal action replay could not be resolved.",
+      );
+    }
+    if (existing.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
+      throw new ConflictError(
+        "Savings goal changed before it could be updated.",
+      );
+    if (action === "ARCHIVE" && existing.status === "ARCHIVED") return existing;
+    if (action !== "ARCHIVE" && existing.status === "ARCHIVED")
+      throw new ConflictError("Archived savings goals cannot be changed.");
+    if (
+      action === "COMPLETE" &&
+      existing.currentSavedMinor < existing.targetAmountMinor
+    )
+      throw new ConflictError(
+        "A savings goal can be completed only after its target is saved.",
+      );
+
+    const targetAmountMinor = assertPositiveAmount(
+      input.targetAmountMinor ?? existing.targetAmountMinor,
+      "Savings-goal target",
+    );
+    const targetDate =
+      input.targetDate === undefined ? existing.targetDate : input.targetDate;
+    const update: SavingsGoalUpdate = {
+      ...(action === "EDIT"
+        ? {
+            name:
+              input.name === undefined
+                ? existing.name
+                : cleanGoalName(input.name),
+            targetAmountMinor,
+            targetDate: targetDate
+              ? assertValidDate(targetDate, "Target date")
+              : null,
+            status: resolveGoalStatus(
+              existing.status,
+              undefined,
+              existing.currentSavedMinor,
+              targetAmountMinor,
+            ),
+          }
+        : {}),
+      ...(action === "ARCHIVE" ? { status: "ARCHIVED" as const } : {}),
+      ...(action === "COMPLETE" ? { status: "COMPLETED" as const } : {}),
+      updatedByUserId: actor.userId,
+    };
+    const updated = await this.plans.updateSavingsGoal(
+      workspaceId,
+      goalId,
+      update,
+      input.expectedUpdatedAt,
+    );
+    if (!updated)
+      throw new ConflictError(
+        "Savings goal changed before it could be updated.",
+      );
+    await this.plans.createSavingsGoalManagementAudit({
+      id: randomUUID(),
+      workspaceId,
+      goalId,
+      actorUserId: actor.userId,
+      action,
+      commandFingerprint: fingerprint,
+      idempotencyKey,
+    });
+    return updated;
+  }
+
   async findBudgetCreatedByAction(
     actor: AuthenticatedActor,
     workspaceId: string,
@@ -677,6 +826,17 @@ export function summarizeSavingsGoal(
     completed:
       goal.status === "COMPLETED" ||
       goal.currentSavedMinor >= goal.targetAmountMinor,
+    capabilities: {
+      canEdit: goal.status !== "ARCHIVED",
+      canArchive: goal.status !== "ARCHIVED",
+      canComplete:
+        goal.status !== "ARCHIVED" &&
+        goal.status !== "COMPLETED" &&
+        goal.currentSavedMinor >= goal.targetAmountMinor,
+      // M5 has no manual reopen transition. Raising a completed goal's target
+      // through EDIT resumes it under the canonical status resolution rule.
+      canReopen: false,
+    },
   };
 }
 
@@ -723,6 +883,28 @@ function budgetCommandFingerprint(
           input.endsOn === undefined
             ? null
             : (input.endsOn?.toISOString() ?? null),
+        expectedUpdatedAt: input.expectedUpdatedAt?.toISOString() ?? null,
+      }),
+    )
+    .digest("hex");
+}
+
+function savingsGoalCommandFingerprint(
+  action: "EDIT" | "ARCHIVE" | "COMPLETE",
+  goalId: string,
+  input: Partial<ManageSavingsGoalInput>,
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        action,
+        goalId,
+        name: input.name ?? null,
+        targetAmountMinor: input.targetAmountMinor?.toString() ?? null,
+        targetDate:
+          input.targetDate === undefined
+            ? null
+            : (input.targetDate?.toISOString() ?? null),
         expectedUpdatedAt: input.expectedUpdatedAt?.toISOString() ?? null,
       }),
     )

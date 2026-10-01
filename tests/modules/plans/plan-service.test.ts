@@ -189,6 +189,108 @@ test("savings-goal detail summary is workspace-scoped and never infers account b
   assert.equal(await plans.getSavingsGoalSummary(owner, workspaceTwo, goal.id), null);
 });
 
+test("savings-goal management edits future planning fields only and preserves explicit progress", async () => {
+  const { ledgerRecords, plans } = await createFixture();
+  const goal = await plans.createSavingsGoal(owner, workspaceOne, {
+    name: "Trip",
+    targetAmountMinor: 1_000n,
+    currentSavedMinor: 300n,
+    targetDate: new Date("2026-12-31T00:00:00.000Z"),
+  });
+  const beforeTransactions = ledgerRecords.transactions.size;
+  const renamed = await plans.editSavingsGoal(owner, workspaceOne, goal.id, {
+    name: "  Family   trip  ",
+    expectedUpdatedAt: goal.updatedAt,
+    idempotencyKey: "goal-edit-name",
+  });
+  assert.equal(renamed.name, "Family trip");
+  assert.equal(renamed.currentSavedMinor, 300n);
+  const retargeted = await plans.editSavingsGoal(owner, workspaceOne, goal.id, {
+    targetAmountMinor: 1_500n,
+    expectedUpdatedAt: renamed.updatedAt,
+    idempotencyKey: "goal-edit-amount",
+  });
+  assert.equal(retargeted.targetAmountMinor, 1_500n);
+  const rescheduled = await plans.editSavingsGoal(owner, workspaceOne, goal.id, {
+    targetDate: new Date("2027-01-31T00:00:00.000Z"),
+    expectedUpdatedAt: retargeted.updatedAt,
+    idempotencyKey: "goal-edit-date",
+  });
+  assert.equal(rescheduled.targetDate?.toISOString(), "2027-01-31T00:00:00.000Z");
+  assert.equal(ledgerRecords.transactions.size, beforeTransactions);
+});
+
+test("savings-goal archive preserves history, management is versioned, idempotent, and workspace-scoped", async () => {
+  const { ledgerRecords, plans, plansRecords } = await createFixture();
+  const goal = await plans.createSavingsGoal(owner, workspaceOne, {
+    name: "Emergency fund",
+    targetAmountMinor: 1_000n,
+    currentSavedMinor: 600n,
+    targetDate: null,
+  });
+  const beforeTransactions = ledgerRecords.transactions.size;
+  await assert.rejects(
+    plans.editSavingsGoal(owner, workspaceTwo, goal.id, {
+      name: "Other workspace",
+      expectedUpdatedAt: goal.updatedAt,
+      idempotencyKey: "goal-isolation",
+    }),
+    NotFoundError,
+  );
+  await assert.rejects(
+    plans.editSavingsGoal(viewer, workspaceOne, goal.id, {
+      name: "Viewer edit",
+      expectedUpdatedAt: goal.updatedAt,
+      idempotencyKey: "goal-viewer",
+    }),
+    AuthorizationError,
+  );
+  await assert.rejects(
+    plans.editSavingsGoal(owner, workspaceOne, goal.id, {
+      name: "Stale edit",
+      expectedUpdatedAt: new Date(0),
+      idempotencyKey: "goal-stale",
+    }),
+    ConflictError,
+  );
+  const archived = await plans.archiveSavingsGoal(owner, workspaceOne, goal.id, {
+    expectedUpdatedAt: goal.updatedAt,
+    idempotencyKey: "goal-archive",
+  });
+  const replay = await plans.archiveSavingsGoal(owner, workspaceOne, goal.id, {
+    expectedUpdatedAt: goal.updatedAt,
+    idempotencyKey: "goal-archive",
+  });
+  assert.equal(archived.status, "ARCHIVED");
+  assert.equal(replay.id, goal.id);
+  assert.equal(plansRecords.goals.get(goal.id)?.currentSavedMinor, 600n);
+  assert.equal(ledgerRecords.transactions.size, beforeTransactions);
+  const summary = await plans.getSavingsGoalSummary(owner, workspaceOne, goal.id);
+  assert.equal(summary?.capabilities.canArchive, false);
+  assert.equal(summary?.capabilities.canEdit, false);
+});
+
+test("savings-goal completion follows M5 explicit-progress lifecycle without a manual reopen", async () => {
+  const { plans } = await createFixture();
+  const goal = await plans.createSavingsGoal(owner, workspaceOne, {
+    name: "Laptop",
+    targetAmountMinor: 1_000n,
+    currentSavedMinor: 1_000n,
+    targetDate: null,
+  });
+  const summary = await plans.getSavingsGoalSummary(owner, workspaceOne, goal.id);
+  assert.equal(summary?.capabilities.canComplete, false);
+  assert.equal(summary?.capabilities.canReopen, false);
+  assert.equal(goal.status, "COMPLETED");
+  const reopenedByRetargeting = await plans.editSavingsGoal(owner, workspaceOne, goal.id, {
+    targetAmountMinor: 1_500n,
+    expectedUpdatedAt: goal.updatedAt,
+    idempotencyKey: "goal-retarget-reopens",
+  });
+  assert.equal(reopenedByRetargeting.status, "ACTIVE");
+  assert.equal(reopenedByRetargeting.currentSavedMinor, 1_000n);
+});
+
 test("plan mutations and records stay isolated to authorized workspace members", async () => {
   const { plans } = await createFixture();
   await assert.rejects(
