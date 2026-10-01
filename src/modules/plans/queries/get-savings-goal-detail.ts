@@ -25,6 +25,13 @@ export async function getSavingsGoalDetail({
   );
   if (!summary) return null;
   const contributions = await service.listSavingsGoalContributions(actor, workspaceId, goalId);
+  const reversedContributionIds = new Set(
+    contributions.flatMap((contribution) =>
+      contribution.reversesContributionId
+        ? [contribution.reversesContributionId]
+        : [],
+    ),
+  );
   return {
     goal: summary.goal,
     metrics: {
@@ -43,7 +50,19 @@ export async function getSavingsGoalDetail({
       : null,
     history: contributions,
     contributions: {
-      items: contributions,
+      items: contributions.map((contribution) => ({
+        ...contribution,
+        capabilities: {
+          canCorrect:
+            summary.capabilities.canContribute &&
+            contribution.kind === "CONTRIBUTION" &&
+            !reversedContributionIds.has(contribution.id),
+          canReverse:
+            summary.capabilities.canContribute &&
+            contribution.kind === "CONTRIBUTION" &&
+            !reversedContributionIds.has(contribution.id),
+        },
+      })),
       latest: contributions.at(-1) ?? null,
     },
     linkedAccount: null,

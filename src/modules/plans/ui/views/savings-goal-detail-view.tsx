@@ -15,6 +15,7 @@ import type { getSavingsGoalDetail } from "../../queries/get-savings-goal-detail
 import { getPlansUiLabels } from "../plans-ui-labels";
 import { SavingsGoalManagementActions } from "../components/savings-goal-management-actions";
 import { SavingsGoalContributionDialog } from "../components/savings-goal-contribution-dialog";
+import { SavingsGoalContributionActions } from "../components/savings-goal-contribution-actions";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getSavingsGoalDetail>>>;
 const replace = (template: string, values: Record<string, string>) =>
@@ -290,6 +291,14 @@ export function SavingsGoalDetailView({
                           {item.note ? ` · ${item.note}` : ""}
                         </p>
                       </div>
+                      <SavingsGoalContributionActions
+                        contribution={item}
+                        goal={goal}
+                        labels={labels}
+                        locale={locale}
+                        timeZone={timeZone}
+                        workspaceId={workspaceId}
+                      />
                     </li>
                   ))}
                 </ul>

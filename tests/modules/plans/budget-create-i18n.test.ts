@@ -55,6 +55,10 @@ test("Savings-goal detail labels are complete in EN, FR, and DE", () => {
     assert.ok(labels.progress);
     assert.ok(labels.historyEmpty);
     assert.ok(labels.contributionsEmpty);
+    assert.ok(labels.correctContribution);
+    assert.ok(labels.reverseContribution);
+    assert.ok(labels.correctionHelper);
+    assert.ok(labels.reversalHelper);
     assert.match(labels.daysRemaining, /\{days\}/);
   }
 });
