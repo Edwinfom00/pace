@@ -6,14 +6,23 @@ import {
   budgets,
   savingsGoalManagementAudits,
   savingsGoals,
+  savingsGoalContributions,
 } from "@/db/schema";
 
-import type { BudgetRecord, SavingsGoalRecord } from "../domain";
+import type {
+  BudgetRecord,
+  SavingsGoalContribution,
+  SavingsGoalRecord,
+} from "../domain";
 
 export type CreateBudgetRecord = Omit<BudgetRecord, "createdAt" | "updatedAt">;
 export type CreateSavingsGoalRecord = Omit<
   SavingsGoalRecord,
   "createdAt" | "updatedAt"
+>;
+export type CreateSavingsGoalContribution = Omit<
+  SavingsGoalContribution,
+  "createdAt"
 >;
 
 export type BudgetUpdate = Partial<
@@ -106,6 +115,27 @@ export interface PlansRepository {
   createSavingsGoalManagementAudit(
     input: SavingsGoalManagementAudit,
   ): Promise<void>;
+  listSavingsGoalContributions(
+    workspaceId: string,
+    goalId: string,
+  ): Promise<SavingsGoalContribution[]>;
+  findSavingsGoalContribution(
+    workspaceId: string,
+    contributionId: string,
+  ): Promise<SavingsGoalContribution | null>;
+  findSavingsGoalContributionByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<SavingsGoalContribution | null>;
+  recordSavingsGoalContributions(input: {
+    goalId: string;
+    workspaceId: string;
+    expectedUpdatedAt: Date;
+    updatedByUserId: string;
+    status: SavingsGoalRecord["status"];
+    contributions: readonly CreateSavingsGoalContribution[];
+  }): Promise<SavingsGoalRecord | null>;
 }
 
 export class DatabasePlansRepository implements PlansRepository {
@@ -330,4 +360,96 @@ export class DatabasePlansRepository implements PlansRepository {
       .insert(savingsGoalManagementAudits)
       .values({ ...input, metadata: {} });
   }
+
+  async listSavingsGoalContributions(
+    workspaceId: string,
+    goalId: string,
+  ): Promise<SavingsGoalContribution[]> {
+    return (
+      await db
+        .select()
+        .from(savingsGoalContributions)
+        .where(
+          and(
+            eq(savingsGoalContributions.workspaceId, workspaceId),
+            eq(savingsGoalContributions.goalId, goalId),
+          ),
+        )
+        .orderBy(
+          asc(savingsGoalContributions.effectiveAt),
+          asc(savingsGoalContributions.createdAt),
+        )
+    ).map(toContribution);
+  }
+  async findSavingsGoalContribution(
+    workspaceId: string,
+    contributionId: string,
+  ): Promise<SavingsGoalContribution | null> {
+    const [record] = await db
+      .select()
+      .from(savingsGoalContributions)
+      .where(
+        and(
+          eq(savingsGoalContributions.workspaceId, workspaceId),
+          eq(savingsGoalContributions.id, contributionId),
+        ),
+      )
+      .limit(1);
+    return record ? toContribution(record) : null;
+  }
+  async findSavingsGoalContributionByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<SavingsGoalContribution | null> {
+    const [record] = await db
+      .select()
+      .from(savingsGoalContributions)
+      .where(
+        and(
+          eq(savingsGoalContributions.workspaceId, workspaceId),
+          eq(savingsGoalContributions.actorUserId, actorUserId),
+          eq(savingsGoalContributions.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+    return record ? toContribution(record) : null;
+  }
+  async recordSavingsGoalContributions(input: {
+    goalId: string;
+    workspaceId: string;
+    expectedUpdatedAt: Date;
+    updatedByUserId: string;
+    status: SavingsGoalRecord["status"];
+    contributions: readonly CreateSavingsGoalContribution[];
+  }): Promise<SavingsGoalRecord | null> {
+    return db.transaction(async (tx) => {
+      const [goal] = await tx
+        .update(savingsGoals)
+        .set({
+          updatedByUserId: input.updatedByUserId,
+          status: input.status,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(savingsGoals.workspaceId, input.workspaceId),
+            eq(savingsGoals.id, input.goalId),
+            sql`date_trunc('milliseconds', ${savingsGoals.updatedAt}) = ${input.expectedUpdatedAt}`,
+          ),
+        )
+        .returning();
+      if (!goal) return null;
+      await tx
+        .insert(savingsGoalContributions)
+        .values([...input.contributions]);
+      return goal;
+    });
+  }
+}
+
+function toContribution(
+  record: typeof savingsGoalContributions.$inferSelect,
+): SavingsGoalContribution {
+  return { ...record, kind: record.kind as SavingsGoalContribution["kind"] };
 }

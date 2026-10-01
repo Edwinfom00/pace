@@ -28,6 +28,7 @@ import type {
   BudgetStatus,
   BudgetSummary,
   SavingsGoalRecord,
+  SavingsGoalContribution,
   SavingsGoalStatus,
   SavingsGoalSummary,
 } from "./domain";
@@ -36,6 +37,7 @@ import type {
   CreateBudgetRecord,
   PlansRepository,
   SavingsGoalUpdate,
+  CreateSavingsGoalContribution,
 } from "./repositories/plans-repository";
 
 export interface CreateBudgetInput {
@@ -83,6 +85,15 @@ export interface ManageSavingsGoalInput {
   readonly name?: string;
   readonly targetAmountMinor?: bigint;
   readonly targetDate?: Date | null;
+  readonly expectedUpdatedAt: Date;
+  readonly idempotencyKey: string;
+}
+
+export interface AddSavingsGoalContributionInput {
+  readonly amountMinor: bigint;
+  readonly currency: string;
+  readonly effectiveAt: Date;
+  readonly note?: string | null;
   readonly expectedUpdatedAt: Date;
   readonly idempotencyKey: string;
 }
@@ -363,7 +374,39 @@ export class PlansService {
       createdByAgentActionId: input.agentActionId ?? null,
     };
     try {
-      return await this.plans.createSavingsGoal(record);
+      const created = await this.plans.createSavingsGoal(record);
+      if (currentSavedMinor > 0n) {
+        const opening = contributionRecord(
+          actor,
+          workspaceId,
+          created.id,
+          {
+            amountMinor: currentSavedMinor,
+            currency: created.currency,
+            effectiveAt: created.createdAt,
+            note: "Opening saved amount",
+            expectedUpdatedAt: created.updatedAt,
+            idempotencyKey: `opening:${created.id}`,
+          },
+          "CONTRIBUTION",
+          null,
+          "opening",
+        );
+        const updated = await this.plans.recordSavingsGoalContributions({
+          goalId: created.id,
+          workspaceId,
+          expectedUpdatedAt: created.updatedAt,
+          updatedByUserId: actor.userId,
+          status,
+          contributions: [opening],
+        });
+        if (!updated)
+          throw new ConflictError(
+            "Savings goal changed before its opening contribution could be recorded.",
+          );
+        return { ...updated, currentSavedMinor };
+      }
+      return created;
     } catch (error) {
       if (input.agentActionId) {
         const prior = await this.plans.findSavingsGoalByAgentAction(
@@ -386,13 +429,14 @@ export class PlansService {
     const existing = await this.plans.findSavingsGoal(workspaceId, goalId);
     if (!existing)
       throw new NotFoundError("Savings goal not found in this workspace.");
+    if (input.currentSavedMinor !== undefined)
+      throw new ConflictError("Savings-goal progress can only be changed by contribution events.");
     const targetAmountMinor = assertPositiveAmount(
       input.targetAmountMinor ?? existing.targetAmountMinor,
       "Savings-goal target",
     );
-    const currentSavedMinor = assertNonNegativeAmount(
-      input.currentSavedMinor ?? existing.currentSavedMinor,
-      "Current saved amount",
+    const currentSavedMinor = contributionTotal(
+      await this.plans.listSavingsGoalContributions(workspaceId, goalId),
     );
     const name =
       input.name === undefined ? existing.name : cleanGoalName(input.name);
@@ -481,6 +525,9 @@ export class PlansService {
     const existing = await this.plans.findSavingsGoal(workspaceId, goalId);
     if (!existing)
       throw new NotFoundError("Savings goal not found in this workspace.");
+    const contributedMinor = contributionTotal(
+      await this.plans.listSavingsGoalContributions(workspaceId, goalId),
+    );
     const fingerprint = savingsGoalCommandFingerprint(action, goalId, input);
     const replay = await this.plans.findSavingsGoalManagementAudit(
       workspaceId,
@@ -510,7 +557,7 @@ export class PlansService {
       throw new ConflictError("Archived savings goals cannot be changed.");
     if (
       action === "COMPLETE" &&
-      existing.currentSavedMinor < existing.targetAmountMinor
+      contributedMinor < existing.targetAmountMinor
     )
       throw new ConflictError(
         "A savings goal can be completed only after its target is saved.",
@@ -536,7 +583,7 @@ export class PlansService {
             status: resolveGoalStatus(
               existing.status,
               undefined,
-              existing.currentSavedMinor,
+              contributedMinor,
               targetAmountMinor,
             ),
           }
@@ -583,6 +630,276 @@ export class PlansService {
   ): Promise<SavingsGoalRecord | null> {
     await this.requireManageContext(actor, workspaceId);
     return this.plans.findSavingsGoalByAgentAction(workspaceId, agentActionId);
+  }
+
+  /** Adds planning progress only; this service intentionally has no ledger dependency for writes. */
+  async addSavingsGoalContribution(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    goalId: string,
+    input: AddSavingsGoalContributionInput,
+  ): Promise<SavingsGoalContribution> {
+    return this.writeSavingsGoalContribution(
+      actor,
+      workspaceId,
+      goalId,
+      input,
+      "CONTRIBUTION",
+    );
+  }
+
+  /** A posted contribution is never deleted; reversal negates it in canonical progress. */
+  async reverseSavingsGoalContribution(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    goalId: string,
+    contributionId: string,
+    input: Omit<AddSavingsGoalContributionInput, "amountMinor" | "currency">,
+  ): Promise<SavingsGoalContribution> {
+    const original = await this.plans.findSavingsGoalContribution(
+      workspaceId,
+      contributionId,
+    );
+    if (
+      !original ||
+      original.goalId !== goalId ||
+      original.kind !== "CONTRIBUTION"
+    )
+      throw new NotFoundError("Savings-goal contribution not found.");
+    return this.writeSavingsGoalContribution(
+      actor,
+      workspaceId,
+      goalId,
+      {
+        ...input,
+        amountMinor: original.amountMinor,
+        currency: original.currency,
+      },
+      "REVERSAL",
+      contributionId,
+    );
+  }
+
+  async correctSavingsGoalContribution(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    goalId: string,
+    contributionId: string,
+    input: AddSavingsGoalContributionInput,
+  ): Promise<{
+    reversal: SavingsGoalContribution;
+    replacement: SavingsGoalContribution;
+  }> {
+    const original = await this.plans.findSavingsGoalContribution(
+      workspaceId,
+      contributionId,
+    );
+    if (
+      !original ||
+      original.goalId !== goalId ||
+      original.kind !== "CONTRIBUTION"
+    )
+      throw new NotFoundError("Savings-goal contribution not found.");
+    const context = await this.requireManageContext(actor, workspaceId);
+    const goal = await this.plans.findSavingsGoal(workspaceId, goalId);
+    if (!goal)
+      throw new NotFoundError("Savings goal not found in this workspace.");
+    this.assertContributionInput(goal, input);
+    const replay = await this.plans.findSavingsGoalContributionByIdempotencyKey(
+      workspaceId,
+      actor.userId,
+      input.idempotencyKey,
+    );
+    if (replay) {
+      if (
+        replay.commandFingerprint !==
+        contributionFingerprint("CORRECTION", goalId, input, contributionId)
+      )
+        throw new ConflictError(
+          "This idempotency key was already used for another contribution action.",
+        );
+      const replacement =
+        await this.plans.findSavingsGoalContributionByIdempotencyKey(
+          workspaceId,
+          actor.userId,
+          `${input.idempotencyKey}:replacement`,
+        );
+      if (!replacement)
+        throw new ConflictError(
+          "Contribution correction replay could not be resolved.",
+        );
+      return { reversal: replay, replacement };
+    }
+    if (goal.status === "ARCHIVED")
+      throw new ConflictError("Archived savings goals cannot be changed.");
+    if (goal.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
+      throw new ConflictError(
+        "Savings goal changed before its contribution could be recorded.",
+      );
+    const entries = await this.plans.listSavingsGoalContributions(
+      workspaceId,
+      goalId,
+    );
+    if (
+      entries.some((entry) => entry.reversesContributionId === contributionId)
+    )
+      throw new ConflictError(
+        "Savings-goal contribution has already been reversed.",
+      );
+    const current = contributionTotal(entries);
+    const next = current - original.amountMinor + input.amountMinor;
+    const reversal = contributionRecord(
+      actor,
+      workspaceId,
+      goalId,
+      {
+        ...input,
+        amountMinor: original.amountMinor,
+        currency: original.currency,
+      },
+      "REVERSAL",
+      contributionId,
+      contributionFingerprint("CORRECTION", goalId, input, contributionId),
+    );
+    const replacement = contributionRecord(
+      actor,
+      workspaceId,
+      goalId,
+      { ...input, idempotencyKey: `${input.idempotencyKey}:replacement` },
+      "CONTRIBUTION",
+      null,
+      contributionFingerprint(
+        "CORRECTION_REPLACEMENT",
+        goalId,
+        input,
+        contributionId,
+      ),
+    );
+    const updated = await this.plans.recordSavingsGoalContributions({
+      goalId,
+      workspaceId,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      updatedByUserId: actor.userId,
+      status: resolveGoalStatus(
+        goal.status,
+        undefined,
+        next,
+        goal.targetAmountMinor,
+      ),
+      contributions: [reversal, replacement],
+    });
+    if (!updated)
+      throw new ConflictError(
+        "Savings goal changed before its contribution could be recorded.",
+      );
+    void context;
+    return {
+      reversal: { ...reversal, createdAt: updated.updatedAt },
+      replacement: { ...replacement, createdAt: updated.updatedAt },
+    };
+  }
+
+  private async writeSavingsGoalContribution(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    goalId: string,
+    input: AddSavingsGoalContributionInput,
+    kind: "CONTRIBUTION" | "REVERSAL",
+    reversesContributionId: string | null = null,
+  ): Promise<SavingsGoalContribution> {
+    await this.requireManageContext(actor, workspaceId);
+    const goal = await this.plans.findSavingsGoal(workspaceId, goalId);
+    if (!goal)
+      throw new NotFoundError("Savings goal not found in this workspace.");
+    this.assertContributionInput(goal, input);
+    const fingerprint = contributionFingerprint(
+      kind,
+      goalId,
+      input,
+      reversesContributionId,
+    );
+    const replay = await this.plans.findSavingsGoalContributionByIdempotencyKey(
+      workspaceId,
+      actor.userId,
+      input.idempotencyKey,
+    );
+    if (replay) {
+      if (replay.commandFingerprint !== fingerprint)
+        throw new ConflictError(
+          "This idempotency key was already used for another contribution action.",
+        );
+      return replay;
+    }
+    if (goal.status === "ARCHIVED")
+      throw new ConflictError("Archived savings goals cannot be changed.");
+    if (goal.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
+      throw new ConflictError(
+        "Savings goal changed before its contribution could be recorded.",
+      );
+    const entries = await this.plans.listSavingsGoalContributions(
+      workspaceId,
+      goalId,
+    );
+    if (
+      reversesContributionId &&
+      entries.some(
+        (entry) => entry.reversesContributionId === reversesContributionId,
+      )
+    )
+      throw new ConflictError(
+        "Savings-goal contribution has already been reversed.",
+      );
+    const delta =
+      kind === "CONTRIBUTION" ? input.amountMinor : -input.amountMinor;
+    const entry = contributionRecord(
+      actor,
+      workspaceId,
+      goalId,
+      input,
+      kind,
+      reversesContributionId,
+      fingerprint,
+    );
+    const updated = await this.plans.recordSavingsGoalContributions({
+      goalId,
+      workspaceId,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      updatedByUserId: actor.userId,
+      status: resolveGoalStatus(
+        goal.status,
+        undefined,
+        contributionTotal(entries) + delta,
+        goal.targetAmountMinor,
+      ),
+      contributions: [entry],
+    });
+    if (!updated)
+      throw new ConflictError(
+        "Savings goal changed before its contribution could be recorded.",
+      );
+    return { ...entry, createdAt: updated.updatedAt };
+  }
+
+  private assertContributionInput(
+    goal: SavingsGoalRecord,
+    input: AddSavingsGoalContributionInput,
+  ): void {
+    assertPositiveAmount(input.amountMinor, "Contribution amount");
+    if (input.currency !== goal.currency)
+      throw new ConflictError(
+        "Contribution currency must match the savings goal currency.",
+      );
+    assertValidDate(input.effectiveAt, "Contribution effective date");
+    if (
+      input.note !== undefined &&
+      input.note !== null &&
+      input.note.trim().length > 500
+    )
+      throw new ConflictError("Contribution note is too long.");
+    if (!input.idempotencyKey.trim() || input.idempotencyKey.length > 180)
+      throw new ConflictError("An idempotency key is required.");
+    if (!Number.isFinite(input.expectedUpdatedAt.getTime()))
+      throw new ConflictError("An expected savings-goal version is required.");
   }
 
   async listBudgetSummaries(
@@ -637,8 +954,22 @@ export class PlansService {
   ): Promise<SavingsGoalSummary[]> {
     const context = await this.requireReadContext(actor, workspaceId);
     const goals = await this.plans.listSavingsGoals(workspaceId);
-    return goals.map((goal) =>
-      summarizeSavingsGoal(goal, context.preferences.timezone, now),
+    return Promise.all(
+      goals.map(async (goal) =>
+        summarizeSavingsGoal(
+          {
+            ...goal,
+            currentSavedMinor: contributionTotal(
+              await this.plans.listSavingsGoalContributions(
+                workspaceId,
+                goal.id,
+              ),
+            ),
+          },
+          context.preferences.timezone,
+          now,
+        ),
+      ),
     );
   }
 
@@ -651,8 +982,31 @@ export class PlansService {
     const context = await this.requireReadContext(actor, workspaceId);
     const goal = await this.plans.findSavingsGoal(workspaceId, goalId);
     return goal
-      ? summarizeSavingsGoal(goal, context.preferences.timezone, now)
+      ? summarizeSavingsGoal(
+          {
+            ...goal,
+            currentSavedMinor: contributionTotal(
+              await this.plans.listSavingsGoalContributions(
+                workspaceId,
+                goal.id,
+              ),
+            ),
+          },
+          context.preferences.timezone,
+          now,
+        )
       : null;
+  }
+
+  async listSavingsGoalContributions(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    goalId: string,
+  ): Promise<SavingsGoalContribution[]> {
+    await this.requireReadContext(actor, workspaceId);
+    if (!(await this.plans.findSavingsGoal(workspaceId, goalId)))
+      throw new NotFoundError("Savings goal not found in this workspace.");
+    return this.plans.listSavingsGoalContributions(workspaceId, goalId);
   }
 
   private async assertBudgetInput(
@@ -984,4 +1338,62 @@ function resolveGoalStatus(
   }
   if (requested) return requested;
   return previous === "COMPLETED" ? "ACTIVE" : previous;
+}
+
+function contributionTotal(
+  entries: readonly SavingsGoalContribution[],
+): bigint {
+  return entries.reduce(
+    (total, entry) =>
+      total +
+      (entry.kind === "CONTRIBUTION" ? entry.amountMinor : -entry.amountMinor),
+    0n,
+  );
+}
+
+function contributionFingerprint(
+  kind: string,
+  goalId: string,
+  input: AddSavingsGoalContributionInput,
+  reversesContributionId: string | null,
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        kind,
+        goalId,
+        amountMinor: input.amountMinor.toString(),
+        currency: input.currency,
+        effectiveAt: input.effectiveAt.toISOString(),
+        note: input.note?.trim() ?? null,
+        reversesContributionId,
+        expectedUpdatedAt: input.expectedUpdatedAt.toISOString(),
+      }),
+    )
+    .digest("hex");
+}
+
+function contributionRecord(
+  actor: AuthenticatedActor,
+  workspaceId: string,
+  goalId: string,
+  input: AddSavingsGoalContributionInput,
+  kind: SavingsGoalContribution["kind"],
+  reversesContributionId: string | null,
+  commandFingerprint: string,
+): CreateSavingsGoalContribution {
+  return {
+    id: randomUUID(),
+    workspaceId,
+    goalId,
+    kind,
+    amountMinor: input.amountMinor,
+    currency: input.currency,
+    effectiveAt: new Date(input.effectiveAt),
+    note: input.note?.trim() || null,
+    reversesContributionId,
+    actorUserId: actor.userId,
+    idempotencyKey: input.idempotencyKey.trim(),
+    commandFingerprint,
+  };
 }

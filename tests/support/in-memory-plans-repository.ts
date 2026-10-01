@@ -1,4 +1,8 @@
-import type { BudgetRecord, SavingsGoalRecord } from "@/modules/plans/domain";
+import type {
+  BudgetRecord,
+  SavingsGoalContribution,
+  SavingsGoalRecord,
+} from "@/modules/plans/domain";
 import type {
   BudgetManagementAudit,
   BudgetUpdate,
@@ -7,6 +11,7 @@ import type {
   PlansRepository,
   SavingsGoalUpdate,
   SavingsGoalManagementAudit,
+  CreateSavingsGoalContribution,
 } from "@/modules/plans/repositories/plans-repository";
 
 export class InMemoryPlansRepository implements PlansRepository {
@@ -17,6 +22,7 @@ export class InMemoryPlansRepository implements PlansRepository {
     string,
     SavingsGoalManagementAudit
   >();
+  readonly contributions = new Map<string, SavingsGoalContribution>();
 
   async createBudget(input: CreateBudgetRecord): Promise<BudgetRecord> {
     const now = new Date();
@@ -179,5 +185,60 @@ export class InMemoryPlansRepository implements PlansRepository {
       `${input.workspaceId}:${input.actorUserId}:${input.idempotencyKey}`,
       input,
     );
+  }
+  async listSavingsGoalContributions(
+    workspaceId: string,
+    goalId: string,
+  ): Promise<SavingsGoalContribution[]> {
+    return [...this.contributions.values()]
+      .filter(
+        (item) => item.workspaceId === workspaceId && item.goalId === goalId,
+      )
+      .sort(
+        (a, b) =>
+          a.effectiveAt.getTime() - b.effectiveAt.getTime() ||
+          a.createdAt.getTime() - b.createdAt.getTime(),
+      );
+  }
+  async findSavingsGoalContribution(
+    workspaceId: string,
+    contributionId: string,
+  ): Promise<SavingsGoalContribution | null> {
+    const item = this.contributions.get(contributionId);
+    return item?.workspaceId === workspaceId ? item : null;
+  }
+  async findSavingsGoalContributionByIdempotencyKey(
+    workspaceId: string,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<SavingsGoalContribution | null> {
+    return (
+      [...this.contributions.values()].find(
+        (item) =>
+          item.workspaceId === workspaceId &&
+          item.actorUserId === actorUserId &&
+          item.idempotencyKey === idempotencyKey,
+      ) ?? null
+    );
+  }
+  async recordSavingsGoalContributions(input: {
+    goalId: string;
+    workspaceId: string;
+    expectedUpdatedAt: Date;
+    updatedByUserId: string;
+    status: SavingsGoalRecord["status"];
+    contributions: readonly CreateSavingsGoalContribution[];
+  }): Promise<SavingsGoalRecord | null> {
+    const goal = await this.updateSavingsGoal(
+      input.workspaceId,
+      input.goalId,
+      { updatedByUserId: input.updatedByUserId, status: input.status },
+      input.expectedUpdatedAt,
+    );
+    if (!goal) return null;
+    const now = new Date();
+    for (const item of input.contributions)
+      this.contributions.set(item.id, { ...item, createdAt: now });
+    return goal;
   }
 }

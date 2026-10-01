@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   check,
+  foreignKey,
   index,
   pgEnum,
   pgTable,
@@ -139,6 +140,67 @@ export const savingsGoals = pgTable(
       sql`${table.currentSavedMinor} >= 0`,
     ),
     check("savings_goal_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
+  ],
+);
+
+export const savingsGoalContributions = pgTable(
+  "savings_goal_contribution",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => savingsGoals.id, { onDelete: "restrict" }),
+    kind: varchar("kind", { length: 16 }).notNull(),
+    amountMinor: bigint("amount_minor", { mode: "bigint" }).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull(),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
+    note: varchar("note", { length: 500 }),
+    reversesContributionId: text("reverses_contribution_id"),
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }).notNull(),
+    commandFingerprint: varchar("command_fingerprint", {
+      length: 128,
+    }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.reversesContributionId],
+      foreignColumns: [table.id],
+      name: "savings_goal_contribution_reverses_contribution_id_fk",
+    }).onDelete("restrict"),
+    index("savings_goal_contribution_goal_effective_idx").on(
+      table.workspaceId,
+      table.goalId,
+      table.effectiveAt,
+    ),
+    uniqueIndex("savings_goal_contribution_workspace_actor_key_unique").on(
+      table.workspaceId,
+      table.actorUserId,
+      table.idempotencyKey,
+    ),
+    uniqueIndex("savings_goal_contribution_reversal_unique")
+      .on(table.reversesContributionId)
+      .where(sql`${table.reversesContributionId} IS NOT NULL`),
+    check(
+      "savings_goal_contribution_kind_check",
+      sql`${table.kind} IN ('CONTRIBUTION', 'REVERSAL')`,
+    ),
+    check(
+      "savings_goal_contribution_amount_positive_check",
+      sql`${table.amountMinor} > 0`,
+    ),
+    check(
+      "savings_goal_contribution_currency_check",
+      sql`${table.currency} ~ '^[A-Z]{3}$'`,
+    ),
   ],
 );
 

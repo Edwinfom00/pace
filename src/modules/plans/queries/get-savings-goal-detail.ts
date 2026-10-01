@@ -16,13 +16,15 @@ export async function getSavingsGoalDetail({
   readonly goalId: string;
   readonly now: Date;
 }) {
-  const summary = await getPlansService().getSavingsGoalSummary(
+  const service = getPlansService();
+  const summary = await service.getSavingsGoalSummary(
     actor,
     workspaceId,
     goalId,
     now,
   );
   if (!summary) return null;
+  const contributions = await service.listSavingsGoalContributions(actor, workspaceId, goalId);
   return {
     goal: summary.goal,
     metrics: {
@@ -39,8 +41,11 @@ export async function getSavingsGoalDetail({
           requiredDailyMinor: summary.requiredDailyMinor,
         }
       : null,
-    history: null,
-    contributions: null,
+    history: contributions,
+    contributions: {
+      items: contributions,
+      latest: contributions.at(-1) ?? null,
+    },
     linkedAccount: null,
     capabilities: {
       ...summary.capabilities,

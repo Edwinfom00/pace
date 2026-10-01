@@ -50,6 +50,23 @@ export interface SavingsGoalRecord {
   readonly updatedAt: Date;
 }
 
+/** Planning-only, append-only savings progress. It is never a ledger movement. */
+export interface SavingsGoalContribution {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly goalId: string;
+  readonly kind: "CONTRIBUTION" | "REVERSAL";
+  readonly amountMinor: bigint;
+  readonly currency: string;
+  readonly effectiveAt: Date;
+  readonly note: string | null;
+  readonly reversesContributionId: string | null;
+  readonly actorUserId: string;
+  readonly idempotencyKey: string;
+  readonly commandFingerprint: string;
+  readonly createdAt: Date;
+}
+
 export interface BudgetSummary {
   readonly budget: BudgetRecord;
   readonly periodStart: Date;

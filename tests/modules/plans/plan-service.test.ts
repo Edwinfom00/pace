@@ -146,9 +146,13 @@ test("savings progress is explicit and required pace is deterministic", async ()
   assert.equal(summary?.requiredDailyMinor, 117n);
   assert.equal(summary?.completed, false);
 
-  const completed = await plans.updateSavingsGoal(owner, workspaceOne, goal.id, { currentSavedMinor: 1_000n });
-  assert.equal(completed.status, "COMPLETED");
-  assert.equal(completed.currentSavedMinor, 1_000n);
+  const completedContribution = await plans.addSavingsGoalContribution(owner, workspaceOne, goal.id, {
+    amountMinor: 700n, currency: "XAF", effectiveAt: new Date("2026-06-15T00:00:00.000Z"), expectedUpdatedAt: goal.updatedAt, idempotencyKey: "complete-explicit-contribution",
+  });
+  const completed = await plans.getSavingsGoalSummary(owner, workspaceOne, goal.id);
+  assert.equal(completedContribution.kind, "CONTRIBUTION");
+  assert.equal(completed?.goal.status, "COMPLETED");
+  assert.equal(completed?.goal.currentSavedMinor, 1_000n);
 });
 
 test("goal creation is idempotent, exact, authorized, and has no ledger side effects", async () => {
@@ -187,6 +191,38 @@ test("savings-goal detail summary is workspace-scoped and never infers account b
   assert.equal(detail?.targetDateDaysRemaining, 6n);
   assert.equal(detail?.requiredDailyMinor, 125n);
   assert.equal(await plans.getSavingsGoalSummary(owner, workspaceTwo, goal.id), null);
+});
+
+test("contributions are append-only planning truth with reversals, idempotency, lifecycle, and no financial side effects", async () => {
+  const { ledgerRecords, plans, plansRecords } = await createFixture();
+  const goal = await plans.createSavingsGoal(owner, workspaceOne, { name: "Trip", targetAmountMinor: 1_000n, targetDate: null });
+  const before = ledgerRecords.transactions.size;
+  const first = await plans.addSavingsGoalContribution(owner, workspaceOne, goal.id, { amountMinor: 600n, currency: "XAF", effectiveAt: new Date("2026-06-01T00:00:00Z"), expectedUpdatedAt: goal.updatedAt, idempotencyKey: "contribution-1" });
+  const replay = await plans.addSavingsGoalContribution(owner, workspaceOne, goal.id, { amountMinor: 600n, currency: "XAF", effectiveAt: new Date("2026-06-01T00:00:00Z"), expectedUpdatedAt: goal.updatedAt, idempotencyKey: "contribution-1" });
+  assert.equal(replay.id, first.id);
+  await assert.rejects(plans.addSavingsGoalContribution(owner, workspaceOne, goal.id, { amountMinor: 1n, currency: "USD", effectiveAt: new Date(), expectedUpdatedAt: first.createdAt, idempotencyKey: "wrong-currency" }), ConflictError);
+  const second = await plans.addSavingsGoalContribution(owner, workspaceOne, goal.id, { amountMinor: 600n, currency: "XAF", effectiveAt: new Date("2026-06-02T00:00:00Z"), expectedUpdatedAt: plansRecords.goals.get(goal.id)!.updatedAt, idempotencyKey: "contribution-2" });
+  const complete = await plans.getSavingsGoalSummary(owner, workspaceOne, goal.id);
+  assert.equal(complete?.goal.currentSavedMinor, 1_200n);
+  assert.equal(complete?.remainingMinor, 0n);
+  assert.equal(complete?.progressBps, 12_000n);
+  assert.equal(complete?.goal.status, "COMPLETED");
+  const reversal = await plans.reverseSavingsGoalContribution(owner, workspaceOne, goal.id, second.id, { effectiveAt: new Date("2026-06-03T00:00:00Z"), expectedUpdatedAt: plansRecords.goals.get(goal.id)!.updatedAt, idempotencyKey: "contribution-reversal" });
+  assert.equal(reversal.kind, "REVERSAL");
+  const after = await plans.getSavingsGoalSummary(owner, workspaceOne, goal.id);
+  assert.equal(after?.goal.currentSavedMinor, 600n);
+  assert.equal(after?.goal.status, "ACTIVE");
+  assert.equal((await plans.listSavingsGoalContributions(owner, workspaceOne, goal.id)).length, 3);
+  const correction = await plans.correctSavingsGoalContribution(owner, workspaceOne, goal.id, first.id, {
+    amountMinor: 500n, currency: "XAF", effectiveAt: new Date("2026-06-04T00:00:00Z"), expectedUpdatedAt: plansRecords.goals.get(goal.id)!.updatedAt, idempotencyKey: "contribution-correction",
+  });
+  assert.equal(correction.reversal.reversesContributionId, first.id);
+  assert.equal((await plans.getSavingsGoalSummary(owner, workspaceOne, goal.id))?.goal.currentSavedMinor, 500n);
+  assert.equal((await plans.listSavingsGoalContributions(owner, workspaceOne, goal.id)).length, 5);
+  assert.equal(ledgerRecords.transactions.size, before);
+  await plans.archiveSavingsGoal(owner, workspaceOne, goal.id, { expectedUpdatedAt: plansRecords.goals.get(goal.id)!.updatedAt, idempotencyKey: "archive-after-contributions" });
+  await assert.rejects(plans.addSavingsGoalContribution(owner, workspaceOne, goal.id, { amountMinor: 1n, currency: "XAF", effectiveAt: new Date(), expectedUpdatedAt: plansRecords.goals.get(goal.id)!.updatedAt, idempotencyKey: "archived-contribution" }), ConflictError);
+  await assert.rejects(plans.addSavingsGoalContribution(owner, workspaceTwo, goal.id, { amountMinor: 1n, currency: "XAF", effectiveAt: new Date(), expectedUpdatedAt: new Date(), idempotencyKey: "wrong-workspace" }), NotFoundError);
 });
 
 test("savings-goal management edits future planning fields only and preserves explicit progress", async () => {
