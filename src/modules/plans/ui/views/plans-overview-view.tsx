@@ -404,6 +404,31 @@ function Rail({
   );
 }
 
+function ForecastPreview({
+  href,
+  labels,
+}: {
+  readonly href: string;
+  readonly labels: PlansUiLabels;
+}) {
+  return (
+    <Link
+      className="group flex items-center justify-between gap-4 rounded-[12px] border border-[#dce7f8] bg-[#f8fbff] p-4 transition-colors hover:bg-[#f1f7ff] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#2563eb]"
+      href={href}>
+      <div className="flex min-w-0 items-center gap-3">
+        <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-[#e8f1ff] text-[#2867e8]">
+          <FiBarChart2 className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[14px] font-semibold text-[#1a2944]">{labels.forecast.title}</h2>
+          <p className="mt-0.5 text-[12px] leading-4 text-[#60708b]">{labels.forecast.subtitle}</p>
+        </div>
+      </div>
+      <span className="shrink-0 text-[12px] font-semibold text-[#1769e8]">{labels.forecasts} →</span>
+    </Link>
+  );
+}
+
 export function PlansOverviewView({
   overview,
   labels,
@@ -504,14 +529,10 @@ export function PlansOverviewView({
                     timeZone={timeZone}
                     workspaceSlug={workspaceSlug}
                   />
-                  <section className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-5">
-                    <h2 className="text-[14px] font-semibold text-[#1a2944]">
-                      {labels.forecasts}
-                    </h2>
-                    <p className="mt-1 text-[13px] text-[#71809a]">
-                      {labels.unavailable}
-                    </p>
-                  </section>
+                  <ForecastPreview
+                    href={`/w/${workspaceSlug}/plans/forecast`}
+                    labels={labels}
+                  />
                   <section className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-5">
                     <h2 className="text-[14px] font-semibold text-[#1a2944]">
                       {labels.rules}
@@ -528,6 +549,7 @@ export function PlansOverviewView({
                 </p>
               }
               labels={labels}
+              forecastHref={`/w/${workspaceSlug}/plans/forecast`}
             />
           </div>
           <div className="min-w-0 xl:sticky xl:top-5" id="ask-pace">

@@ -49,6 +49,124 @@ export type PlansUiLabels = {
   readonly period: string;
   readonly category: string;
   readonly goalDetail: Readonly<Record<string, string>>;
+  readonly forecast: Readonly<Record<string, string>>;
+};
+
+const forecastLabels: Record<
+  "en" | "fr" | "de",
+  Readonly<Record<string, string>>
+> = {
+  en: {
+    title: "Forecast",
+    subtitle:
+      "See how your balances could evolve based on your recurring items.",
+    horizon30: "Next 30 days",
+    horizon60: "Next 60 days",
+    horizon90: "Next 90 days",
+    projectedBalance: "Projected balance",
+    totalInflows: "Total inflows",
+    totalOutflows: "Total outflows",
+    recurringItems: "Recurring items",
+    balanceOverTime: "Projected balance over time",
+    balanceBreakdown: "Balance breakdown",
+    startingBalance: "Starting balance",
+    incomes: "Inflows",
+    expenses: "Outflows",
+    keyInsights: "Key insights",
+    upcoming: "Upcoming recurring items",
+    projectedAccounts: "Projected account balances",
+    noRecurringTitle: "No recurring items yet",
+    noRecurringDescription:
+      "Add recurring income or expenses to see a forecast of your future balance.",
+    addRecurring: "Add recurring item",
+    retry: "Retry",
+    errorTitle: "Unable to load forecast",
+    errorDescription:
+      "We couldn't generate your forecast right now. Please try again.",
+    loading: "Updating forecast…",
+    itemsOn: "Items on {date}",
+    variable: "Variable",
+    fixed: "Fixed",
+    positiveBalance: "Your balance stays positive throughout this period.",
+    balanceIncrease: "Your balance is expected to increase.",
+    balanceDecrease: "Your balance is expected to decrease.",
+    occurrence: "occurrence",
+    occurrences: "occurrences",
+  },
+  fr: {
+    title: "Prévisions",
+    subtitle:
+      "Découvrez comment vos soldes pourraient évoluer selon vos éléments récurrents.",
+    horizon30: "30 prochains jours",
+    horizon60: "60 prochains jours",
+    horizon90: "90 prochains jours",
+    projectedBalance: "Solde prévisionnel",
+    totalInflows: "Entrées totales",
+    totalOutflows: "Sorties totales",
+    recurringItems: "Éléments récurrents",
+    balanceOverTime: "Solde prévisionnel dans le temps",
+    balanceBreakdown: "Répartition du solde",
+    startingBalance: "Solde initial",
+    incomes: "Entrées",
+    expenses: "Sorties",
+    keyInsights: "Informations clés",
+    upcoming: "Éléments récurrents à venir",
+    projectedAccounts: "Soldes de comptes prévisionnels",
+    noRecurringTitle: "Aucun élément récurrent",
+    noRecurringDescription:
+      "Ajoutez des revenus ou dépenses récurrents pour voir une prévision de votre solde futur.",
+    addRecurring: "Ajouter un élément récurrent",
+    retry: "Réessayer",
+    errorTitle: "Impossible de charger les prévisions",
+    errorDescription:
+      "Nous ne pouvons pas générer vos prévisions pour le moment. Veuillez réessayer.",
+    loading: "Mise à jour des prévisions…",
+    itemsOn: "Éléments du {date}",
+    variable: "Variable",
+    fixed: "Fixe",
+    positiveBalance: "Votre solde reste positif sur toute la période.",
+    balanceIncrease: "Votre solde devrait augmenter.",
+    balanceDecrease: "Votre solde devrait diminuer.",
+    occurrence: "occurrence",
+    occurrences: "occurrences",
+  },
+  de: {
+    title: "Prognose",
+    subtitle:
+      "Sehen Sie, wie sich Ihre Kontostände anhand wiederkehrender Elemente entwickeln könnten.",
+    horizon30: "Nächste 30 Tage",
+    horizon60: "Nächste 60 Tage",
+    horizon90: "Nächste 90 Tage",
+    projectedBalance: "Prognostizierter Saldo",
+    totalInflows: "Gesamteinnahmen",
+    totalOutflows: "Gesamtausgaben",
+    recurringItems: "Wiederkehrende Elemente",
+    balanceOverTime: "Prognostizierter Saldo im Zeitverlauf",
+    balanceBreakdown: "Saldoaufteilung",
+    startingBalance: "Anfangssaldo",
+    incomes: "Einnahmen",
+    expenses: "Ausgaben",
+    keyInsights: "Wichtige Hinweise",
+    upcoming: "Anstehende wiederkehrende Elemente",
+    projectedAccounts: "Prognostizierte Kontostände",
+    noRecurringTitle: "Noch keine wiederkehrenden Elemente",
+    noRecurringDescription:
+      "Fügen Sie wiederkehrende Einnahmen oder Ausgaben hinzu, um eine Prognose Ihres künftigen Saldos zu sehen.",
+    addRecurring: "Wiederkehrendes Element hinzufügen",
+    retry: "Erneut versuchen",
+    errorTitle: "Prognose konnte nicht geladen werden",
+    errorDescription:
+      "Ihre Prognose konnte gerade nicht erstellt werden. Bitte versuchen Sie es erneut.",
+    loading: "Prognose wird aktualisiert…",
+    itemsOn: "Elemente am {date}",
+    variable: "Variabel",
+    fixed: "Fest",
+    positiveBalance: "Ihr Saldo bleibt während des gesamten Zeitraums positiv.",
+    balanceIncrease: "Ihr Saldo wird voraussichtlich steigen.",
+    balanceDecrease: "Ihr Saldo wird voraussichtlich sinken.",
+    occurrence: "Vorkommen",
+    occurrences: "Vorkommen",
+  },
 };
 
 const createBudgetLabels = {
@@ -182,7 +300,7 @@ const budgetManagementLabels = {
   archiveError: "We could not archive this budget. Please try again.",
 };
 
-const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
+const labels: Record<"en" | "fr" | "de", Omit<PlansUiLabels, "forecast">> = {
   en: {
     createBudget: createBudgetLabels,
     createSavingsGoal: createSavingsGoalLabels,
@@ -251,24 +369,32 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
         "No canonical contribution history is available for this goal.",
       addContribution: "Add contribution",
       addingContribution: "Adding…",
-      contributionHelper: "This updates your goal progress only. No money will be moved automatically.",
+      contributionHelper:
+        "This updates your goal progress only. No money will be moved automatically.",
       amount: "Amount",
       effectiveDate: "Effective date",
       invalidEffectiveDate: "Enter a valid effective date.",
       noteOptional: "Note (optional)",
-      contributionInvalid: "Enter an amount greater than zero and check the effective date.",
-      contributionUnavailable: "This goal is no longer available for contributions.",
-      contributionError: "We could not add this contribution. Please try again.",
+      contributionInvalid:
+        "Enter an amount greater than zero and check the effective date.",
+      contributionUnavailable:
+        "This goal is no longer available for contributions.",
+      contributionError:
+        "We could not add this contribution. Please try again.",
       contribution: "Contribution",
       reversal: "Reversal",
       correctContribution: "Correct contribution",
       reverseContribution: "Reverse contribution",
-      correctionHelper: "The original contribution will stay in history. Its effect will be replaced with this corrected amount; no money, transactions, transfers, or account balances will change.",
-      reversalHelper: "The original contribution will stay in history and its effect on goal progress will become zero. No money, transactions, transfers, or account balances will change.",
+      correctionHelper:
+        "The original contribution will stay in history. Its effect will be replaced with this corrected amount; no money, transactions, transfers, or account balances will change.",
+      reversalHelper:
+        "The original contribution will stay in history and its effect on goal progress will become zero. No money, transactions, transfers, or account balances will change.",
       correctingContribution: "Correcting…",
       reversingContribution: "Reversing…",
-      correctionError: "We could not correct this contribution. Please try again.",
-      reversalError: "We could not reverse this contribution. Please try again.",
+      correctionError:
+        "We could not correct this contribution. Please try again.",
+      reversalError:
+        "We could not reverse this contribution. Please try again.",
       insights: "Goal insights",
       details: "Goal details",
       created: "Created",
@@ -290,11 +416,13 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
       saving: "Saving…",
       editError: "We could not save your changes. Please try again.",
       archiveTitle: "Archive savings goal",
-      archiveDescription: "This goal will leave active plans. Its progress and history will be preserved. No money is moved and no transaction is deleted.",
+      archiveDescription:
+        "This goal will leave active plans. Its progress and history will be preserved. No money is moved and no transaction is deleted.",
       archiving: "Archiving…",
       archiveError: "We could not archive this goal. Please try again.",
       completeTitle: "Complete savings goal",
-      completeDescription: "This is a planning status only. It does not move money, create a transaction, transfer funds, or change account balances.",
+      completeDescription:
+        "This is a planning status only. It does not move money, create a transaction, transfer funds, or change account balances.",
       completing: "Completing…",
       completeError: "We could not complete this goal. Please try again.",
       changed: "This goal changed since you opened it.",
@@ -495,24 +623,32 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
         "Aucun historique de contributions canonique n’est disponible pour cet objectif.",
       addContribution: "Ajouter une contribution",
       addingContribution: "Ajout…",
-      contributionHelper: "Cela met à jour uniquement la progression de votre objectif. Aucun argent ne sera déplacé automatiquement.",
+      contributionHelper:
+        "Cela met à jour uniquement la progression de votre objectif. Aucun argent ne sera déplacé automatiquement.",
       amount: "Montant",
       effectiveDate: "Date d’effet",
       invalidEffectiveDate: "Saisissez une date d’effet valide.",
       noteOptional: "Note (facultatif)",
-      contributionInvalid: "Saisissez un montant supérieur à zéro et vérifiez la date d’effet.",
-      contributionUnavailable: "Cet objectif n’est plus disponible pour les contributions.",
-      contributionError: "Nous n’avons pas pu ajouter cette contribution. Veuillez réessayer.",
+      contributionInvalid:
+        "Saisissez un montant supérieur à zéro et vérifiez la date d’effet.",
+      contributionUnavailable:
+        "Cet objectif n’est plus disponible pour les contributions.",
+      contributionError:
+        "Nous n’avons pas pu ajouter cette contribution. Veuillez réessayer.",
       contribution: "Contribution",
       reversal: "Annulation",
       correctContribution: "Corriger la contribution",
       reverseContribution: "Annuler la contribution",
-      correctionHelper: "La contribution d’origine restera dans l’historique. Son effet sera remplacé par ce montant corrigé ; aucun argent, aucune transaction, aucun virement ni aucun solde ne sera modifié.",
-      reversalHelper: "La contribution d’origine restera dans l’historique et son effet sur la progression de l’objectif deviendra nul. Aucun argent, aucune transaction, aucun virement ni aucun solde ne sera modifié.",
+      correctionHelper:
+        "La contribution d’origine restera dans l’historique. Son effet sera remplacé par ce montant corrigé ; aucun argent, aucune transaction, aucun virement ni aucun solde ne sera modifié.",
+      reversalHelper:
+        "La contribution d’origine restera dans l’historique et son effet sur la progression de l’objectif deviendra nul. Aucun argent, aucune transaction, aucun virement ni aucun solde ne sera modifié.",
       correctingContribution: "Correction…",
       reversingContribution: "Annulation…",
-      correctionError: "Nous n’avons pas pu corriger cette contribution. Veuillez réessayer.",
-      reversalError: "Nous n’avons pas pu annuler cette contribution. Veuillez réessayer.",
+      correctionError:
+        "Nous n’avons pas pu corriger cette contribution. Veuillez réessayer.",
+      reversalError:
+        "Nous n’avons pas pu annuler cette contribution. Veuillez réessayer.",
       insights: "Aperçus de l’objectif",
       details: "Détails de l’objectif",
       created: "Créé",
@@ -529,16 +665,20 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
       archive: "Archiver l’objectif",
       complete: "Terminer l’objectif",
       editTitle: "Modifier l’objectif d’épargne",
-      editDescription: "Mettez à jour les détails de planification de cet objectif.",
+      editDescription:
+        "Mettez à jour les détails de planification de cet objectif.",
       save: "Enregistrer les modifications",
       saving: "Enregistrement…",
-      editError: "Impossible d’enregistrer vos modifications. Veuillez réessayer.",
+      editError:
+        "Impossible d’enregistrer vos modifications. Veuillez réessayer.",
       archiveTitle: "Archiver l’objectif d’épargne",
-      archiveDescription: "Cet objectif quittera les plans actifs. Sa progression et son historique seront conservés. Aucun argent ne sera déplacé et aucune transaction ne sera supprimée.",
+      archiveDescription:
+        "Cet objectif quittera les plans actifs. Sa progression et son historique seront conservés. Aucun argent ne sera déplacé et aucune transaction ne sera supprimée.",
       archiving: "Archivage…",
       archiveError: "Impossible d’archiver cet objectif. Veuillez réessayer.",
       completeTitle: "Terminer l’objectif d’épargne",
-      completeDescription: "Il s’agit uniquement d’un état de planification. Cela ne déplace pas d’argent, ne crée pas de transaction, n’effectue pas de virement et ne modifie aucun solde.",
+      completeDescription:
+        "Il s’agit uniquement d’un état de planification. Cela ne déplace pas d’argent, ne crée pas de transaction, n’effectue pas de virement et ne modifie aucun solde.",
       completing: "Finalisation…",
       completeError: "Impossible de terminer cet objectif. Veuillez réessayer.",
       changed: "Cet objectif a changé depuis son ouverture.",
@@ -741,24 +881,32 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
         "Für dieses Ziel ist kein kanonischer Beitragsverlauf verfügbar.",
       addContribution: "Beitrag hinzufügen",
       addingContribution: "Wird hinzugefügt…",
-      contributionHelper: "Dies aktualisiert nur Ihren Zielfortschritt. Es wird kein Geld automatisch bewegt.",
+      contributionHelper:
+        "Dies aktualisiert nur Ihren Zielfortschritt. Es wird kein Geld automatisch bewegt.",
       amount: "Betrag",
       effectiveDate: "Wirksamkeitsdatum",
       invalidEffectiveDate: "Geben Sie ein gültiges Wirksamkeitsdatum ein.",
       noteOptional: "Notiz (optional)",
-      contributionInvalid: "Geben Sie einen Betrag größer als null ein und prüfen Sie das Wirksamkeitsdatum.",
-      contributionUnavailable: "Dieses Ziel ist nicht mehr für Beiträge verfügbar.",
-      contributionError: "Dieser Beitrag konnte nicht hinzugefügt werden. Bitte versuchen Sie es erneut.",
+      contributionInvalid:
+        "Geben Sie einen Betrag größer als null ein und prüfen Sie das Wirksamkeitsdatum.",
+      contributionUnavailable:
+        "Dieses Ziel ist nicht mehr für Beiträge verfügbar.",
+      contributionError:
+        "Dieser Beitrag konnte nicht hinzugefügt werden. Bitte versuchen Sie es erneut.",
       contribution: "Beitrag",
       reversal: "Stornierung",
       correctContribution: "Beitrag korrigieren",
       reverseContribution: "Beitrag stornieren",
-      correctionHelper: "Der ursprüngliche Beitrag bleibt im Verlauf. Seine Wirkung wird durch diesen korrigierten Betrag ersetzt; Geld, Transaktionen, Überweisungen und Kontostände bleiben unverändert.",
-      reversalHelper: "Der ursprüngliche Beitrag bleibt im Verlauf und seine Wirkung auf den Zielfortschritt wird null. Geld, Transaktionen, Überweisungen und Kontostände bleiben unverändert.",
+      correctionHelper:
+        "Der ursprüngliche Beitrag bleibt im Verlauf. Seine Wirkung wird durch diesen korrigierten Betrag ersetzt; Geld, Transaktionen, Überweisungen und Kontostände bleiben unverändert.",
+      reversalHelper:
+        "Der ursprüngliche Beitrag bleibt im Verlauf und seine Wirkung auf den Zielfortschritt wird null. Geld, Transaktionen, Überweisungen und Kontostände bleiben unverändert.",
       correctingContribution: "Wird korrigiert…",
       reversingContribution: "Wird storniert…",
-      correctionError: "Dieser Beitrag konnte nicht korrigiert werden. Bitte versuchen Sie es erneut.",
-      reversalError: "Dieser Beitrag konnte nicht storniert werden. Bitte versuchen Sie es erneut.",
+      correctionError:
+        "Dieser Beitrag konnte nicht korrigiert werden. Bitte versuchen Sie es erneut.",
+      reversalError:
+        "Dieser Beitrag konnte nicht storniert werden. Bitte versuchen Sie es erneut.",
       insights: "Zieleinblicke",
       details: "Zieldetails",
       created: "Erstellt",
@@ -778,15 +926,20 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
       editDescription: "Aktualisieren Sie die Planungsdetails dieses Ziels.",
       save: "Änderungen speichern",
       saving: "Wird gespeichert…",
-      editError: "Ihre Änderungen konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+      editError:
+        "Ihre Änderungen konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",
       archiveTitle: "Sparziel archivieren",
-      archiveDescription: "Dieses Ziel verlässt die aktiven Pläne. Fortschritt und Verlauf bleiben erhalten. Es wird kein Geld bewegt und keine Transaktion gelöscht.",
+      archiveDescription:
+        "Dieses Ziel verlässt die aktiven Pläne. Fortschritt und Verlauf bleiben erhalten. Es wird kein Geld bewegt und keine Transaktion gelöscht.",
       archiving: "Wird archiviert…",
-      archiveError: "Dieses Ziel konnte nicht archiviert werden. Bitte versuchen Sie es erneut.",
+      archiveError:
+        "Dieses Ziel konnte nicht archiviert werden. Bitte versuchen Sie es erneut.",
       completeTitle: "Sparziel abschließen",
-      completeDescription: "Dies ist nur ein Planungsstatus. Es bewegt kein Geld, erstellt keine Transaktion, überträgt keine Mittel und ändert keine Kontostände.",
+      completeDescription:
+        "Dies ist nur ein Planungsstatus. Es bewegt kein Geld, erstellt keine Transaktion, überträgt keine Mittel und ändert keine Kontostände.",
       completing: "Wird abgeschlossen…",
-      completeError: "Dieses Ziel konnte nicht abgeschlossen werden. Bitte versuchen Sie es erneut.",
+      completeError:
+        "Dieses Ziel konnte nicht abgeschlossen werden. Bitte versuchen Sie es erneut.",
       changed: "Dieses Ziel wurde geändert, seit Sie es geöffnet haben.",
       reload: "Neueste Version laden",
     },
@@ -794,5 +947,5 @@ const labels: Record<"en" | "fr" | "de", PlansUiLabels> = {
 };
 
 export function getPlansUiLabels(language: "en" | "fr" | "de"): PlansUiLabels {
-  return labels[language];
+  return { ...labels[language], forecast: forecastLabels[language] };
 }
