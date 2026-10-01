@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/responsive-dialog";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import type { DashboardMessageKey } from "@/i18n/dashboard-messages";
+import type { DashboardLanguage } from "@/i18n/dashboard-messages";
 
 import type { PaceSidebarLabels, SidebarWorkspace } from "./sidebar-types";
 import { WorkspaceSwitcher } from "./workspace-switcher";
@@ -69,10 +70,12 @@ export function WorkspaceHeader({
   workspaces,
   activeWorkspaceSlug,
   labels,
+  language,
 }: {
   workspaces: readonly SidebarWorkspace[];
   activeWorkspaceSlug: string;
   labels: PaceSidebarLabels;
+  language: DashboardLanguage;
 }) {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -122,8 +125,9 @@ export function WorkspaceHeader({
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
           <WorkspaceSwitcher
             activeWorkspaceSlug={activeWorkspaceSlug}
-            className="h-10 w-auto max-w-[9.25rem] rounded-[9px] px-1.5 text-[#24314b] hover:bg-[#f4f6f9] data-[state=open]:bg-[#f4f6f9] max-sm:size-10! max-sm:p-0! max-sm:[&>span]:hidden max-sm:[&>svg]:hidden sm:max-w-[12rem] sm:px-2"
+            className="h-10 w-auto max-w-37 rounded-[9px] px-1.5 text-[#24314b] hover:bg-[#f4f6f9] data-[state=open]:bg-[#f4f6f9] max-sm:size-10! max-sm:p-0! max-sm:[&>span]:hidden max-sm:[&>svg]:hidden sm:max-w-[12rem] sm:px-2"
             labels={labels}
+            language={language}
             workspaces={workspaces}
           />
           <span aria-hidden="true" className="hidden h-7 w-px bg-[#e5e9f0] sm:block" />
@@ -135,7 +139,7 @@ export function WorkspaceHeader({
                 title={labels["header.notifications"]}
                 type="button"
               >
-                <HiOutlineBell aria-hidden="true" className="size-[19px]" />
+                <HiOutlineBell aria-hidden="true" className="size-4.75" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72 rounded-[10px] border-[#e1e6ee] p-0 shadow-[0_8px_8px_rgb(16_24_40/0.06)]">

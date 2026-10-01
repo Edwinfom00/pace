@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenuButton, useSidebar } from "@/components/ui/sidebar";
 import { workspaceTypeMessageKeys } from "@/i18n/dashboard-messages";
+import type { DashboardLanguage } from "@/i18n/dashboard-messages";
 
 import { CreateWorkspaceDialog } from "./create-workspace-dialog";
 import type { PaceSidebarLabels, SidebarWorkspace } from "./sidebar-types";
@@ -34,11 +35,13 @@ export function WorkspaceSwitcher({
   workspaces,
   activeWorkspaceSlug,
   labels,
+  language,
   className,
 }: {
   workspaces: readonly SidebarWorkspace[];
   activeWorkspaceSlug: string;
   labels: PaceSidebarLabels;
+  language: DashboardLanguage;
   className?: string;
 }) {
   const { isMobile, setOpenMobile } = useSidebar();
@@ -195,6 +198,7 @@ export function WorkspaceSwitcher({
       </DropdownMenu>
       <CreateWorkspaceDialog
         labels={labels}
+        language={language}
         onOpenChange={setIsCreateWorkspaceOpen}
         open={isCreateWorkspaceOpen}
       />

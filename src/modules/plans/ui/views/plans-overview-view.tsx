@@ -437,7 +437,7 @@ export function PlansOverviewView({
             </h1>
             <p className="mt-1 text-[13px] text-[#71809a]">{labels.subtitle}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-2">
             <PlansAskPaceButton
               label={labels.askPace}
               language={language}

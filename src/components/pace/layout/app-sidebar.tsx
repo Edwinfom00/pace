@@ -14,6 +14,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import type { DashboardLanguage } from "@/i18n/dashboard-messages";
 
 import { SidebarNavigation } from "./sidebar-navigation";
 import type { PaceSidebarLabels, SidebarWorkspace } from "./sidebar-types";
@@ -37,11 +38,13 @@ function AppSidebar({
   workspaces,
   activeWorkspaceSlug,
   labels,
+  language,
   inboxCount,
 }: {
   workspaces: readonly SidebarWorkspace[];
   activeWorkspaceSlug: string;
   labels: PaceSidebarLabels;
+  language: DashboardLanguage;
   inboxCount?: number;
 }) {
   const { state } = useSidebar();
@@ -85,6 +88,7 @@ function AppSidebar({
             activeWorkspaceSlug={activeWorkspaceSlug}
             className="h-11 min-w-0 flex-1 rounded-[8px] px-0 text-[#34405d] hover:bg-[#f6f8fc] group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-0!"
             labels={labels}
+            language={language}
             workspaces={workspaces}
           />
         </div>
@@ -98,12 +102,14 @@ export function PaceDashboardShell({
   workspaces,
   activeWorkspaceSlug,
   labels,
+  language,
   inboxCount,
 }: {
   children: ReactNode;
   workspaces: readonly SidebarWorkspace[];
   activeWorkspaceSlug: string;
   labels: PaceSidebarLabels;
+  language: DashboardLanguage;
   /** Prepared for a lightweight server-resolved unresolved-item count. */
   inboxCount?: number;
 }) {
@@ -116,12 +122,14 @@ export function PaceDashboardShell({
           activeWorkspaceSlug={activeWorkspaceSlug}
           inboxCount={inboxCount}
           labels={labels}
+          language={language}
         workspaces={workspaces}
         />
         <SidebarInset className="min-h-svh bg-[#fbfcfe]">
           <WorkspaceHeader
             activeWorkspaceSlug={activeWorkspaceSlug}
             labels={labels}
+            language={language}
             workspaces={workspaces}
           />
           {children}

@@ -12,6 +12,7 @@ import {
 } from "react-icons/hi2";
 
 import { Button } from "@/components/ui/button";
+import { CurrencySelect } from "@/components/pace/forms/currency-select";
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -21,8 +22,10 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { Input } from "@/components/ui/input";
-import type { WorkspaceType } from "@/modules/workspaces/domain";
 import { workspaceTypeMessageKeys } from "@/i18n/dashboard-messages";
+import type { DashboardLanguage } from "@/i18n/dashboard-messages";
+import { toCurrencyCode, type CurrencyCode } from "@/money/currency";
+import type { WorkspaceType } from "@/modules/workspaces/domain";
 
 import type { PaceSidebarLabels } from "./sidebar-types";
 import { WorkspaceAvatar } from "./workspace-avatar";
@@ -51,16 +54,19 @@ const workspaceTypeOptions = [
 
 export function CreateWorkspaceDialog({
   labels,
+  language,
   onOpenChange,
   open,
 }: {
   labels: PaceSidebarLabels;
+  language: DashboardLanguage;
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [type, setType] = useState<WorkspaceType>("PERSONAL");
+  const [currency, setCurrency] = useState<CurrencyCode>(() => toCurrencyCode("USD"));
   const [error, setError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const trimmedName = name.trim();
@@ -73,6 +79,7 @@ export function CreateWorkspaceDialog({
     if (!nextOpen) {
       setName("");
       setType("PERSONAL");
+      setCurrency(toCurrencyCode("USD"));
       setError("");
     }
   }
@@ -90,7 +97,7 @@ export function CreateWorkspaceDialog({
 
     try {
       const response = await fetch("/api/workspaces", {
-        body: JSON.stringify({ name: trimmedName, type }),
+        body: JSON.stringify({ name: trimmedName, preferences: { currency }, type }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -103,6 +110,7 @@ export function CreateWorkspaceDialog({
 
       setName("");
       setType("PERSONAL");
+      setCurrency(toCurrencyCode("USD"));
       setError("");
       onOpenChange(false);
       router.push(`/w/${data.workspace.slug}/overview`);
@@ -162,7 +170,24 @@ export function CreateWorkspaceDialog({
               </p>
             ) : null}
 
-            <fieldset>
+            <div className="mt-5">
+              <label className="block text-sm font-medium text-[#333944]" htmlFor="workspace-currency">
+                {labels["workspace.create.currencyLabel"]}
+              </label>
+              <CurrencySelect
+                ariaLabel={labels["workspace.create.currencyLabel"]}
+                emptyLabel={labels["workspace.create.currencyEmpty"]}
+                id="workspace-currency"
+                language={language}
+                onValueChange={setCurrency}
+                placeholder={labels["workspace.create.currencyPlaceholder"]}
+                searchPlaceholder={labels["workspace.create.currencySearchPlaceholder"]}
+                triggerClassName="mt-2 h-10 rounded-[8px] border-[#dfe1e6] px-3 text-sm shadow-none"
+                value={currency}
+              />
+            </div>
+
+            <fieldset className="mt-5 border-none p-0" disabled={isCreating}>
               <legend className="mt-5 text-sm font-medium text-[#333944]">{labels["workspace.create.typeLabel"]}</legend>
               <div className="mt-2 grid gap-1">
                 {workspaceTypeOptions.map((option) => {

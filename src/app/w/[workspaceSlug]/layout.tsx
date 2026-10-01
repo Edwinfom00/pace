@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { PaceDashboardShell } from "@/components/pace/layout/app-sidebar";
 import { getAuthenticatedActor } from "@/authorization/session";
-import { getDashboardLabels } from "@/i18n/dashboard-messages";
+import { getDashboardLabels, toDashboardLanguage } from "@/i18n/dashboard-messages";
 import { getPersistedDashboardLanguage } from "@/i18n/dashboard-server";
 import {
   loginPathForReturnTo,
@@ -35,6 +35,7 @@ export default async function WorkspaceDashboardLayout(props: LayoutProps<"/w/[w
     <PaceDashboardShell
       activeWorkspaceSlug={activeWorkspace.workspace.slug}
       labels={getDashboardLabels(language)}
+      language={toDashboardLanguage(language)}
       workspaces={workspaces.map((workspace) => ({
         id: workspace.id,
         name: workspace.name,
