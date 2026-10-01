@@ -16,6 +16,7 @@ import type { BudgetSummary, SavingsGoalSummary } from "@/modules/plans/domain";
 import type { PlansOverview } from "../../queries/get-plans-overview";
 import { PlansAskPaceButton } from "../components/plans-ask-pace-button";
 import { PlansCreateBudgetControl } from "../components/plans-create-budget-control";
+import { PlansCreateSavingsGoalControl } from "../components/plans-create-savings-goal-control";
 import { PlansTabs } from "../components/plans-tabs";
 import type { PlansUiLabels } from "../plans-ui-labels";
 
@@ -450,6 +451,13 @@ export function PlansOverviewView({
               locale={locale}
               timeZone={timeZone}
               workspaceId={workspaceId}
+            />
+            <PlansCreateSavingsGoalControl
+              currency={workspaceCurrency}
+              labels={labels}
+              locale={locale}
+              workspaceId={workspaceId}
+              workspaceSlug={workspaceSlug}
             />
           </div>
         </header>

@@ -27,6 +27,16 @@ test("Create Budget labels are complete and localized in EN, FR, and DE", () => 
   }
 });
 
+test("Create Savings Goal labels are complete and localized in EN, FR, and DE", () => {
+  for (const language of ["en", "fr", "de"] as const) {
+    const labels = getPlansUiLabels(language).createSavingsGoal;
+    assert.ok(labels.title);
+    assert.ok(labels.targetAmount);
+    assert.ok(labels.targetDate);
+    assert.ok(labels.noMoneyNotice);
+  }
+});
+
 test("Budget management labels are present in EN, FR, and DE", () => {
   for (const language of ["en", "fr", "de"] as const) {
     const labels = getPlansUiLabels(language).budgetManagement;

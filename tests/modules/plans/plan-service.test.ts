@@ -151,6 +151,25 @@ test("savings progress is explicit and required pace is deterministic", async ()
   assert.equal(completed.currentSavedMinor, 1_000n);
 });
 
+test("goal creation is idempotent, exact, authorized, and has no ledger side effects", async () => {
+  const { ledgerRecords, plans, plansRecords } = await createFixture();
+  const beforeTransactions = ledgerRecords.transactions.size;
+  const command = {
+    name: "Home deposit",
+    targetAmountMinor: 9_007_199_254_740_993n,
+    currentSavedMinor: 0n,
+    targetDate: new Date("2026-12-31T00:00:00.000Z"),
+    agentActionId: "8fc9d737-2fa7-4f6b-a16a-62ea57d81b7d",
+  };
+  const created = await plans.createSavingsGoal(owner, workspaceOne, command);
+  const replay = await plans.createSavingsGoal(owner, workspaceOne, command);
+  assert.equal(created.id, replay.id);
+  assert.equal(created.targetAmountMinor, command.targetAmountMinor);
+  assert.equal(plansRecords.goals.size, 1);
+  assert.equal(ledgerRecords.transactions.size, beforeTransactions);
+  await assert.rejects(plans.createSavingsGoal(viewer, workspaceOne, command), AuthorizationError);
+});
+
 test("savings-goal detail summary is workspace-scoped and never infers account balances", async () => {
   const { cash, ledger, plans } = await createFixture();
   const goal = await plans.createSavingsGoal(owner, workspaceOne, {

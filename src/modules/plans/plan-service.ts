@@ -273,7 +273,9 @@ export class PlansService {
     if (action === "EDIT" && existing.status !== "ACTIVE")
       throw new ConflictError("Archived budgets cannot be edited.");
     if (action === "EDIT" && existing.startsOn < currentMonthStart())
-      throw new ConflictError("Only budgets that have not started can be edited; create a new budget for a future period.");
+      throw new ConflictError(
+        "Only budgets that have not started can be edited; create a new budget for a future period.",
+      );
     const merged: CreateBudgetInput = {
       scope: input.scope ?? existing.scope,
       categoryId:
@@ -319,6 +321,13 @@ export class PlansService {
     input: CreateSavingsGoalInput,
   ): Promise<SavingsGoalRecord> {
     const context = await this.requireManageContext(actor, workspaceId);
+    if (input.agentActionId) {
+      const prior = await this.plans.findSavingsGoalByAgentAction(
+        workspaceId,
+        input.agentActionId,
+      );
+      if (prior) return prior;
+    }
     const targetAmountMinor = assertPositiveAmount(
       input.targetAmountMinor,
       "Savings-goal target",
@@ -330,7 +339,7 @@ export class PlansService {
     const name = cleanGoalName(input.name);
     const status: SavingsGoalStatus =
       currentSavedMinor >= targetAmountMinor ? "COMPLETED" : "ACTIVE";
-    return this.plans.createSavingsGoal({
+    const record = {
       id: randomUUID(),
       workspaceId,
       name,
@@ -344,7 +353,19 @@ export class PlansService {
       createdByUserId: actor.userId,
       updatedByUserId: actor.userId,
       createdByAgentActionId: input.agentActionId ?? null,
-    });
+    };
+    try {
+      return await this.plans.createSavingsGoal(record);
+    } catch (error) {
+      if (input.agentActionId) {
+        const prior = await this.plans.findSavingsGoalByAgentAction(
+          workspaceId,
+          input.agentActionId,
+        );
+        if (prior) return prior;
+      }
+      throw error;
+    }
   }
 
   async updateSavingsGoal(
@@ -650,10 +671,7 @@ export function summarizeSavingsGoal(
     progressBps: (goal.currentSavedMinor * 10_000n) / goal.targetAmountMinor,
     requiredDailyMinor:
       goal.targetDate && remainingMinor > 0n
-        ? divideCeiling(
-            remainingMinor,
-            targetDateDaysRemaining!,
-          )
+        ? divideCeiling(remainingMinor, targetDateDaysRemaining!)
         : null,
     targetDateDaysRemaining,
     completed:
