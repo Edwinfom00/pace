@@ -16,7 +16,7 @@ export default async function ForecastPage({
   searchParams,
 }: {
   params: Promise<{ workspaceSlug: string }>;
-  searchParams: Promise<{ horizon?: string }>;
+  searchParams: Promise<{ horizon?: string; account?: string }>;
 }) {
   const { workspaceSlug } = await params;
   const query = await searchParams;
@@ -39,6 +39,7 @@ export default async function ForecastPage({
       actor,
       workspaceId: workspace.workspace.id,
       horizonDays: horizon,
+      accountId: typeof query.account === "string" ? query.account : undefined,
       timeZone: workspace.preferences.timezone,
     }),
   ]);

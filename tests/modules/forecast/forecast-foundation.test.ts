@@ -69,6 +69,27 @@ test("forecast is read-only: input balances and recurring records are not mutate
   assert.equal(JSON.stringify({ balance: xafBalance.currentBalanceMinor.toString(), next: payment.nextOccurrenceAt?.toISOString(), status: payment.status }), before);
 });
 
+test("forecast account filter is canonical, preserves currencies, and excludes unassigned recurring items", () => {
+  const result = buildWorkspaceForecast({
+    balances: [xafBalance, usdBalance],
+    accounts: [account, usdAccount],
+    recurringPayments: [
+      recurring("cash", { accountId: "cash", typicalAmountMinor: 1000n }),
+      recurring("usd", { accountId: "usd", currency: "USD", typicalAmountMinor: 200n }),
+      recurring("unassigned", { accountId: null, typicalAmountMinor: 999n }),
+    ],
+    horizonDays: 30,
+    now,
+    timeZone: "UTC",
+    accountId: "cash",
+  });
+  assert.equal(result.selectedAccountId, "cash");
+  assert.deepEqual(result.currencies.map((currency) => currency.currency), ["XAF"]);
+  assert.equal(result.currencies[0]?.events.length, 1);
+  assert.equal(result.currencies[0]?.points.at(-1)?.projectedClosingBalance.nominalMinor, "99000");
+  assert.equal(result.accounts.length, 2);
+});
+
 test("workspace reader rejects a non-member before any financial read", async () => {
   let reads = 0;
   await assert.rejects(

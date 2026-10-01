@@ -42,6 +42,14 @@ export type CurrencyForecast = {
   readonly openingBalance: ForecastAmount;
   readonly points: readonly ForecastPoint[];
   readonly events: readonly ForecastEvent[];
+  readonly totalInflows: ForecastAmount;
+  readonly totalOutflows: ForecastAmount;
+};
+
+export type ForecastAccountOption = {
+  readonly id: string;
+  readonly name: string;
+  readonly currency: string;
 };
 
 export type WorkspaceForecast = {
@@ -49,6 +57,11 @@ export type WorkspaceForecast = {
   readonly asOf: string;
   readonly timeZone: string;
   readonly currencies: readonly CurrencyForecast[];
+  /** Account choices are emitted by the canonical forecast read, never inferred by the client. */
+  readonly accounts: readonly ForecastAccountOption[];
+  readonly selectedAccountId: string | null;
+  readonly recurringItemCount: number;
+  readonly hasNonNegativeBalances: boolean;
 };
 
 export type BuildWorkspaceForecastInput = {
@@ -58,6 +71,7 @@ export type BuildWorkspaceForecastInput = {
   readonly horizonDays: ForecastHorizonDays;
   readonly now: Date;
   readonly timeZone: string;
+  readonly accountId?: string;
 };
 
 /**
@@ -83,11 +97,31 @@ export function buildWorkspaceForecast(
     nextCalendarDate(calendarDays.at(-1)!),
     input.timeZone,
   ).end;
+  const accountOptions = input.accounts
+    .filter((account) => !account.archivedAt)
+    .map((account) => ({
+      id: account.id,
+      name: account.name,
+      currency: account.currency,
+    }))
+    .sort(
+      (left, right) =>
+        left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
+    );
+  const selectedAccountId = accountOptions.some(
+    (account) => account.id === input.accountId,
+  )
+    ? (input.accountId ?? null)
+    : null;
+  const scopedAccounts = selectedAccountId
+    ? input.accounts.filter((account) => account.id === selectedAccountId)
+    : input.accounts;
   const accountsById = new Map(
-    input.accounts.map((account) => [account.id, account]),
+    scopedAccounts.map((account) => [account.id, account]),
   );
   const openingByCurrency = new Map<string, bigint>();
   for (const balance of input.balances) {
+    if (selectedAccountId && balance.accountId !== selectedAccountId) continue;
     openingByCurrency.set(
       balance.currency,
       (openingByCurrency.get(balance.currency) ?? 0n) +
@@ -97,6 +131,7 @@ export function buildWorkspaceForecast(
 
   const eventsByCurrency = new Map<string, ForecastEvent[]>();
   for (const payment of input.recurringPayments) {
+    if (selectedAccountId && payment.accountId !== selectedAccountId) continue;
     if (payment.status !== "CONFIRMED" || payment.lifecycle !== "ACTIVE")
       continue;
     // The current canonical recurring model has only income and expense; do not infer transfers.
@@ -141,17 +176,30 @@ export function buildWorkspaceForecast(
   const currencies = [
     ...new Set([...openingByCurrency.keys(), ...eventsByCurrency.keys()]),
   ].sort();
+  const builtCurrencies = currencies.map((currency) =>
+    buildCurrencyForecast(
+      currency,
+      openingByCurrency.get(currency) ?? 0n,
+      eventsByCurrency.get(currency) ?? [],
+      calendarDays,
+      input.timeZone,
+    ),
+  );
   return {
     horizonDays: input.horizonDays,
     asOf: input.now.toISOString(),
     timeZone: input.timeZone,
-    currencies: currencies.map((currency) =>
-      buildCurrencyForecast(
-        currency,
-        openingByCurrency.get(currency) ?? 0n,
-        eventsByCurrency.get(currency) ?? [],
-        calendarDays,
-        input.timeZone,
+    currencies: builtCurrencies,
+    accounts: accountOptions,
+    selectedAccountId,
+    recurringItemCount: new Set(
+      builtCurrencies.flatMap((currency) =>
+        currency.events.map((event) => event.recurringId),
+      ),
+    ).size,
+    hasNonNegativeBalances: builtCurrencies.every((currency) =>
+      currency.points.every(
+        (point) => BigInt(point.projectedClosingBalance.minimumMinor) >= 0n,
       ),
     ),
   };
@@ -203,6 +251,16 @@ function buildCurrencyForecast(
     openingBalance: fixedAmount(opening),
     points,
     events: sortedEvents,
+    totalInflows: combine(
+      sortedEvents
+        .filter((event) => event.direction === "INFLOW")
+        .map((event) => event.amount),
+    ),
+    totalOutflows: combine(
+      sortedEvents
+        .filter((event) => event.direction === "OUTFLOW")
+        .map((event) => event.amount),
+    ),
   };
 }
 

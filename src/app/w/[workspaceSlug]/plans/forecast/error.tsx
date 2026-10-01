@@ -1,7 +1,19 @@
 "use client";
+import { type DashboardLanguage } from "@/i18n/dashboard-messages";
 import { getPlansUiLabels } from "@/modules/plans/ui/plans-ui-labels";
+
+function currentLanguage(): DashboardLanguage {
+  if (typeof navigator === "undefined") return "en";
+  const language = navigator.language.toLowerCase();
+  return language.startsWith("fr")
+    ? "fr"
+    : language.startsWith("de")
+      ? "de"
+      : "en";
+}
+
 export default function ForecastError({ reset }: { reset: () => void }) {
-  const labels = getPlansUiLabels("en").forecast;
+  const labels = getPlansUiLabels(currentLanguage()).forecast;
   return (
     <main className="mx-auto grid min-h-100 max-w-355 place-items-center px-5">
       <section className="w-full max-w-lg rounded-[12px] border border-[#fee2e2] bg-[#fff8f8] p-6 text-center">

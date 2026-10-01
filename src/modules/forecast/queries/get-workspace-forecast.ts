@@ -44,6 +44,7 @@ export type GetWorkspaceForecastInput = {
   readonly workspaceId: string;
   readonly horizonDays: ForecastHorizonDays;
   readonly timeZone: string;
+  readonly accountId?: string;
   readonly now?: Date;
 };
 
@@ -72,6 +73,7 @@ export async function getWorkspaceForecastWithReaders(
     workspaceId,
     horizonDays,
     timeZone,
+    accountId,
     now = new Date(),
   }: GetWorkspaceForecastInput,
   readers: WorkspaceForecastReaders,
@@ -89,14 +91,20 @@ export async function getWorkspaceForecastWithReaders(
   return buildWorkspaceForecast({
     balances,
     accounts,
-    recurringPayments: recurring.map((payment) => toRecurringRecord(workspaceId, payment)),
+    recurringPayments: recurring.map((payment) =>
+      toRecurringRecord(workspaceId, payment),
+    ),
     horizonDays,
     now,
     timeZone,
+    accountId,
   });
 }
 
-function toRecurringRecord(workspaceId: string, view: RecurringPaymentView): RecurringPaymentRecord {
+function toRecurringRecord(
+  workspaceId: string,
+  view: RecurringPaymentView,
+): RecurringPaymentRecord {
   return {
     ...view,
     workspaceId,
