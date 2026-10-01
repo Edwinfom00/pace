@@ -42,6 +42,13 @@ export async function getSavingsGoalDetail({
     history: null,
     contributions: null,
     linkedAccount: null,
-    capabilities: { ...summary.capabilities, actionsAvailable: false },
+    capabilities: {
+      ...summary.capabilities,
+      actionsAvailable:
+        summary.capabilities.canEdit ||
+        summary.capabilities.canArchive ||
+        summary.capabilities.canComplete ||
+        summary.capabilities.canReopen,
+    },
   } as const;
 }

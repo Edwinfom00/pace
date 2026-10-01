@@ -13,6 +13,7 @@ import { OverviewAskPace } from "@/modules/overview/ui/components/overview-ask-p
 
 import type { getSavingsGoalDetail } from "../../queries/get-savings-goal-detail";
 import { getPlansUiLabels } from "../plans-ui-labels";
+import { SavingsGoalManagementActions } from "../components/savings-goal-management-actions";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getSavingsGoalDetail>>>;
 const replace = (template: string, values: Record<string, string>) =>
@@ -123,13 +124,20 @@ export function SavingsGoalDetailView({
               </div>
             </div>
           </div>
-          {!capabilities.actionsAvailable ? (
+          {capabilities.actionsAvailable ? (
+            <SavingsGoalManagementActions
+              capabilities={capabilities}
+              goal={goal}
+              labels={labels}
+              workspaceId={workspaceId}
+            />
+          ) : (
             <span
               aria-label={labels.more}
               className="grid size-10 place-items-center rounded-[9px] border border-[#e5e9f0] bg-white text-[#526788]">
               <FiMoreHorizontal aria-hidden />
             </span>
-          ) : null}
+          )}
         </header>
         <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_clamp(300px,25vw,360px)]">
           <div className="min-w-0 space-y-4">
