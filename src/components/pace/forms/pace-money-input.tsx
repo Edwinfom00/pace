@@ -11,6 +11,7 @@ export type PaceMoneyInputProps = {
   readonly label: string;
   readonly size?: "compact" | "prominent";
   readonly onValueChange: (value: string) => void;
+  readonly required?: boolean;
   readonly value: string;
 };
 
@@ -23,6 +24,7 @@ export function PaceMoneyInput({
   label,
   size = "prominent",
   onValueChange,
+  required = false,
   value,
 }: PaceMoneyInputProps) {
   const inputId = useId();
@@ -34,6 +36,7 @@ export function PaceMoneyInput({
         className="text-[13px] font-medium text-[#384862]"
         htmlFor={inputId}>
         {label}
+        {required ? <span aria-hidden className="ml-0.5 text-[#c23445]">*</span> : null}
       </label>
       <div
         className={`flex min-w-0 items-stretch overflow-hidden border bg-white transition-[border-color,box-shadow] duration-150 ${size === "compact" ? "h-10 rounded-[8px] focus-within:ring-2" : "h-19.5 rounded-[10px] focus-within:ring-3"} ${error ? "border-[#d88690] focus-within:border-[#c55b68] focus-within:ring-[#d88690]/15" : "border-[#d9e1ec] focus-within:border-[#4e7fe3] focus-within:ring-[#5e8fe8]/15"}`}>
@@ -48,6 +51,7 @@ export function PaceMoneyInput({
           onChange={(event) => onValueChange(event.target.value)}
           placeholder="0"
           ref={inputRef}
+          required={required}
           type="text"
           value={value}
         />

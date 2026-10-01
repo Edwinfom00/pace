@@ -130,6 +130,8 @@ export function SavingsGoalDetailView({
               <SavingsGoalContributionDialog
                 goal={goal}
                 labels={labels}
+                locale={locale}
+                timeZone={timeZone}
                 workspaceId={workspaceId}
               />
             ) : null}

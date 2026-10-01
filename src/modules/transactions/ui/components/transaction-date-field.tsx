@@ -13,6 +13,7 @@ export type TransactionDateFieldProps = {
   readonly label: string;
   readonly locale: string;
   readonly onValueChange: (value: Date) => void;
+  readonly required?: boolean;
   readonly timeZone: string;
   readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
   readonly value: Date;
@@ -132,7 +133,7 @@ export function getTransactionFormDateTime(value: string, timeZone: string): {
   };
 }
 
-export function TransactionDateField({ error, label, locale, onValueChange, timeZone, triggerRef, value }: TransactionDateFieldProps) {
+export function TransactionDateField({ error, label, locale, onValueChange, required = false, timeZone, triggerRef, value }: TransactionDateFieldProps) {
   const [open, setOpen] = React.useState(false);
   const [displayedMonth, setDisplayedMonth] = React.useState(() => calendarMonth(value));
   const [focusedDate, setFocusedDate] = React.useState(value);
@@ -209,6 +210,7 @@ export function TransactionDateField({ error, label, locale, onValueChange, time
     <div className="grid min-w-0 gap-2">
       <label className="text-[13px] font-medium text-[#384862]" htmlFor={triggerId}>
         {label}
+        {required ? <span aria-hidden="true" className="ml-0.5 text-[#c23445]">*</span> : null}
       </label>
 
       <Popover.Root onOpenChange={handleOpenChange} open={open}>
