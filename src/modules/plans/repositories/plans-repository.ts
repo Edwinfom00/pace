@@ -1,6 +1,6 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 
-import { db } from "@/db/client";
+import { db, neonSql } from "@/db/client";
 import {
   budgetManagementAudits,
   budgets,
@@ -423,29 +423,110 @@ export class DatabasePlansRepository implements PlansRepository {
     status: SavingsGoalRecord["status"];
     contributions: readonly CreateSavingsGoalContribution[];
   }): Promise<SavingsGoalRecord | null> {
-    return db.transaction(async (tx) => {
-      const [goal] = await tx
-        .update(savingsGoals)
-        .set({
-          updatedByUserId: input.updatedByUserId,
-          status: input.status,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(savingsGoals.workspaceId, input.workspaceId),
-            eq(savingsGoals.id, input.goalId),
-            sql`date_trunc('milliseconds', ${savingsGoals.updatedAt}) = ${input.expectedUpdatedAt}`,
-          ),
+    const contributions = JSON.stringify(
+      input.contributions.map((contribution) => ({
+        id: contribution.id,
+        workspace_id: contribution.workspaceId,
+        goal_id: contribution.goalId,
+        kind: contribution.kind,
+        amount_minor: contribution.amountMinor.toString(),
+        currency: contribution.currency,
+        effective_at: contribution.effectiveAt.toISOString(),
+        note: contribution.note,
+        reverses_contribution_id: contribution.reversesContributionId,
+        actor_user_id: contribution.actorUserId,
+        idempotency_key: contribution.idempotencyKey,
+        command_fingerprint: contribution.commandFingerprint,
+      })),
+    );
+    const rows = await neonSql`
+      WITH updated AS (
+        UPDATE savings_goal AS goal
+        SET
+          updated_by_user_id = ${input.updatedByUserId},
+          status = ${input.status},
+          updated_at = greatest(clock_timestamp(), goal.updated_at + interval '1 millisecond')
+        WHERE goal.workspace_id = ${input.workspaceId}
+          AND goal.id = ${input.goalId}
+          AND date_trunc('milliseconds', goal.updated_at) = ${input.expectedUpdatedAt}
+        RETURNING
+          goal.id,
+          goal.workspace_id AS "workspaceId",
+          goal.name,
+          goal.target_amount_minor AS "targetAmountMinor",
+          goal.current_saved_minor AS "currentSavedMinor",
+          goal.currency,
+          goal.target_date AS "targetDate",
+          goal.status::text AS status,
+          goal.created_by_user_id AS "createdByUserId",
+          goal.updated_by_user_id AS "updatedByUserId",
+          goal.created_by_agent_action_id AS "createdByAgentActionId",
+          goal.created_at AS "createdAt",
+          goal.updated_at AS "updatedAt"
+      ),
+      inserted AS (
+        INSERT INTO savings_goal_contribution (
+          id, workspace_id, goal_id, kind, amount_minor, currency, effective_at,
+          note, reverses_contribution_id, actor_user_id, idempotency_key, command_fingerprint
         )
-        .returning();
-      if (!goal) return null;
-      await tx
-        .insert(savingsGoalContributions)
-        .values([...input.contributions]);
-      return goal;
-    });
+        SELECT
+          contribution.id, contribution.workspace_id, contribution.goal_id,
+          contribution.kind, contribution.amount_minor, contribution.currency,
+          contribution.effective_at, contribution.note,
+          contribution.reverses_contribution_id, contribution.actor_user_id,
+          contribution.idempotency_key, contribution.command_fingerprint
+        FROM jsonb_to_recordset(${contributions}::jsonb) AS contribution(
+          id text,
+          workspace_id text,
+          goal_id text,
+          kind varchar(16),
+          amount_minor bigint,
+          currency varchar(3),
+          effective_at timestamptz,
+          note varchar(500),
+          reverses_contribution_id text,
+          actor_user_id text,
+          idempotency_key varchar(180),
+          command_fingerprint varchar(128)
+        )
+        INNER JOIN updated ON updated.id = contribution.goal_id
+        RETURNING id
+      )
+      SELECT updated.*
+      FROM updated
+      WHERE (SELECT count(*) FROM inserted) = ${input.contributions.length};
+    `;
+    const record = (rows as unknown as readonly RawSavingsGoalRecord[])[0];
+    return record ? mapSavingsGoalRecord(record) : null;
   }
+}
+
+type RawSavingsGoalRecord = Omit<
+  SavingsGoalRecord,
+  "targetAmountMinor" | "currentSavedMinor" | "targetDate" | "createdAt" | "updatedAt"
+> & {
+  targetAmountMinor: bigint | string | number;
+  currentSavedMinor: bigint | string | number;
+  targetDate: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+function mapSavingsGoalRecord(record: RawSavingsGoalRecord): SavingsGoalRecord {
+  return {
+    ...record,
+    targetAmountMinor:
+      typeof record.targetAmountMinor === "bigint"
+        ? record.targetAmountMinor
+        : BigInt(record.targetAmountMinor),
+    currentSavedMinor:
+      typeof record.currentSavedMinor === "bigint"
+        ? record.currentSavedMinor
+        : BigInt(record.currentSavedMinor),
+    targetDate: record.targetDate === null ? null : new Date(record.targetDate),
+    createdAt: new Date(record.createdAt),
+    updatedAt: new Date(record.updatedAt),
+  };
 }
 
 function toContribution(
