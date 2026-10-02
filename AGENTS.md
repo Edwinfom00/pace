@@ -21,6 +21,8 @@ Use the shared `ResponsiveDialog` primitives for product dialogs. Do not import 
 
 ## Code comments
 
-Add comments only when they explain non-obvious intent, invariants, or safety constraints. Do not add or prioritize comments that merely restate the code.
+Do not add comments by default. This includes line comments, block comments and JSDoc on types, props, functions and fields.
+
+A comment is allowed only when the code cannot be understood without it, for example a non-obvious invariant, a safety or financial-correctness constraint, or a workaround for a library bug. Never add a comment that describes what the code, a prop or a type already says. When in doubt, leave it out.
 
 <!-- END:nextjs-agent-rules -->

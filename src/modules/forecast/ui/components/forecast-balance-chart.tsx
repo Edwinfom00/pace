@@ -1,114 +1,135 @@
 "use client";
 
-import {
-  CategoryScale,
-  Chart as ChartJS,
-  Filler,
-  LineElement,
-  LinearScale,
-  PointElement,
-  Tooltip,
-  type ChartData,
-  type ChartOptions,
-} from "chart.js";
-import { Line } from "react-chartjs-2";
+import { useCallback, useMemo } from "react";
+import { FiArrowDown, FiArrowUp } from "react-icons/fi";
 
-import type { CurrencyForecast } from "@/modules/forecast/domain/forecast";
 import {
+  PaceLineChart,
+  type PaceChartBand,
+  type PaceChartSeries,
+} from "@/components/pace/charts/pace-line-chart";
+import type {
+  CurrencyForecast,
+  ForecastHorizonDays,
+  ForecastPoint,
+} from "@/modules/forecast/domain/forecast";
+import {
+  cumulativeForecastFlows,
+  forecastAxisTickIndexes,
+} from "@/modules/forecast/domain/forecast-presentation";
+import {
+  formatForecastLongDate,
+  formatSignedMoney,
+  type ForecastLabels,
+} from "@/modules/forecast/ui/forecast-format";
+import {
+  formatCompactOverviewAmount,
   formatOverviewDate,
   formatOverviewMoney,
   minorToChartValue,
 } from "@/modules/overview/domain/overview-formatters";
 
-ChartJS.register(CategoryScale, Filler, LineElement, LinearScale, PointElement, Tooltip);
-
 export function ForecastBalanceChart({
   currency,
-  description,
+  horizonDays,
+  labels,
   locale,
   onSelect,
+  plotClassName,
   selected,
 }: {
   currency: CurrencyForecast;
-  description: string;
+  horizonDays: ForecastHorizonDays;
+  labels: ForecastLabels;
   locale: string;
   onSelect: (index: number) => void;
-  selected: number;
+  plotClassName?: string;
+  selected: number | null;
 }) {
-  const labels = currency.points.map((point) => formatOverviewDate(point.date, locale));
-  const data: ChartData<"line"> = {
-    labels,
-    datasets: [
+  const code = currency.currency;
+  const flows = useMemo(() => cumulativeForecastFlows(currency), [currency]);
+  const ticks = useMemo(
+    () =>
+      forecastAxisTickIndexes(
+        currency.points.map((point) => point.date),
+        horizonDays,
+      ),
+    [currency, horizonDays],
+  );
+  const series = useMemo<PaceChartSeries<ForecastPoint>[]>(
+    () => [
       {
-        data: currency.points.map((point) => minorToChartValue(point.projectedClosingBalance.maximumMinor, currency.currency)),
-        borderColor: "transparent",
-        pointRadius: 0,
-        pointHitRadius: 0,
-      },
-      {
-        backgroundColor: "rgba(203, 226, 255, 0.62)",
-        borderColor: "transparent",
-        data: currency.points.map((point) => minorToChartValue(point.projectedClosingBalance.minimumMinor, currency.currency)),
-        fill: "-1",
-        pointRadius: 0,
-        pointHitRadius: 0,
-      },
-      {
-        backgroundColor: "#1769e8",
-        borderColor: "#1769e8",
-        borderWidth: 2.5,
-        data: currency.points.map((point) => minorToChartValue(point.projectedClosingBalance.nominalMinor, currency.currency)),
-        fill: false,
-        pointBackgroundColor: (context) => context.dataIndex === selected ? "#1769e8" : "#ffffff",
-        pointBorderColor: "#1769e8",
-        pointBorderWidth: 2,
-        pointHoverRadius: 5,
-        pointRadius: (context) => context.dataIndex === selected ? 4 : 2.5,
-        pointHitRadius: 14,
-        tension: 0.32,
+        key: "projected",
+        label: labels.legendProjected,
+        value: (point) =>
+          minorToChartValue(point.projectedClosingBalance.nominalMinor, code),
+        showPoint: (point) => point.events.length > 0,
       },
     ],
-  };
-  const options: ChartOptions<"line"> = {
-    animation: { duration: 180 },
-    maintainAspectRatio: false,
-    normalized: true,
-    onClick: (_event, elements) => {
-      const index = elements.find((element) => element.datasetIndex === 2)?.index;
-      if (typeof index === "number") onSelect(index);
-    },
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: "#ffffff",
-        bodyColor: "#14203a",
-        borderColor: "#dce6f3",
-        borderWidth: 1,
-        callbacks: {
-          label: (context) => formatOverviewMoney(currency.points[context.dataIndex]!.projectedClosingBalance.nominalMinor, currency.currency, locale),
-        },
-        displayColors: false,
-        padding: 10,
-        titleColor: "#64738c",
-        titleFont: { size: 11, weight: "normal" },
-        bodyFont: { size: 13, weight: "bold" },
-      },
-    },
-    scales: {
-      x: {
-        grid: { color: "#edf1f6", drawTicks: false },
-        ticks: { color: "#71809a", font: { size: 10 }, maxRotation: 0, maxTicksLimit: 5 },
-      },
-      y: {
-        grid: { color: "#e8eef6", drawTicks: false },
-        ticks: {
-          color: "#71809a",
-          font: { size: 10 },
-          callback: (value) => new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 0 }).format(Number(value)),
-        },
-      },
-    },
-  };
+    [code, labels.legendProjected],
+  );
+  const band = useMemo<PaceChartBand<ForecastPoint>>(
+    () => ({
+      label: labels.legendRange,
+      lower: (point) =>
+        minorToChartValue(point.projectedClosingBalance.minimumMinor, code),
+      upper: (point) =>
+        minorToChartValue(point.projectedClosingBalance.maximumMinor, code),
+    }),
+    [code, labels.legendRange],
+  );
+  const xLabel = useCallback(
+    (point: ForecastPoint) => formatOverviewDate(point.date, locale),
+    [locale],
+  );
+  const showXTick = useCallback((index: number) => ticks.has(index), [ticks]);
+  const yTickFormatter = useCallback(
+    (value: number) => formatCompactOverviewAmount(value, locale),
+    [locale],
+  );
+  const valueFormatter = useCallback(
+    (value: number) =>
+      new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency: code,
+        currencyDisplay: "code",
+      }).format(value),
+    [code, locale],
+  );
 
-  return <div aria-label={description} className="h-64 sm:h-72" role="img"><Line data={data} options={options} /></div>;
+  return (
+    <PaceLineChart
+      ariaLabel={labels.chartDescription}
+      band={band}
+      data={currency.points}
+      onPointSelect={onSelect}
+      plotClassName={plotClassName}
+      renderTooltip={(point, index) => (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-[#53627b]">
+            {formatForecastLongDate(point.date, locale)}
+          </p>
+          <p className="text-[15px] font-semibold tracking-[-0.02em] text-[#101a35]">
+            {formatOverviewMoney(point.projectedClosingBalance.nominalMinor, code, locale)}
+          </p>
+          <p className="flex items-center gap-1 text-[11px] font-medium text-[#14945a]">
+            <FiArrowUp aria-hidden className="size-3" />
+            {formatSignedMoney(flows[index]!.inflowMinor, code, locale, "+")}
+            <span className="font-normal text-[#71809a]">{labels.tooltipInflow}</span>
+          </p>
+          <p className="flex items-center gap-1 text-[11px] font-medium text-[#e14958]">
+            <FiArrowDown aria-hidden className="size-3" />
+            {formatSignedMoney(flows[index]!.outflowMinor, code, locale, "-")}
+            <span className="font-normal text-[#71809a]">{labels.tooltipOutflow}</span>
+          </p>
+        </div>
+      )}
+      selectedIndex={selected}
+      series={series}
+      showXTick={showXTick}
+      valueFormatter={valueFormatter}
+      xLabel={xLabel}
+      yTickFormatter={yTickFormatter}
+    />
+  );
 }

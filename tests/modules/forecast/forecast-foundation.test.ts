@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildWorkspaceForecast } from "@/modules/forecast/domain/forecast";
+import { cumulativeForecastFlows, defaultForecastInspectionIndex, forecastAxisTickIndexes, forecastCadence, forecastInsights } from "@/modules/forecast/domain/forecast-presentation";
 import { getWorkspaceForecastWithReaders } from "@/modules/forecast/queries/get-workspace-forecast";
 import { AuthorizationError } from "@/authorization/errors";
 import type { RecurringPaymentRecord } from "@/modules/financial-inbox/domain";
@@ -102,4 +103,43 @@ test("workspace reader rejects a non-member before any financial read", async ()
     AuthorizationError,
   );
   assert.equal(reads, 0);
+});
+
+test("forecast exposes recurring item metadata and per-account projections", () => {
+  const result = forecast(60, [
+    recurring("salary", { direction: "INCOME", typicalAmountMinor: 30_000n, displayName: "Salary" }),
+    recurring("rent", { typicalAmountMinor: 10_000n, displayName: null, normalizedMerchant: "landlord" }),
+  ]);
+  assert.deepEqual(
+    result.recurringItems.map((item) => [item.id, item.name, item.direction]),
+    [["rent", "landlord", "OUTFLOW"], ["salary", "Salary", "INFLOW"]],
+  );
+  const cash = result.accountProjections.find((item) => item.id === "cash")!;
+  assert.equal(cash.currentBalanceMinor, "100000");
+  assert.equal(cash.projectedBalanceMinor, "140000");
+  assert.equal(result.accountProjections.find((item) => item.id === "usd")?.projectedBalanceMinor, "5000");
+});
+
+test("forecast supports six and twelve month horizons", () => {
+  assert.equal(forecast(180 as 30, [recurring("monthly")]).currencies.find((item) => item.currency === "XAF")?.points.length, 180);
+  assert.equal(forecast(365 as 30, [recurring("monthly")]).currencies.find((item) => item.currency === "XAF")?.events.length, 13);
+});
+
+test("forecast presentation derives insights, cumulative flows and axis ticks", () => {
+  const xaf = forecast(90, [
+    recurring("salary", { direction: "INCOME", typicalAmountMinor: 30_000n }),
+    recurring("rent", { typicalAmountMinor: 200_000n }),
+  ]).currencies.find((item) => item.currency === "XAF")!;
+  const flows = cumulativeForecastFlows(xaf);
+  assert.equal(flows.at(-1)?.inflowMinor, xaf.totalInflows.nominalMinor);
+  assert.equal(flows.at(-1)?.outflowMinor, xaf.totalOutflows.nominalMinor);
+  assert.equal(defaultForecastInspectionIndex(xaf), 2);
+  const insights = forecastInsights(xaf);
+  assert.deepEqual(insights[0], { kind: "TREND", direction: "DOWN", deltaMinor: "510000" });
+  assert.equal(insights.find((item) => item.kind === "HEAVY_MONTH")?.kind, "HEAVY_MONTH");
+  assert.equal(insights.find((item) => item.kind === "STABILITY" && item.firstNegativeDate === "2026-02-01")?.kind, "STABILITY");
+  const ticks = forecastAxisTickIndexes(xaf.points.map((point) => point.date), 90);
+  assert.ok(ticks.has(0) && ticks.has(89));
+  assert.equal(forecastCadence(30), "MONTHLY");
+  assert.equal(forecastCadence(10), "CUSTOM");
 });

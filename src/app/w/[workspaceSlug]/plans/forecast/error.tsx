@@ -1,5 +1,10 @@
 "use client";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { FiArrowLeft } from "react-icons/fi";
+
 import { type DashboardLanguage } from "@/i18n/dashboard-messages";
+import { ForecastErrorState } from "@/modules/forecast/ui/components/forecast-state-panels";
 import { getPlansUiLabels } from "@/modules/plans/ui/plans-ui-labels";
 
 function currentLanguage(): DashboardLanguage {
@@ -13,23 +18,25 @@ function currentLanguage(): DashboardLanguage {
 }
 
 export default function ForecastError({ reset }: { reset: () => void }) {
-  const labels = getPlansUiLabels(currentLanguage()).forecast;
+  const labels = getPlansUiLabels(currentLanguage());
+  const { workspaceSlug } = useParams<{ workspaceSlug: string }>();
   return (
-    <main className="mx-auto grid min-h-100 max-w-355 place-items-center px-5">
-      <section className="w-full max-w-lg rounded-[12px] border border-[#fee2e2] bg-[#fff8f8] p-6 text-center">
-        <h1 className="text-[16px] font-semibold text-[#b4232f]">
-          {labels.errorTitle}
+    <main className="min-w-0 px-5 py-7 sm:px-7 sm:py-8 lg:px-10 lg:py-9">
+      <div className="mx-auto max-w-355">
+        <Link
+          className="inline-flex items-center gap-2 text-[13px] text-[#526788] hover:text-[#14213c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563eb]"
+          href={`/w/${workspaceSlug}/plans`}
+        >
+          <FiArrowLeft aria-hidden />
+          {labels.forecast.back}
+        </Link>
+        <h1 className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-[#101a35] sm:text-[30px]">
+          {labels.forecast.title}
         </h1>
-        <p className="mt-2 text-[13px] text-[#71809a]">
-          {labels.errorDescription}
-        </p>
-        <button
-          className="mt-4 rounded-[8px] border border-[#dce4ef] bg-white px-4 py-2 text-[13px] font-semibold text-[#34425c]"
-          onClick={reset}
-          type="button">
-          {labels.retry}
-        </button>
-      </section>
+        <div className="mt-6">
+          <ForecastErrorState labels={labels.forecast} onRetry={reset} />
+        </div>
+      </div>
     </main>
   );
 }

@@ -1,6 +1,7 @@
 import type {
   LedgerAccountBalance,
   LedgerAccountRecord,
+  LedgerAccountType,
 } from "@/modules/ledger/domain";
 import type { RecurringPaymentRecord } from "@/modules/financial-inbox/domain";
 import { projectRecurringPaymentOccurrences } from "@/modules/overview/domain/overview-right-rail";
@@ -10,7 +11,7 @@ import {
   periodForLocalDates,
 } from "@/money/period";
 
-export const FORECAST_HORIZONS = [30, 60, 90] as const;
+export const FORECAST_HORIZONS = [30, 60, 90, 180, 365] as const;
 export type ForecastHorizonDays = (typeof FORECAST_HORIZONS)[number];
 
 export type ForecastAmount = {
@@ -23,6 +24,7 @@ export type ForecastAmount = {
 
 export type ForecastEvent = {
   readonly recurringId: string;
+  readonly accountId: string | null;
   readonly direction: "INFLOW" | "OUTFLOW";
   readonly occursAt: string;
   readonly amount: ForecastAmount;
@@ -52,6 +54,23 @@ export type ForecastAccountOption = {
   readonly currency: string;
 };
 
+export type ForecastRecurringItem = {
+  readonly id: string;
+  readonly name: string | null;
+  readonly direction: "INFLOW" | "OUTFLOW";
+  readonly cadenceDays: number;
+  readonly currency: string;
+};
+
+export type ForecastAccountProjection = {
+  readonly id: string;
+  readonly name: string;
+  readonly type: LedgerAccountType;
+  readonly currency: string;
+  readonly currentBalanceMinor: string;
+  readonly projectedBalanceMinor: string;
+};
+
 export type WorkspaceForecast = {
   readonly horizonDays: ForecastHorizonDays;
   readonly asOf: string;
@@ -60,6 +79,8 @@ export type WorkspaceForecast = {
   /** Account choices are emitted by the canonical forecast read, never inferred by the client. */
   readonly accounts: readonly ForecastAccountOption[];
   readonly selectedAccountId: string | null;
+  readonly recurringItems: readonly ForecastRecurringItem[];
+  readonly accountProjections: readonly ForecastAccountProjection[];
   readonly recurringItemCount: number;
   readonly hasNonNegativeBalances: boolean;
 };
@@ -130,6 +151,7 @@ export function buildWorkspaceForecast(
   }
 
   const eventsByCurrency = new Map<string, ForecastEvent[]>();
+  const recurringItems = new Map<string, ForecastRecurringItem>();
   for (const payment of input.recurringPayments) {
     if (selectedAccountId && payment.accountId !== selectedAccountId) continue;
     if (payment.status !== "CONFIRMED" || payment.lifecycle !== "ACTIVE")
@@ -160,6 +182,7 @@ export function buildWorkspaceForecast(
     for (const occursAt of dates) {
       const event: ForecastEvent = {
         recurringId: payment.id,
+        accountId: payment.accountId,
         direction: payment.direction === "INCOME" ? "INFLOW" : "OUTFLOW",
         occursAt: occursAt.toISOString(),
         amount: recurringAmount(
@@ -170,6 +193,13 @@ export function buildWorkspaceForecast(
       const events = eventsByCurrency.get(payment.currency) ?? [];
       events.push(event);
       eventsByCurrency.set(payment.currency, events);
+      recurringItems.set(payment.id, {
+        id: payment.id,
+        name: payment.displayName ?? payment.normalizedMerchant,
+        direction: event.direction,
+        cadenceDays: payment.cadenceDays,
+        currency: payment.currency,
+      });
     }
   }
 
@@ -185,6 +215,40 @@ export function buildWorkspaceForecast(
       input.timeZone,
     ),
   );
+  const balanceByAccount = new Map(
+    input.balances.map((balance) => [balance.accountId, balance.currentBalanceMinor]),
+  );
+  const accountProjections = scopedAccounts
+    .filter((account) => !account.archivedAt)
+    .map((account) => {
+      const current = balanceByAccount.get(account.id) ?? 0n;
+      const projected = (eventsByCurrency.get(account.currency) ?? [])
+        .filter((event) => event.accountId === account.id)
+        .reduce(
+          (total, event) =>
+            event.direction === "INFLOW"
+              ? total + BigInt(event.amount.nominalMinor)
+              : total - BigInt(event.amount.nominalMinor),
+          current,
+        );
+      return {
+        id: account.id,
+        name: account.name,
+        type: account.type,
+        currency: account.currency,
+        currentBalanceMinor: current.toString(),
+        projectedBalanceMinor: projected.toString(),
+      };
+    })
+    .sort((left, right) => {
+      const difference =
+        BigInt(right.projectedBalanceMinor) - BigInt(left.projectedBalanceMinor);
+      return difference === 0n
+        ? left.name.localeCompare(right.name)
+        : difference > 0n
+          ? 1
+          : -1;
+    });
   return {
     horizonDays: input.horizonDays,
     asOf: input.now.toISOString(),
@@ -192,6 +256,10 @@ export function buildWorkspaceForecast(
     currencies: builtCurrencies,
     accounts: accountOptions,
     selectedAccountId,
+    recurringItems: [...recurringItems.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
+    accountProjections,
     recurringItemCount: new Set(
       builtCurrencies.flatMap((currency) =>
         currency.events.map((event) => event.recurringId),
