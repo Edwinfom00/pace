@@ -847,3 +847,7 @@
     box-shadow: none;
   }
 }
+
+.pdfCanvas {
+  display: block;
+}
