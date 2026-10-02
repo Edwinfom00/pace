@@ -253,6 +253,13 @@
       "when": 1790100000011,
       "tag": "0035_savings_goal_contributions",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790100000012,
+      "tag": "0036_plan_rules",
+      "breakpoints": true
     }
   ]
 }

@@ -332,6 +332,37 @@ export class FinancialInboxService {
     return { transaction, classification: record, inboxItems, recurringCandidate };
   }
 
+  async findOpenReviewItem(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    transactionId: string,
+  ): Promise<FinancialInboxItemRecord | null> {
+    await this.requirePermission(actor.userId, workspaceId, "read");
+    return this.repository.findOpenInboxItem(workspaceId, transactionId, "CLASSIFICATION_REVIEW");
+  }
+
+  async routeTransactionForReview(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: { readonly transactionId: string; readonly details: Record<string, unknown> },
+  ): Promise<FinancialInboxItemRecord> {
+    await this.requirePermission(actor.userId, workspaceId, "manage_ledger");
+    const transaction = await this.ledger.findTransaction(workspaceId, input.transactionId);
+    if (!transaction) throw new NotFoundError("Transaction not found in this workspace.");
+    if (!isClassifiableTransaction(transaction.kind))
+      throw new ConflictError("Only expenses and income can be routed for review.");
+    const classification = await this.repository.findClassificationByTransaction(workspaceId, transaction.id);
+    return this.createInboxItemIfMissing({
+      workspaceId,
+      transactionId: transaction.id,
+      classificationId: classification?.id ?? null,
+      recurringPaymentId: null,
+      reason: "CLASSIFICATION_REVIEW",
+      actions: ["CLASSIFY_TRANSACTION", "DISMISS"],
+      details: input.details,
+    });
+  }
+
   async listInbox(actor: AuthenticatedActor, workspaceId: string): Promise<FinancialInboxView[]> {
     await this.requirePermission(actor.userId, workspaceId, "read");
     const items = await this.repository.listInboxItems(workspaceId);
