@@ -43,7 +43,7 @@ export interface OverviewDailyBrief {
   readonly tip: OverviewTip | null;
 }
 
-const insightPriority: Readonly<Record<InsightType, number>> = {
+export const insightPriority: Readonly<Record<InsightType, number>> = {
   BUDGET_EXCEEDED: 0,
   GOAL_OFF_TRACK: 1,
   SPENDING_PACE_HIGH: 2,
@@ -289,7 +289,7 @@ function presentDailyBriefItem(
   };
 }
 
-function toneForInsight(insight: InsightRecord): OverviewInsightTone {
+export function toneForInsight(insight: Pick<InsightRecord, "type" | "severity" | "data">): OverviewInsightTone {
   if (
     insight.severity === "CRITICAL" ||
     insight.type === "BUDGET_AT_RISK" ||
@@ -311,8 +311,8 @@ function toneForInsight(insight: InsightRecord): OverviewInsightTone {
   return "neutral";
 }
 
-function descriptionForInsight(
-  insight: InsightRecord,
+export function descriptionForInsight(
+  insight: Pick<InsightRecord, "type" | "data">,
   labels: DashboardLabels,
   locale: string,
 ): string | null {

@@ -176,3 +176,23 @@ test("plan-oriented insights reuse the established M3 approval flow rather than 
   // The service constructor accepts only list methods from PlansRepository. TypeScript prevents an insight from bypassing M3.
   assert.equal(typeof service.refreshWorkspace, "function");
 });
+
+test("period previews derive canonical candidates without persistence, scoped to one currency and honoring dismissals", async () => {
+  const { repository, service, transactions } = await fixture();
+  const refreshed = await service.refreshForMember(owner, firstWorkspace, now);
+  const dismissed = refreshed.insights[0]!;
+  await service.dismiss(owner, firstWorkspace, dismissed.id);
+  const persistedCount = repository.records.size;
+
+  transactions.push({ ...transactions[1]!, id: "euro", currency: "EUR", amountMinor: 999_999n });
+  const preview = await service.previewPeriodInsights(owner, firstWorkspace, { asOf: now, currency: "USD" });
+
+  assert.equal(repository.records.size, persistedCount);
+  assert.ok(preview.length > 0);
+  assert.ok(preview.every((candidate) => candidate.data.currency === "USD"));
+  assert.ok(!preview.some((candidate) => candidate.fingerprint === dismissed.fingerprint));
+  await assert.rejects(
+    service.previewPeriodInsights(member, secondWorkspace, { asOf: now, currency: "USD" }),
+    AuthorizationError,
+  );
+});

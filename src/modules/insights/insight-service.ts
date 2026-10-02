@@ -3,7 +3,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { AuthorizationError, NotFoundError } from "@/authorization/errors";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
 import type { AuthenticatedActor } from "@/authorization/session";
-import { deriveInsightCandidates, type InsightSeverity } from "@/money/insights";
+import {
+  deriveInsightCandidates,
+  type InsightCandidate,
+  type InsightSeverity,
+} from "@/money/insights";
 import { calendarMonthPeriod } from "@/money/period";
 import type { FinancialInboxRepository } from "@/modules/financial-inbox/repositories/financial-inbox-repository";
 import { isUserFacingLedgerTransaction } from "@/modules/ledger/domain";
@@ -26,17 +30,28 @@ const SEVERITY_RANK: Readonly<Record<InsightSeverity, number>> = {
   CRITICAL: 2,
 };
 
-
 export class InsightService {
   constructor(
     private readonly insights: InsightRepository,
-    private readonly ledger: Pick<LedgerRepository, "listTransactions" | "listMerchants">,
-    private readonly plans: Pick<PlansRepository, "listBudgets" | "listSavingsGoals">,
-    private readonly inbox: Pick<FinancialInboxRepository, "listRecurringPayments">,
+    private readonly ledger: Pick<
+      LedgerRepository,
+      "listTransactions" | "listMerchants"
+    >,
+    private readonly plans: Pick<
+      PlansRepository,
+      "listBudgets" | "listSavingsGoals"
+    >,
+    private readonly inbox: Pick<
+      FinancialInboxRepository,
+      "listRecurringPayments"
+    >,
     private readonly workspaces: Pick<WorkspaceRepository, "findMemberContext">,
   ) {}
 
-  async listInsights(actor: AuthenticatedActor, workspaceId: string): Promise<InsightRecord[]> {
+  async listInsights(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+  ): Promise<InsightRecord[]> {
     await this.requireReadContext(actor, workspaceId);
     return this.insights.listInsights(workspaceId);
   }
@@ -50,7 +65,11 @@ export class InsightService {
     return this.refreshWorkspace(workspaceId, now);
   }
 
-  async markRead(actor: AuthenticatedActor, workspaceId: string, insightId: string): Promise<InsightRecord> {
+  async markRead(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    insightId: string,
+  ): Promise<InsightRecord> {
     await this.requireReadContext(actor, workspaceId);
     const updated = await this.insights.transitionInsight(
       workspaceId,
@@ -59,11 +78,16 @@ export class InsightService {
       "READ",
       new Date(),
     );
-    if (!updated) throw new NotFoundError("Active insight not found in this workspace.");
+    if (!updated)
+      throw new NotFoundError("Active insight not found in this workspace.");
     return updated;
   }
 
-  async dismiss(actor: AuthenticatedActor, workspaceId: string, insightId: string): Promise<InsightRecord> {
+  async dismiss(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    insightId: string,
+  ): Promise<InsightRecord> {
     await this.requireReadContext(actor, workspaceId);
     const updated = await this.insights.transitionInsight(
       workspaceId,
@@ -72,7 +96,10 @@ export class InsightService {
       "DISMISSED",
       new Date(),
     );
-    if (!updated) throw new NotFoundError("Dismissible insight not found in this workspace.");
+    if (!updated)
+      throw new NotFoundError(
+        "Dismissible insight not found in this workspace.",
+      );
     return updated;
   }
 
@@ -81,7 +108,10 @@ export class InsightService {
     workspaceId: string,
   ): Promise<MemberNotificationPreference> {
     await this.requireReadContext(actor, workspaceId);
-    return (await this.insights.findPreference(workspaceId, actor.userId)) ?? defaultPreference(workspaceId, actor.userId);
+    return (
+      (await this.insights.findPreference(workspaceId, actor.userId)) ??
+      defaultPreference(workspaceId, actor.userId)
+    );
   }
 
   async updateNotificationPreference(
@@ -116,12 +146,16 @@ export class InsightService {
       notificationId,
       new Date(),
     );
-    if (!updated) throw new NotFoundError("Notification not found in this workspace.");
+    if (!updated)
+      throw new NotFoundError("Notification not found in this workspace.");
     return updated;
   }
 
   /** Trusted scheduler entry point. No member identity or model input is accepted. */
-  async runProactiveReview(cadence: NotificationCadence, now = new Date()): Promise<{
+  async runProactiveReview(
+    cadence: NotificationCadence,
+    now = new Date(),
+  ): Promise<{
     workspaceCount: number;
     notificationCount: number;
   }> {
@@ -132,46 +166,72 @@ export class InsightService {
       if (!settings) continue;
       // A monthly close describes the whole local calendar month that just ended,
       // not the first few hours of the new month.
-      const effectiveNow = cadence === "MONTHLY"
-        ? new Date(calendarMonthPeriod(now, settings.timezone).start.getTime() - 1)
-        : now;
+      const effectiveNow =
+        cadence === "MONTHLY"
+          ? new Date(
+              calendarMonthPeriod(now, settings.timezone).start.getTime() - 1,
+            )
+          : now;
       const result = await this.refreshWorkspace(workspaceId, effectiveNow);
-      notificationCount += await this.createRelevantNotifications(workspaceId, cadence, result.insights);
+      notificationCount += await this.createRelevantNotifications(
+        workspaceId,
+        cadence,
+        result.insights,
+      );
     }
     return { workspaceCount: workspaceIds.length, notificationCount };
   }
 
-  /** Trusted, deterministic refresh used by schedules and guarded HTTP reads. */
-  async refreshWorkspace(workspaceId: string, now = new Date()): Promise<InsightRefreshResult> {
+  async previewPeriodInsights(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: { readonly asOf: Date; readonly currency?: string },
+  ): Promise<InsightCandidate[]> {
+    await this.requireReadContext(actor, workspaceId);
     const settings = await this.insights.findWorkspaceSettings(workspaceId);
     if (!settings) throw new NotFoundError("Workspace preferences not found.");
-    const [transactions, merchants, budgets, goals, recurringPayments, existing] = await Promise.all([
-      this.ledger.listTransactions(workspaceId),
-      this.ledger.listMerchants(workspaceId),
-      this.plans.listBudgets(workspaceId),
-      this.plans.listSavingsGoals(workspaceId),
-      this.inbox.listRecurringPayments(workspaceId),
+    const [candidates, existing] = await Promise.all([
+      this.deriveCandidates(
+        workspaceId,
+        settings.timezone,
+        input.asOf,
+        input.currency ?? settings.currency,
+        true,
+      ),
       this.insights.listInsights(workspaceId),
     ]);
-    const merchantNames = Object.fromEntries(merchants.map((merchant) => [merchant.id, merchant.name]));
-    const candidates = deriveInsightCandidates({
-      currency: settings.currency,
-      timeZone: settings.timezone,
-      now,
-      transactions: transactions.filter(isUserFacingLedgerTransaction),
-      budgets,
-      goals,
-      // Manual recurring patterns are intentional projections, not historical
-      // evidence for a recurring-price insight. They become eligible only when
-      // the existing detector has transaction evidence to analyze.
-      recurringPayments: recurringPayments.filter(
-        (payment): payment is typeof payment & { normalizedMerchant: string } =>
-          payment.origin === "DETECTED" && payment.normalizedMerchant !== null,
+    const dismissed = new Set(
+      existing
+        .filter((insight) => insight.status === "DISMISSED")
+        .map((insight) => insight.fingerprint),
+    );
+    return candidates.filter(
+      (candidate) => !dismissed.has(candidate.fingerprint),
+    );
+  }
+
+  /** Trusted, deterministic refresh used by schedules and guarded HTTP reads. */
+  async refreshWorkspace(
+    workspaceId: string,
+    now = new Date(),
+  ): Promise<InsightRefreshResult> {
+    const settings = await this.insights.findWorkspaceSettings(workspaceId);
+    if (!settings) throw new NotFoundError("Workspace preferences not found.");
+    const [candidates, existing] = await Promise.all([
+      this.deriveCandidates(
+        workspaceId,
+        settings.timezone,
+        now,
+        settings.currency,
       ),
-      merchantNames,
-    });
-    const byFingerprint = new Map(existing.map((insight) => [insight.fingerprint, insight]));
-    const detected = new Set(candidates.map((candidate) => candidate.fingerprint));
+      this.insights.listInsights(workspaceId),
+    ]);
+    const byFingerprint = new Map(
+      existing.map((insight) => [insight.fingerprint, insight]),
+    );
+    const detected = new Set(
+      candidates.map((candidate) => candidate.fingerprint),
+    );
     const persisted: InsightRecord[] = [];
     const newlyActive: InsightRecord[] = [];
 
@@ -179,14 +239,22 @@ export class InsightService {
       const prior = byFingerprint.get(candidate.fingerprint);
       const record = prior
         ? await this.insights.updateInsightFromCandidate(prior, candidate, now)
-        : await this.insights.createInsight(workspaceId, randomUUID(), candidate, now);
+        : await this.insights.createInsight(
+            workspaceId,
+            randomUUID(),
+            candidate,
+            now,
+          );
       persisted.push(record);
       if (!prior || prior.status === "RESOLVED") newlyActive.push(record);
     }
 
     let resolvedCount = 0;
     for (const prior of existing) {
-      if (!detected.has(prior.fingerprint) && (prior.status === "ACTIVE" || prior.status === "READ")) {
+      if (
+        !detected.has(prior.fingerprint) &&
+        (prior.status === "ACTIVE" || prior.status === "READ")
+      ) {
         const resolved = await this.insights.transitionInsight(
           workspaceId,
           prior.id,
@@ -201,6 +269,49 @@ export class InsightService {
     return { insights: persisted, newlyActive, resolvedCount };
   }
 
+  private async deriveCandidates(
+    workspaceId: string,
+    timeZone: string,
+    now: Date,
+    currency: string,
+    currencyScoped = false,
+  ): Promise<InsightCandidate[]> {
+    const [transactions, merchants, budgets, goals, recurringPayments] =
+      await Promise.all([
+        this.ledger.listTransactions(workspaceId),
+        this.ledger.listMerchants(workspaceId),
+        this.plans.listBudgets(workspaceId),
+        this.plans.listSavingsGoals(workspaceId),
+        this.inbox.listRecurringPayments(workspaceId),
+      ]);
+    // A scoped preview never aggregates across currencies; other currencies are
+    // reported separately instead of being converted or summed.
+    const inScope = <T extends { readonly currency: string }>(
+      values: readonly T[],
+    ) =>
+      currencyScoped
+        ? values.filter((value) => value.currency === currency)
+        : [...values];
+    return deriveInsightCandidates({
+      currency,
+      timeZone,
+      now,
+      transactions: inScope(transactions.filter(isUserFacingLedgerTransaction)),
+      budgets: inScope(budgets),
+      goals: inScope(goals),
+      // Manual recurring patterns are intentional projections, not historical
+      // evidence for a recurring-price insight. They become eligible only when
+      // the existing detector has transaction evidence to analyze.
+      recurringPayments: inScope(recurringPayments).filter(
+        (payment): payment is typeof payment & { normalizedMerchant: string } =>
+          payment.origin === "DETECTED" && payment.normalizedMerchant !== null,
+      ),
+      merchantNames: Object.fromEntries(
+        merchants.map((merchant) => [merchant.id, merchant.name]),
+      ),
+    });
+  }
+
   private async createRelevantNotifications(
     workspaceId: string,
     cadence: NotificationCadence,
@@ -209,7 +320,9 @@ export class InsightService {
     const recipients = await this.insights.listRecipients(workspaceId);
     let created = 0;
     for (const recipient of recipients) {
-      for (const insight of insights.filter((candidate) => shouldNotify(recipient, cadence, candidate))) {
+      for (const insight of insights.filter((candidate) =>
+        shouldNotify(recipient, cadence, candidate),
+      )) {
         const notification = await this.insights.createNotification({
           id: randomUUID(),
           workspaceId,
@@ -233,14 +346,24 @@ export class InsightService {
     return created;
   }
 
-  private async requireReadContext(actor: AuthenticatedActor, workspaceId: string): Promise<void> {
-    const context = await this.workspaces.findMemberContext(workspaceId, actor.userId);
-    if (!context) throw new AuthorizationError("You are not a member of this workspace.");
+  private async requireReadContext(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+  ): Promise<void> {
+    const context = await this.workspaces.findMemberContext(
+      workspaceId,
+      actor.userId,
+    );
+    if (!context)
+      throw new AuthorizationError("You are not a member of this workspace.");
     assertWorkspacePermission(context.membership.role, "read");
   }
 }
 
-function defaultPreference(workspaceId: string, userId: string): MemberNotificationPreference {
+function defaultPreference(
+  workspaceId: string,
+  userId: string,
+): MemberNotificationPreference {
   const now = new Date();
   return {
     workspaceId,
@@ -261,20 +384,32 @@ function shouldNotify(
   cadence: NotificationCadence,
   insight: InsightRecord,
 ): boolean {
-  const enabled = cadence === "DAILY"
-    ? preference.dailyEnabled
-    : cadence === "WEEKLY"
-      ? preference.weeklyEnabled
-      : preference.monthlyEnabled;
+  const enabled =
+    cadence === "DAILY"
+      ? preference.dailyEnabled
+      : cadence === "WEEKLY"
+        ? preference.weeklyEnabled
+        : preference.monthlyEnabled;
   if (!enabled || insight.status !== "ACTIVE") return false;
-  if (SEVERITY_RANK[insight.severity] < SEVERITY_RANK[preference.minimumSeverity]) return false;
+  if (
+    SEVERITY_RANK[insight.severity] < SEVERITY_RANK[preference.minimumSeverity]
+  )
+    return false;
   // Daily delivery deliberately stays high-signal. Summaries can include INFO facts.
-  return preference.proactivity === "PROACTIVE" || cadence !== "DAILY" ||
+  return (
+    preference.proactivity === "PROACTIVE" ||
+    cadence !== "DAILY" ||
     insight.severity !== "INFO" ||
     insight.type === "NEW_RECURRING_PAYMENT" ||
-    insight.type === "UNUSUAL_TRANSACTION";
+    insight.type === "UNUSUAL_TRANSACTION"
+  );
 }
 
-function notificationFingerprint(cadence: NotificationCadence, insightFingerprint: string): string {
-  return createHash("sha256").update(`pace-notification-v1|${cadence}|${insightFingerprint}`).digest("hex");
+function notificationFingerprint(
+  cadence: NotificationCadence,
+  insightFingerprint: string,
+): string {
+  return createHash("sha256")
+    .update(`pace-notification-v1|${cadence}|${insightFingerprint}`)
+    .digest("hex");
 }
