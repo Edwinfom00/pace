@@ -6,7 +6,7 @@ import type {
   LedgerMerchantRecord,
   LedgerTransactionRecord,
 } from "@/modules/ledger/domain";
-import { getLedgerService } from "@/modules/ledger/server";
+import { getLocalizedLedgerService } from "@/modules/ledger/server";
 import { DatabaseLedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import { calendarMonthPeriod } from "@/money/period";
 
@@ -48,7 +48,7 @@ export type GetRulesOverviewInput = {
 
 export async function getRulesOverview(input: GetRulesOverviewInput): Promise<RulesOverview> {
   const rules = getRulesService();
-  const ledger = getLedgerService();
+  const ledger = await getLocalizedLedgerService(input.actor.userId);
   const ledgerRecords = new DatabaseLedgerRepository();
   return getRulesOverviewWithReaders(input, {
     listRules: (actor, workspaceId) => rules.listRules(actor, workspaceId, { includeArchived: true }),

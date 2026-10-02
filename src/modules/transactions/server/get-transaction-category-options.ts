@@ -1,4 +1,4 @@
-import { DatabaseLedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
+import { getLocalizedLedgerRepository } from "@/modules/ledger/server";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 import {
@@ -7,9 +7,9 @@ import {
 } from "../queries/get-transaction-category-options";
 
 /** Server-only composition root. The transaction client receives only category DTOs. */
-export function getServerTransactionCategoryOptions(input: GetTransactionCategoryOptionsInput) {
+export async function getServerTransactionCategoryOptions(input: GetTransactionCategoryOptionsInput) {
   return getTransactionCategoryOptions(input, {
-    ledger: new DatabaseLedgerRepository(),
+    ledger: await getLocalizedLedgerRepository(input.actor.userId),
     workspaces: new DatabaseWorkspaceRepository(),
   });
 }

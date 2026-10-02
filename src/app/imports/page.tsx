@@ -1,7 +1,7 @@
 import { ImportDashboard } from "@/app/components/import-dashboard";
 import { requireAuthenticatedActor } from "@/authorization/session";
 import { getPersistedUserLanguage } from "@/i18n/server";
-import { getLedgerService } from "@/modules/ledger/server";
+import { getLedgerService, getLocalizedLedgerService } from "@/modules/ledger/server";
 import { getWorkspaceService } from "@/modules/workspaces/server";
 
 export default async function ImportsPage() {
@@ -19,9 +19,10 @@ export default async function ImportsPage() {
     language = persistedLanguage;
     workspaceId = workspaces[0]?.id ?? null;
     if (workspaceId) {
+      const localizedLedger = await getLocalizedLedgerService(actor.userId);
       [accounts, categories] = await Promise.all([
         getLedgerService().listAccounts(actor, workspaceId),
-        getLedgerService().listCategories(actor, workspaceId),
+        localizedLedger.listCategories(actor, workspaceId),
       ]);
     }
   } catch {}

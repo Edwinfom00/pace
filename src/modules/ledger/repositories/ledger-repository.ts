@@ -199,6 +199,7 @@ export type AccountDetailTopExpenseCategoriesInput = {
 export type LedgerAccountDetailCategoryTotal = {
   readonly id: string;
   readonly name: string;
+  readonly systemKey: string | null;
   readonly amountMinor: bigint;
   readonly totalMinor: bigint;
 };
@@ -664,12 +665,12 @@ export class DatabaseLedgerRepository implements LedgerRepository {
               )
           )
       )
-      SELECT category.id, category.name,
+      SELECT category.id, category.name, category.system_key AS "systemKey",
         SUM(expense.amount_minor) AS "amountMinor",
         SUM(SUM(expense.amount_minor)) OVER () AS "totalMinor"
       FROM current_expenses AS expense
       INNER JOIN ledger_category AS category ON category.id = expense.category_id
-      GROUP BY category.id, category.name
+      GROUP BY category.id, category.name, category.system_key
       ORDER BY SUM(expense.amount_minor) DESC, category.name ASC
       LIMIT ${safeLimit};
     ` as unknown as readonly RawAccountDetailCategoryTotal[];
@@ -677,6 +678,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return records.map((record) => ({
       id: record.id,
       name: record.name,
+      systemKey: record.systemKey,
       amountMinor: toBigInt(record.amountMinor),
       totalMinor: toBigInt(record.totalMinor),
     }));
@@ -2064,6 +2066,7 @@ type RawAccountDetailBalanceDelta = {
 type RawAccountDetailCategoryTotal = {
   id: string;
   name: string;
+  systemKey: string | null;
   amountMinor: bigint | string | number;
   totalMinor: bigint | string | number;
 };

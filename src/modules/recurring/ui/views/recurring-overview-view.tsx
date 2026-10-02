@@ -13,7 +13,7 @@ import {
 import { TransactionIcon } from "@/components/pace/transaction-visuals/transaction-icon";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import { formatOverviewMoney } from "@/modules/overview/domain/overview-formatters";
-import { formatSystemCategory } from "@/modules/transactions/ui/transaction-detail-labels";
+import { localizeCategoryName } from "@/modules/ledger/category-localization";
 
 import type {
   RecurringCurrencyTotal,
@@ -213,7 +213,7 @@ function RecurringItemRow({
               <>
                 <span aria-hidden="true">·</span>
                 <span>
-                  {formatSystemCategory(dashboardLabels, item.category)}
+                  {localizeCategoryName(dashboardLabels, item.category)}
                 </span>
               </>
             ) : null}

@@ -6,7 +6,7 @@ import { resolveTransactionIcon } from "@/lib/transaction-visuals/transaction-ic
 import { getFinancialInboxService } from "@/modules/financial-inbox/server";
 import { isUserFacingLedgerTransaction, type LedgerTransactionRecord } from "@/modules/ledger/domain";
 import { currentFinancialTransactions } from "@/modules/ledger/correction-chain";
-import { getLedgerService } from "@/modules/ledger/server";
+import { getLedgerService, getLocalizedLedgerService } from "@/modules/ledger/server";
 import { buildOverviewFinancialSummary } from "@/modules/overview/domain/overview-financial-summary";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
@@ -132,7 +132,7 @@ async function presentAssistantTransactions(
   scope: AssistantReadScope,
   transactions: readonly LedgerTransactionRecord[],
 ) {
-  const ledger = getLedgerService();
+  const ledger = await getLocalizedLedgerService(scope.actor.userId);
   const [categories, merchants] = await Promise.all([
     ledger.listCategories(scope.actor, scope.workspaceId),
     ledger.listMerchants(scope.actor, scope.workspaceId),

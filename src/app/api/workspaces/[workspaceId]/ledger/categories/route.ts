@@ -1,6 +1,6 @@
 import { requireAuthenticatedActor } from "@/authorization/session";
 import { presentLedgerCategory } from "@/modules/ledger/presenters";
-import { getLedgerService } from "@/modules/ledger/server";
+import { getLedgerService, getLocalizedLedgerService } from "@/modules/ledger/server";
 import { createLedgerCategorySchema } from "@/modules/ledger/validation";
 
 import { jsonError, parseJson } from "../../../../_lib/http";
@@ -18,10 +18,9 @@ export async function GET(
       context.params,
       requireAuthenticatedActor(),
     ]);
-    const categories = await getLedgerService().listCategories(
-      actor,
-      workspaceId,
-    );
+    const categories = await (
+      await getLocalizedLedgerService(actor.userId)
+    ).listCategories(actor, workspaceId);
     const parentCategoryId = new URL(request.url).searchParams.get(
       "parentCategoryId",
     );

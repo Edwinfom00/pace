@@ -27,7 +27,7 @@ import { RecurringDetailTabs } from "@/modules/recurring/ui/components/recurring
 import { RecurringReviewActions } from "@/modules/recurring/ui/components/recurring-review-actions";
 import { RecurringStatusBadge } from "@/modules/recurring/ui/components/recurring-status-badge";
 import { getRecurringReviewUiLabels } from "@/modules/recurring/ui/recurring-review-ui-labels";
-import { formatSystemCategory } from "@/modules/transactions/ui/transaction-detail-labels";
+import { localizeCategoryName } from "@/modules/ledger/category-localization";
 import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
 import { TransactionMobileCard } from "@/modules/transactions/ui/components/transaction-mobile-card";
@@ -409,7 +409,7 @@ function OverviewContent({
               ) : null}
               {detail.category ? (
                 <DetailRow label={labels.category}>
-                  {formatSystemCategory(dashboardLabels, detail.category)}
+                  {localizeCategoryName(dashboardLabels, detail.category)}
                 </DetailRow>
               ) : null}
               {detail.merchant ? (
@@ -714,7 +714,7 @@ export function RecurringDetailView({
 }) {
   const dashboardLabels = getDashboardLabels(language);
   const subtitle = detail.category
-    ? formatSystemCategory(dashboardLabels, detail.category)
+    ? localizeCategoryName(dashboardLabels, detail.category)
     : detail.origin === "MANUAL" ? labels.origin.manual : labels.origin.deterministic;
   const tabContent =
     selectedTab === "overview" ? (

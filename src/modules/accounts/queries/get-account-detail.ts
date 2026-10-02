@@ -2,11 +2,8 @@ import { AuthorizationError } from "@/authorization/errors";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { calendarMonthPeriod, localDateForInstant } from "@/money/period";
-import {
-  DatabaseLedgerRepository,
-  type LedgerAccountDetailRecentTransactionRow,
-} from "@/modules/ledger/repositories/ledger-repository";
-import { getLedgerService } from "@/modules/ledger/server";
+import type { LedgerAccountDetailRecentTransactionRow } from "@/modules/ledger/repositories/ledger-repository";
+import { getLedgerService, getLocalizedLedgerRepository } from "@/modules/ledger/server";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 import {
@@ -33,7 +30,7 @@ export async function getAccountDetail(input: GetAccountDetailInput): Promise<Ac
   if (!membership) throw new AuthorizationError("You are not a member of this workspace.");
   assertWorkspacePermission(membership.role, "read");
 
-  const repository = new DatabaseLedgerRepository();
+  const repository = await getLocalizedLedgerRepository(input.actor.userId);
   const account = await repository.findAccount(input.workspaceId, input.accountId);
   if (!account) return null;
 

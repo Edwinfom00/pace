@@ -1,4 +1,4 @@
-import { DatabaseLedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
+import { getLocalizedLedgerRepository } from "@/modules/ledger/server";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 import {
@@ -7,9 +7,9 @@ import {
 } from "../queries/get-transactions-page";
 
 
-export function getServerTransactionsPage(input: GetTransactionsPageInput) {
+export async function getServerTransactionsPage(input: GetTransactionsPageInput) {
   return getTransactionsPage(input, {
-    ledger: new DatabaseLedgerRepository(),
+    ledger: await getLocalizedLedgerRepository(input.actor.userId),
     workspaces: new DatabaseWorkspaceRepository(),
   });
 }

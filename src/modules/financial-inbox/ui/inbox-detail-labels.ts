@@ -1,5 +1,5 @@
 import type { DashboardLabels } from "@/i18n/dashboard-messages";
-import { formatSystemCategory } from "@/modules/transactions/ui/transaction-detail-labels";
+import { localizeCategoryName } from "@/modules/ledger/category-localization";
 
 import type { InboxDetailActivityEvent, InboxItemDetail } from "../inbox-item-detail";
 import type { InboxReason } from "../domain";
@@ -209,6 +209,6 @@ export function getInboxDetailLabels(labels: DashboardLabels): InboxDetailLabels
     },
     loading: labels["inbox.detail.loading"],
     errorTitle: labels["inbox.detail.errorTitle"],
-    systemCategory: (category) => formatSystemCategory(labels, category),
+    systemCategory: (category) => localizeCategoryName(labels, category),
   };
 }

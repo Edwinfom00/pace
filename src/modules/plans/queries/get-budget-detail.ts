@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { AuthenticatedActor } from "@/authorization/session";
-import { getLedgerService } from "@/modules/ledger/server";
+import { getLocalizedLedgerRepository, getLocalizedLedgerService } from "@/modules/ledger/server";
 import { getTransactionsPage } from "@/modules/transactions/queries/get-transactions-page";
 import type { TransactionFilterState } from "@/modules/transactions/types/transaction-ui.types";
 
@@ -30,7 +30,7 @@ export async function getBudgetDetail({
     now,
   );
   if (!summary) return null;
-  const ledger = getLedgerService();
+  const ledger = await getLocalizedLedgerService(actor.userId);
   const categories = await ledger.listCategories(actor, workspaceId);
   const date = (value: Date) =>
     new Intl.DateTimeFormat("en-CA", {
@@ -60,9 +60,7 @@ export async function getBudgetDetail({
       unknownMerchantName,
     },
     {
-      ledger: new (
-        await import("@/modules/ledger/repositories/ledger-repository")
-      ).DatabaseLedgerRepository(),
+      ledger: await getLocalizedLedgerRepository(actor.userId),
       workspaces: new (
         await import("@/modules/workspaces/repositories/workspace-repository")
       ).DatabaseWorkspaceRepository(),

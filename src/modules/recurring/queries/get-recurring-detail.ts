@@ -11,7 +11,7 @@ import type {
   LedgerTransactionFilters,
   LedgerTransactionRecord,
 } from "@/modules/ledger/domain";
-import { getLedgerService } from "@/modules/ledger/server";
+import { getLocalizedLedgerService } from "@/modules/ledger/server";
 import {
   DatabaseWorkspaceRepository,
   type WorkspaceRepository,
@@ -46,7 +46,7 @@ export type GetRecurringDetailInput = {
 
 export async function getRecurringDetail(input: GetRecurringDetailInput): Promise<RecurringDetail | null> {
   const recurring = getFinancialInboxService();
-  const ledger = getLedgerService();
+  const ledger = await getLocalizedLedgerService(input.actor.userId);
   const workspaces = new DatabaseWorkspaceRepository();
   return getRecurringDetailWithReaders(input, {
     findMembership: (workspaceId, userId) => workspaces.findMembership(workspaceId, userId),

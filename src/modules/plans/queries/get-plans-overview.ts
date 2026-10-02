@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { AuthenticatedActor } from "@/authorization/session";
-import { getLedgerService } from "@/modules/ledger/server";
+import { getLocalizedLedgerService } from "@/modules/ledger/server";
 
 import { getPlansService } from "../server";
 
@@ -21,7 +21,7 @@ export async function getPlansOverview({
   readonly now: Date;
 }): Promise<PlansOverview> {
   const plans = getPlansService();
-  const ledger = getLedgerService();
+  const ledger = await getLocalizedLedgerService(actor.userId);
   const [budgets, savingsGoals, categories] = await Promise.all([
     plans.listBudgetSummaries(actor, workspaceId, now),
     plans.listSavingsGoalSummaries(actor, workspaceId, now),

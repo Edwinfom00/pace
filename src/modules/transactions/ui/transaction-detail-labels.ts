@@ -1,5 +1,6 @@
 import type { DashboardLabels } from "@/i18n/dashboard-messages";
 import { formatDashboardLabel } from "@/i18n/dashboard-messages";
+import { localizeCategoryName } from "@/modules/ledger/category-localization";
 import type {
   LedgerTransactionKind,
   LedgerTransactionStatus,
@@ -10,59 +11,6 @@ import type {
   TransactionDetailOrigin,
   TransactionDetailSourceChannel,
 } from "../domain/transaction-detail";
-
-const systemCategoryMessageKeys = {
-  "expense:groceries": "categories.system.expense.groceries",
-  "expense:dining": "categories.system.expense.dining",
-  "expense:transport": "categories.system.expense.transport",
-  "expense:housing": "categories.system.expense.housing",
-  "expense:utilities": "categories.system.expense.utilities",
-  "expense:health": "categories.system.expense.health",
-  "expense:shopping": "categories.system.expense.shopping",
-  "expense:entertainment": "categories.system.expense.entertainment",
-  "expense:dining:restaurants": "categories.system.expense.dining.restaurants",
-  "expense:dining:cafes": "categories.system.expense.dining.cafes",
-  "expense:dining:delivery": "categories.system.expense.dining.delivery",
-  "expense:transport:fuel": "categories.system.expense.transport.fuel",
-  "expense:transport:ride-hailing": "categories.system.expense.transport.rideHailing",
-  "expense:transport:public-transport": "categories.system.expense.transport.publicTransport",
-  "expense:transport:parking": "categories.system.expense.transport.parking",
-  "expense:transport:vehicle-maintenance": "categories.system.expense.transport.vehicleMaintenance",
-  "expense:housing:rent": "categories.system.expense.housing.rent",
-  "expense:housing:maintenance": "categories.system.expense.housing.maintenance",
-  "expense:utilities:electricity": "categories.system.expense.utilities.electricity",
-  "expense:utilities:water": "categories.system.expense.utilities.water",
-  "expense:utilities:internet": "categories.system.expense.utilities.internet",
-  "expense:utilities:mobile": "categories.system.expense.utilities.mobile",
-  "expense:health:pharmacy": "categories.system.expense.health.pharmacy",
-  "expense:health:doctor": "categories.system.expense.health.doctor",
-  "expense:health:hospital": "categories.system.expense.health.hospital",
-  "expense:health:insurance": "categories.system.expense.health.insurance",
-  "expense:shopping:clothing": "categories.system.expense.shopping.clothing",
-  "expense:shopping:electronics": "categories.system.expense.shopping.electronics",
-  "expense:shopping:household": "categories.system.expense.shopping.household",
-  "expense:shopping:personal-purchases": "categories.system.expense.shopping.personalPurchases",
-  "expense:entertainment:streaming": "categories.system.expense.entertainment.streaming",
-  "expense:entertainment:games": "categories.system.expense.entertainment.games",
-  "expense:entertainment:events": "categories.system.expense.entertainment.events",
-  "expense:entertainment:leisure": "categories.system.expense.entertainment.leisure",
-  "expense:other": "categories.system.expense.other",
-  "income:salary": "categories.system.income.salary",
-  "income:freelance": "categories.system.income.freelance",
-  "income:gift": "categories.system.income.gift",
-  "income:other": "categories.system.income.other",
-} as const;
-
-/** Shared system-category localization used wherever a ledger category is presented. */
-export function formatSystemCategory(
-  labels: DashboardLabels,
-  category: { readonly name: string; readonly systemKey: string | null },
-): string {
-  const key = category.systemKey
-    ? systemCategoryMessageKeys[category.systemKey as keyof typeof systemCategoryMessageKeys]
-    : undefined;
-  return key ? labels[key] : category.name;
-}
 
 export type TransactionDetailLabels = {
   readonly back: string;
@@ -324,6 +272,6 @@ export function getTransactionDetailLabels(labels: DashboardLabels): Transaction
     },
     loading: labels["transactions.detail.loading"],
     errorTitle: labels["transactions.detail.error.title"],
-    systemCategory: (category) => formatSystemCategory(labels, category),
+    systemCategory: (category) => localizeCategoryName(labels, category),
   };
 }

@@ -4,7 +4,7 @@ import { assertWorkspacePermission } from "@/authorization/workspace-permissions
 import type { RecurringPaymentView } from "@/modules/financial-inbox/financial-inbox-service";
 import { getFinancialInboxService } from "@/modules/financial-inbox/server";
 import type { LedgerAccountRecord, LedgerCategoryRecord } from "@/modules/ledger/domain";
-import { getLedgerService } from "@/modules/ledger/server";
+import { getLocalizedLedgerService } from "@/modules/ledger/server";
 import {
   DatabaseWorkspaceRepository,
   type WorkspaceRepository,
@@ -40,13 +40,10 @@ export type GetRecurringOverviewInput = {
   readonly now?: Date;
 };
 
-/**
- * Read-only, workspace-scoped composition of M4 recurring patterns and their
- * already-authoritative ledger relationships. It creates no transactions or balances.
- */
+
 export async function getRecurringOverview(input: GetRecurringOverviewInput): Promise<RecurringOverview> {
   const recurring = getFinancialInboxService();
-  const ledger = getLedgerService();
+  const ledger = await getLocalizedLedgerService(input.actor.userId);
   const workspaces = new DatabaseWorkspaceRepository();
   return getRecurringOverviewWithReaders(input, {
     findMembership: (workspaceId, userId) => workspaces.findMembership(workspaceId, userId),
