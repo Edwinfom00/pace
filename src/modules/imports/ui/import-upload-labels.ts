@@ -40,6 +40,22 @@ export type ImportUploadLabels = {
   readonly remove: string;
   readonly analyze: string;
   readonly analyzing: string;
+  readonly analysisTitle: string;
+  readonly analysisDoneTitle: string;
+  readonly analysisProgress: string;
+  readonly analysisStepUpload: string;
+  readonly analysisStepUploadDetail: string;
+  readonly analysisStepRead: string;
+  readonly analysisStepReadDetail: string;
+  readonly analysisStepDetect: string;
+  readonly analysisStepDetectDetail: string;
+  readonly analysisStepDetected: string;
+  readonly analysisSlow: string;
+  readonly analysisCancel: string;
+  readonly analysisCancelled: string;
+  readonly analysisStepDone: string;
+  readonly analysisStepActive: string;
+  readonly analysisStepPending: string;
   readonly fileSelected: string;
   readonly fileRemoved: string;
   readonly beforeTitle: string;
@@ -72,6 +88,22 @@ const en: ImportUploadLabels = {
   remove: "Remove {name}",
   analyze: "Analyze file",
   analyzing: "Analyzing…",
+  analysisTitle: "Analyzing your file",
+  analysisDoneTitle: "Your file is ready",
+  analysisProgress: "Analysis progress",
+  analysisStepUpload: "Uploading securely",
+  analysisStepUploadDetail: "{loaded} of {total} · {percent}%",
+  analysisStepRead: "Reading rows and columns",
+  analysisStepReadDetail: "Pace is checking the structure of your file.",
+  analysisStepDetect: "Detecting columns",
+  analysisStepDetectDetail: "Matching your columns to Pace fields.",
+  analysisStepDetected: "{count} columns found · Opening column mapping…",
+  analysisSlow: "Larger files can take a little longer. Keep this page open.",
+  analysisCancel: "Cancel",
+  analysisCancelled: "Analysis cancelled. Your file is still selected.",
+  analysisStepDone: "done",
+  analysisStepActive: "in progress",
+  analysisStepPending: "pending",
   fileSelected: "{name} selected.",
   fileRemoved: "File removed.",
   beforeTitle: "Before you start",
@@ -124,6 +156,22 @@ const fr: ImportUploadLabels = {
   remove: "Retirer {name}",
   analyze: "Analyser le fichier",
   analyzing: "Analyse en cours…",
+  analysisTitle: "Analyse de votre fichier",
+  analysisDoneTitle: "Votre fichier est prêt",
+  analysisProgress: "Progression de l’analyse",
+  analysisStepUpload: "Envoi sécurisé",
+  analysisStepUploadDetail: "{loaded} sur {total} · {percent} %",
+  analysisStepRead: "Lecture des lignes et colonnes",
+  analysisStepReadDetail: "Pace vérifie la structure de votre fichier.",
+  analysisStepDetect: "Détection des colonnes",
+  analysisStepDetectDetail: "Association de vos colonnes aux champs Pace.",
+  analysisStepDetected: "{count} colonnes trouvées · Ouverture de la correspondance…",
+  analysisSlow: "Les fichiers volumineux peuvent prendre un peu plus de temps. Gardez cette page ouverte.",
+  analysisCancel: "Annuler",
+  analysisCancelled: "Analyse annulée. Votre fichier est toujours sélectionné.",
+  analysisStepDone: "terminé",
+  analysisStepActive: "en cours",
+  analysisStepPending: "en attente",
   fileSelected: "{name} sélectionné.",
   fileRemoved: "Fichier retiré.",
   beforeTitle: "Avant de commencer",
@@ -176,6 +224,22 @@ const de: ImportUploadLabels = {
   remove: "{name} entfernen",
   analyze: "Datei analysieren",
   analyzing: "Wird analysiert…",
+  analysisTitle: "Ihre Datei wird analysiert",
+  analysisDoneTitle: "Ihre Datei ist bereit",
+  analysisProgress: "Analysefortschritt",
+  analysisStepUpload: "Sicherer Upload",
+  analysisStepUploadDetail: "{loaded} von {total} · {percent} %",
+  analysisStepRead: "Zeilen und Spalten werden gelesen",
+  analysisStepReadDetail: "Pace prüft die Struktur Ihrer Datei.",
+  analysisStepDetect: "Spalten werden erkannt",
+  analysisStepDetectDetail: "Ihre Spalten werden den Pace-Feldern zugeordnet.",
+  analysisStepDetected: "{count} Spalten gefunden · Spaltenzuordnung wird geöffnet…",
+  analysisSlow: "Größere Dateien können etwas länger dauern. Lassen Sie diese Seite geöffnet.",
+  analysisCancel: "Abbrechen",
+  analysisCancelled: "Analyse abgebrochen. Ihre Datei ist weiterhin ausgewählt.",
+  analysisStepDone: "erledigt",
+  analysisStepActive: "läuft",
+  analysisStepPending: "ausstehend",
   fileSelected: "{name} ausgewählt.",
   fileRemoved: "Datei entfernt.",
   beforeTitle: "Bevor Sie beginnen",

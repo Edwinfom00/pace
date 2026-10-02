@@ -18,9 +18,16 @@ import {
   importUploadReducer,
   transactionsHref,
   INITIAL_IMPORT_UPLOAD_STATE,
+  type ImportUploadState,
   type SelectedImportFile,
 } from "../import-upload-flow";
 import { formatImportLabel, type ImportUploadErrorCode, type ImportUploadLabels } from "../import-upload-labels";
+import { ImportAnalysisPanel } from "../components/import-analysis-panel";
+
+const SLOW_ANALYSIS_MS = 6000;
+const COMPLETION_BEAT_MS = 500;
+
+type ImportAnalysisView = Pick<ImportUploadState, "phase" | "uploaded" | "columnCount"> & { readonly slow: boolean };
 
 function hasDraggedFiles(dataTransfer: DataTransfer | null): boolean {
   return Boolean(dataTransfer && Array.from(dataTransfer.types).includes("Files"));
@@ -41,14 +48,25 @@ export function ImportUploadView({
   const inputRef = useRef<HTMLInputElement>(null);
   const chooseRef = useRef<HTMLButtonElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [state, dispatch] = useReducer(importUploadReducer, INITIAL_IMPORT_UPLOAD_STATE);
   const [dragActive, setDragActive] = useState(false);
   const [removalAnnounced, setRemovalAnnounced] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
+  const [slow, setSlow] = useState(false);
   const [navigating, startNavigation] = useTransition();
   const busy = state.analyzing || navigating;
-  const announcement = state.selected
-    ? formatImportLabel(labels.fileSelected, { name: state.selected.file.name })
-    : removalAnnounced ? labels.fileRemoved : "";
+  const announcement = state.phase === "uploading"
+    ? labels.analysisStepUpload
+    : state.phase === "reading"
+      ? labels.analysisStepRead
+      : state.phase === "detected"
+        ? formatImportLabel(labels.analysisStepDetected, { count: String(state.columnCount ?? 0) })
+        : cancelled
+          ? labels.analysisCancelled
+          : state.selected
+            ? formatImportLabel(labels.fileSelected, { name: state.selected.file.name })
+            : removalAnnounced ? labels.fileRemoved : "";
 
   useEffect(() => {
     const preventNavigation = (event: globalThis.DragEvent) => {
@@ -60,6 +78,7 @@ export function ImportUploadView({
       window.removeEventListener("dragover", preventNavigation);
       window.removeEventListener("drop", preventNavigation);
       abortRef.current?.abort();
+      if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
     };
   }, []);
 
@@ -67,7 +86,18 @@ export function ImportUploadView({
     if (!busy) inputRef.current?.click();
   }
 
+  function stopSlowTimer() {
+    if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
+    slowTimerRef.current = null;
+    setSlow(false);
+  }
+
+  function cancelAnalysis() {
+    abortRef.current?.abort();
+  }
+
   function removeFile() {
+    setCancelled(false);
     dispatch({ type: "removed" });
     setRemovalAnnounced(true);
     chooseRef.current?.focus();
@@ -95,18 +125,36 @@ export function ImportUploadView({
     if (!state.selected || busy) return;
     const controller = new AbortController();
     abortRef.current = controller;
+    setCancelled(false);
+    stopSlowTimer();
+    slowTimerRef.current = setTimeout(() => setSlow(true), SLOW_ANALYSIS_MS);
     dispatch({ type: "analyzeStarted" });
     try {
-      const result = await analyzeImportFile({ workspaceId, file: state.selected.file, signal: controller.signal });
+      const result = await analyzeImportFile({
+        workspaceId,
+        file: state.selected.file,
+        signal: controller.signal,
+        onUploadProgress: (loaded, total) => dispatch({ type: "uploadProgressed", loaded, total }),
+      });
       if (controller.signal.aborted) return;
+      stopSlowTimer();
       if (result.ok) {
-        startNavigation(() => router.push(importSessionHref(workspaceSlug, result.importSessionId)));
-        dispatch({ type: "analyzeAborted" });
+        dispatch({ type: "analyzeSucceeded", columnCount: result.columnCount });
+        await new Promise((resolve) => setTimeout(resolve, COMPLETION_BEAT_MS));
+        if (!controller.signal.aborted) {
+          startNavigation(() => router.push(importSessionHref(workspaceSlug, result.importSessionId)));
+        }
       } else {
         dispatch({ type: "analyzeFailed", code: result.code });
       }
     } catch {
-      dispatch(controller.signal.aborted ? { type: "analyzeAborted" } : { type: "analyzeFailed", code: "NETWORK" });
+      stopSlowTimer();
+      if (controller.signal.aborted) {
+        setCancelled(true);
+        dispatch({ type: "analyzeAborted" });
+      } else {
+        dispatch({ type: "analyzeFailed", code: "NETWORK" });
+      }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
@@ -114,6 +162,7 @@ export function ImportUploadView({
 
   return (
     <ImportUploadScreen
+      analysis={state.phase === "idle" ? null : { phase: state.phase, uploaded: state.uploaded, columnCount: state.columnCount, slow }}
       announcement={announcement}
       busy={busy}
       chooseRef={chooseRef}
@@ -123,6 +172,7 @@ export function ImportUploadView({
       labels={labels}
       locale={locale}
       onAnalyze={analyze}
+      onCancelAnalysis={cancelAnalysis}
       onChoose={openPicker}
       onDrag={handleDrag}
       onDragLeave={handleDragLeave}
@@ -144,6 +194,8 @@ export function ImportUploadScreen({
   workspaceSlug,
   dragActive = false,
   announcement = "",
+  analysis = null,
+  onCancelAnalysis,
   inputRef,
   chooseRef,
   onChoose,
@@ -162,6 +214,8 @@ export function ImportUploadScreen({
   readonly workspaceSlug: string;
   readonly dragActive?: boolean;
   readonly announcement?: string;
+  readonly analysis?: ImportAnalysisView | null;
+  readonly onCancelAnalysis?: () => void;
   readonly inputRef?: RefObject<HTMLInputElement | null>;
   readonly chooseRef?: RefObject<HTMLButtonElement | null>;
   readonly onChoose?: () => void;
@@ -192,6 +246,19 @@ export function ImportUploadScreen({
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:gap-5">
         <div className="min-w-0 space-y-3">
+          {analysis && analysis.phase !== "idle" && selected ? (
+            <ImportAnalysisPanel
+              columnCount={analysis.columnCount}
+              file={selected}
+              labels={labels}
+              locale={locale}
+              onCancel={onCancelAnalysis}
+              phase={analysis.phase}
+              slow={analysis.slow}
+              uploaded={analysis.uploaded}
+            />
+          ) : (
+          <>
           <div
             aria-busy={busy}
             aria-describedby={describedBy}
@@ -290,6 +357,8 @@ export function ImportUploadScreen({
               </Button>
             </section>
           ) : null}
+          </>
+          )}
         </div>
 
         <aside className="rounded-[14px] border border-[#e5eaf1] bg-white">

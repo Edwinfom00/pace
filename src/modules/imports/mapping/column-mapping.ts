@@ -2,6 +2,7 @@ import { IMPORT_FIELDS, type ImportField, type ImportMappingDraft, type ParsedIm
 
 export const CONFIDENT_MAPPING_THRESHOLD = 0.9;
 export const MAX_SAMPLE_VALUE_LENGTH = 80;
+export const MAX_SAMPLE_VALUES = 2;
 
 export const IMPORT_REQUIRED_GROUPS = [
   { id: "date", fields: ["transactionDate", "bookingDate"] },
@@ -21,7 +22,7 @@ export type ImportColumnMappingIssue = "AMOUNT_MODE_CONFLICT";
 
 export interface ImportDetectedColumn {
   header: string;
-  sample: string | null;
+  samples: string[];
   detectedField: ImportField | null;
 }
 
@@ -47,17 +48,21 @@ export function buildDetectedColumns(
   }
   return headers.map((header) => ({
     header,
-    sample: sampleValue(rows, header),
+    samples: sampleValues(rows, header),
     detectedField: fieldByHeader.get(header)?.field ?? null,
   }));
 }
 
-function sampleValue(rows: readonly ParsedImportRow[], header: string): string | null {
+function sampleValues(rows: readonly ParsedImportRow[], header: string): string[] {
+  const samples: string[] = [];
   for (const row of rows) {
     const value = row.values[header]?.trim();
-    if (value) return value.length > MAX_SAMPLE_VALUE_LENGTH ? `${value.slice(0, MAX_SAMPLE_VALUE_LENGTH - 1)}…` : value;
+    if (!value) continue;
+    const sample = value.length > MAX_SAMPLE_VALUE_LENGTH ? `${value.slice(0, MAX_SAMPLE_VALUE_LENGTH - 1)}…` : value;
+    if (!samples.includes(sample)) samples.push(sample);
+    if (samples.length === MAX_SAMPLE_VALUES) break;
   }
-  return null;
+  return samples;
 }
 
 export function initialColumnAssignments(

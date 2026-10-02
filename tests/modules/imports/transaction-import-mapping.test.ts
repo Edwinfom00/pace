@@ -117,18 +117,17 @@ test("detected columns: M7 confident matches are pre-mapped with real samples; t
   const view = await imports.getColumnMapping(owner, workspaceId, session.id);
   assert.equal(view.editable, true);
   assert.deepEqual(view.session, { id: session.id, fileName: FIXTURE, fileType: "XLSX", fileChecksum: session.fileChecksum, rowCount: 30 });
-  assert.deepEqual(view.columns.map(({ header, detectedField, sample }) => [header, detectedField, sample]), [
-    ["Date opération", "transactionDate", "2026-10-01"],
-    ["Libellé", "description", "Salaire"],
-    ["Montant", "amount", "500000"],
-    ["Type", "transactionType", "Revenu"],
-    ["Compte", null, "Main Account"],
-    ["Compte destination", null, view.columns[5]?.sample ?? null],
-    ["Catégorie", null, "Salaire"],
-    ["Référence", null, "SAL-OCT-001"],
-    ["Note", null, "Salaire octobre"],
+  assert.deepEqual(view.columns.map(({ header, detectedField, samples }) => [header, detectedField, samples]), [
+    ["Date opération", "transactionDate", ["2026-10-01", "2026-10-02"]],
+    ["Libellé", "description", ["Salaire", "MTN Internet"]],
+    ["Montant", "amount", ["500000", "-10000"]],
+    ["Type", "transactionType", ["Revenu", "Dépense"]],
+    ["Compte", "accountReference", ["Main Account", "Mobile Money MTN"]],
+    ["Compte destination", null, ["Épargne"]],
+    ["Catégorie", null, ["Salaire", "Factures & Services"]],
+    ["Référence", null, ["SAL-OCT-001", "MTN-NET-1001"]],
+    ["Note", null, ["Salaire octobre", "Forfait internet"]],
   ]);
-  assert.ok(view.columns[5]?.sample, "first non-empty destination account is used as the sample");
 
   const assignments = initialColumnAssignments(view.columns, view.saved);
   assert.equal(assignments.Note, null);
@@ -144,7 +143,13 @@ test("detected columns: a below-threshold M7 match is left for the user to choos
     reasons: { amount: "header_alias_match" },
     requiresConfirmation: true,
   });
-  assert.deepEqual(columns, [{ header: "Montant total", sample: "12", detectedField: null }]);
+  assert.deepEqual(columns, [{ header: "Montant total", samples: ["12"], detectedField: null }]);
+});
+
+test("samples: up to two distinct non-empty values are shown per column", () => {
+  const rows = ["", "Taxi", "Taxi", "Bus", "Train"].map((value, index) => ({ rowNumber: index + 2, values: { Memo: value } }));
+  const [column] = buildDetectedColumns(["Memo"], rows, { columns: {}, confidence: {}, reasons: {}, requiresConfirmation: true });
+  assert.deepEqual(column?.samples, ["Taxi", "Bus"]);
 });
 
 test("required fields: Continue is blocked until date, amount and description are mapped, client and server", async () => {
@@ -200,7 +205,8 @@ test("manual remap: choosing a taken field moves it, statuses update, and the co
 
   state = importMappingReducer(state, { type: "assigned", header: "Libellé", target: "merchant" });
   state = importMappingReducer(state, { type: "assigned", header: "Compte", target: "accountReference" });
-  assert.equal(importColumnStatus(column("Compte"), "accountReference"), "OPTIONAL");
+  assert.equal(importColumnStatus(column("Compte"), "accountReference"), "DETECTED");
+  assert.equal(importColumnStatus(column("Compte destination"), "accountReference"), "OPTIONAL");
   assert.equal(importColumnStatus(column("Montant"), "amount"), "DETECTED");
 
   const result = await confirmImportColumns({ workspaceId, importSessionId: session.id, fileChecksum: session.fileChecksum, assignments: state.assignments, fetcher: routeFetcher(owner) });
@@ -345,6 +351,8 @@ test("responsive and accessible: rows stack on mobile, selects are labelled and 
   assert.match(markup, /flex flex-col-reverse gap-3 sm:flex-row/);
   assert.match(markup, /href="\/w\/house\/transactions\/import"[^>]*>.*Back<\/a>/s);
   assert.match(markup, /<span class="sr-only">Amount: mapped<\/span>/);
-  assert.match(markup, /<span class="sr-only">Account: not mapped<\/span>/);
+  assert.match(markup, /<span class="sr-only">Account: mapped<\/span>/);
+  assert.match(markup, /<span class="sr-only">Currency: not mapped<\/span>/);
+  assert.match(markup, /<span class="block truncate text-\[#53627b\]">Main Account<\/span><span class="block truncate text-\[12px\] text-\[#9aa6b8\]">Mobile Money MTN<\/span>/);
   assert.match(markup, /title="pace_import_test_october_2026\.xlsx"/);
 });

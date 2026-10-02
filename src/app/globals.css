@@ -203,3 +203,21 @@
     @apply font-sans;
   }
 }
+
+@theme {
+  --animate-import-scan: import-scan 2.2s ease-in-out infinite;
+  --animate-import-indeterminate: import-indeterminate 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+
+  @keyframes import-scan {
+    0% { transform: translateY(0); opacity: 0; }
+    15% { opacity: 1; }
+    50% { transform: translateY(30px); opacity: 1; }
+    85% { opacity: 1; }
+    100% { transform: translateY(0); opacity: 0; }
+  }
+
+  @keyframes import-indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(300%); }
+  }
+}

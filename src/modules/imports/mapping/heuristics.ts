@@ -15,7 +15,10 @@ const HEADER_ALIASES: Readonly<Record<ImportField, readonly string[]>> = {
   debit: ["debit", "débit", "soll", "withdrawal", "charge", "outflow", "belastung", "debito", "débito", "dã©bit"],
   credit: ["credit", "crédit", "haben", "deposit", "inflow", "gutschrift", "credito", "crédito", "crã©dit"],
   currency: ["currency", "devise", "wahrung", "währung", "moneda", "curr", "ccy"],
-  accountReference: ["account", "account number", "account reference", "konto", "iban", "reference account"],
+  accountReference: [
+    "account", "account number", "account name", "account reference", "konto", "iban", "reference account",
+    "compte", "numero de compte", "cuenta",
+  ],
   transactionType: ["type", "transaction type", "type operation", "art", "transactiontype", "operation type"],
 };
 

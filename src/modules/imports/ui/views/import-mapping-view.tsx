@@ -218,10 +218,21 @@ export function ImportMappingScreen({
                     key={column.header}
                   >
                     <p className="truncate text-[13px] font-medium text-[#14213c]" title={column.header}>{column.header}</p>
-                    <p className={cn("truncate text-[13px]", column.sample ? "text-[#53627b]" : "text-[#9aa6b8] italic")} title={column.sample ?? undefined}>
-                      <span className="block text-[11px] font-medium text-[#71809a] not-italic md:sr-only">{labels.colSample}</span>
-                      {column.sample ?? labels.sampleEmpty}
-                    </p>
+                    <div className="min-w-0 text-[13px]" title={column.samples.join(" · ") || undefined}>
+                      <span className="block text-[11px] font-medium text-[#71809a] md:sr-only">{labels.colSample}</span>
+                      {column.samples.length === 0 ? (
+                        <span className="text-[#9aa6b8] italic">{labels.sampleEmpty}</span>
+                      ) : (
+                        column.samples.map((sample, sampleIndex) => (
+                          <span
+                            className={cn("block truncate", sampleIndex === 0 ? "text-[#53627b]" : "text-[12px] text-[#9aa6b8]")}
+                            key={sample}
+                          >
+                            {sample}
+                          </span>
+                        ))
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       <div className="relative min-w-0 flex-1">
                         <select
