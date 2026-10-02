@@ -1,16 +1,13 @@
 import { requireAuthenticatedActor } from "@/authorization/session";
-import { presentImportSession } from "@/modules/imports/presenters";
 import { getImportService } from "@/modules/imports/server";
 
 import { jsonError } from "../../../../../_lib/http";
-
-export const maxDuration = 300;
 
 interface RouteContext {
   params: Promise<{ workspaceId: string; importSessionId: string }>;
 }
 
-export async function POST(
+export async function GET(
   _request: Request,
   context: RouteContext,
 ): Promise<Response> {
@@ -19,12 +16,15 @@ export async function POST(
       context.params,
       requireAuthenticatedActor(),
     ]);
-    const session = await getImportService().execute(
+    const progress = await getImportService().getProgress(
       actor,
       workspaceId,
       importSessionId,
     );
-    return Response.json({ session: presentImportSession(session) });
+    return Response.json(
+      { progress },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return jsonError(error);
   }

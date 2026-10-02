@@ -7,10 +7,16 @@ const optionalColumnSchema = z.string().min(1).max(200).optional();
 export const importMappingSchema = z
   .object({
     columns: z
-      .object(Object.fromEntries(IMPORT_FIELDS.map((field) => [field, optionalColumnSchema])))
+      .object(
+        Object.fromEntries(
+          IMPORT_FIELDS.map((field) => [field, optionalColumnSchema]),
+        ),
+      )
       .partial(),
     amountMode: z.enum(["SIGNED", "DEBIT_CREDIT"]),
-    signedAmountDirection: z.enum(["POSITIVE_IS_INCOME", "POSITIVE_IS_EXPENSE"]).nullable(),
+    signedAmountDirection: z
+      .enum(["POSITIVE_IS_INCOME", "POSITIVE_IS_EXPENSE"])
+      .nullable(),
     dateFormat: z.enum(["AUTO", "YMD", "DMY", "MDY"]),
     decimalSeparator: z.enum(["AUTO", ".", ","]),
     accountId: z.string().min(1).max(180),
@@ -57,9 +63,25 @@ export const importMappingSchema = z
 export const importColumnMappingRequestSchema = z
   .object({
     fileChecksum: z.string().regex(/^[a-f0-9]{64}$/),
-    columns: z.object(Object.fromEntries(IMPORT_FIELDS.map((field) => [field, optionalColumnSchema]))).partial().strict(),
+    columns: z
+      .object(
+        Object.fromEntries(
+          IMPORT_FIELDS.map((field) => [field, optionalColumnSchema]),
+        ),
+      )
+      .partial()
+      .strict(),
     ignoredHeaders: z.array(z.string().min(1).max(200)).max(80),
   })
   .strict();
 
-export const importMappingRequestSchema = z.object({ mapping: importMappingSchema });
+export const importMappingRequestSchema = z.object({
+  mapping: importMappingSchema,
+});
+
+export const importReviewRequestSchema = z
+  .object({
+    accountId: z.string().min(1).max(180),
+    transferAccountId: z.string().min(1).max(180).nullable(),
+  })
+  .strict();

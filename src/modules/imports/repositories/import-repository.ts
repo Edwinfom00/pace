@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { importAudits, importSessions } from "@/db/schema";
@@ -8,6 +8,7 @@ import type {
   ImportColumnMapping,
   ImportMapping,
   ImportPreview,
+  ImportProgress,
   ImportResult,
   ImportSessionRecord,
   ImportSessionStatus,
@@ -51,10 +52,21 @@ export interface TransitionImportSessionInput {
   to: ImportSessionStatus;
   approvedByUserId?: string | null;
   result?: ImportResult | null;
+  progress?: ImportProgress | null;
   failureCode?: string | null;
   failureMessage?: string | null;
   completedAt?: Date | null;
   clearRawData?: boolean;
+}
+
+export interface RecordImportProgressInput {
+  workspaceId: string;
+  importSessionId: string;
+  progress: ImportProgress;
+}
+
+export interface ClaimStalledImportInput extends RecordImportProgressInput {
+  staleBefore: Date;
 }
 
 export interface CreateImportAuditInput {
@@ -75,6 +87,8 @@ export interface ImportRepository {
   prepareSession(input: PrepareImportSessionInput): Promise<ImportSessionRecord | null>;
   saveColumnMapping(input: SaveImportColumnMappingInput): Promise<ImportSessionRecord | null>;
   transitionSession(input: TransitionImportSessionInput): Promise<ImportSessionRecord | null>;
+  recordProgress(input: RecordImportProgressInput): Promise<ImportSessionRecord | null>;
+  claimStalledImport(input: ClaimStalledImportInput): Promise<ImportSessionRecord | null>;
   createAudit(input: CreateImportAuditInput): Promise<ImportAuditRecord>;
   listAudit(workspaceId: string, importSessionId: string): Promise<ImportAuditRecord[]>;
 }
@@ -143,13 +157,19 @@ export class DatabaseImportRepository implements ImportRepository {
   async saveColumnMapping(input: SaveImportColumnMappingInput): Promise<ImportSessionRecord | null> {
     const [record] = await db
       .update(importSessions)
-      .set({ columnMapping: input.columnMapping, updatedAt: new Date() })
+      .set({
+        columnMapping: input.columnMapping,
+        status: "MAPPING_REQUIRED",
+        stagedRows: null,
+        preview: null,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(importSessions.workspaceId, input.workspaceId),
           eq(importSessions.id, input.importSessionId),
           eq(importSessions.fileChecksum, input.columnMapping.fileChecksum),
-          eq(importSessions.status, "MAPPING_REQUIRED"),
+          inArray(importSessions.status, ["MAPPING_REQUIRED", "READY_FOR_PREVIEW"]),
         ),
       )
       .returning();
@@ -162,6 +182,7 @@ export class DatabaseImportRepository implements ImportRepository {
       updatedAt: Date;
       approvedByUserId?: string | null;
       result?: ImportResult | null;
+      progress?: ImportProgress | null;
       failureCode?: string | null;
       failureMessage?: string | null;
       completedAt?: Date | null;
@@ -171,6 +192,7 @@ export class DatabaseImportRepository implements ImportRepository {
     } = { status: input.to, updatedAt: new Date() };
     if (input.approvedByUserId !== undefined) values.approvedByUserId = input.approvedByUserId;
     if (input.result !== undefined) values.result = input.result;
+    if (input.progress !== undefined) values.progress = input.progress;
     if (input.failureCode !== undefined) values.failureCode = input.failureCode;
     if (input.failureMessage !== undefined) values.failureMessage = input.failureMessage;
     if (input.completedAt !== undefined) values.completedAt = input.completedAt;
@@ -187,6 +209,40 @@ export class DatabaseImportRepository implements ImportRepository {
           eq(importSessions.workspaceId, input.workspaceId),
           eq(importSessions.id, input.importSessionId),
           inArray(importSessions.status, [...input.from]),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async recordProgress(input: RecordImportProgressInput): Promise<ImportSessionRecord | null> {
+    const [record] = await db
+      .update(importSessions)
+      .set({ progress: input.progress, updatedAt: new Date() })
+      .where(
+        and(
+          eq(importSessions.workspaceId, input.workspaceId),
+          eq(importSessions.id, input.importSessionId),
+          eq(importSessions.status, "IMPORTING"),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async claimStalledImport(input: ClaimStalledImportInput): Promise<ImportSessionRecord | null> {
+    const [record] = await db
+      .update(importSessions)
+      .set({ progress: input.progress, updatedAt: new Date() })
+      .where(
+        and(
+          eq(importSessions.workspaceId, input.workspaceId),
+          eq(importSessions.id, input.importSessionId),
+          eq(importSessions.status, "IMPORTING"),
+          or(
+            isNull(importSessions.progress),
+            sql`(${importSessions.progress}->>'heartbeatAt')::timestamptz < ${input.staleBefore.toISOString()}::timestamptz`,
+          ),
         ),
       )
       .returning();

@@ -4,10 +4,12 @@ import type {
   ImportSessionStatus,
 } from "@/modules/imports/domain";
 import type {
+  ClaimStalledImportInput,
   CreateImportAuditInput,
   CreateImportSessionInput,
   ImportRepository,
   PrepareImportSessionInput,
+  RecordImportProgressInput,
   SaveImportColumnMappingInput,
   TransitionImportSessionInput,
 } from "@/modules/imports/repositories/import-repository";
@@ -28,6 +30,7 @@ export class InMemoryImportRepository implements ImportRepository {
       mapping: null,
       preview: null,
       result: null,
+      progress: null,
       failureCode: null,
       failureMessage: null,
       completedAt: null,
@@ -75,8 +78,19 @@ export class InMemoryImportRepository implements ImportRepository {
 
   async saveColumnMapping(input: SaveImportColumnMappingInput): Promise<ImportSessionRecord | null> {
     const current = await this.findSession(input.workspaceId, input.importSessionId);
-    if (!current || current.status !== "MAPPING_REQUIRED" || current.fileChecksum !== input.columnMapping.fileChecksum) return null;
-    const session: ImportSessionRecord = { ...current, columnMapping: input.columnMapping, updatedAt: new Date() };
+    if (
+      !current ||
+      (current.status !== "MAPPING_REQUIRED" && current.status !== "READY_FOR_PREVIEW") ||
+      current.fileChecksum !== input.columnMapping.fileChecksum
+    ) return null;
+    const session: ImportSessionRecord = {
+      ...current,
+      columnMapping: input.columnMapping,
+      status: "MAPPING_REQUIRED",
+      stagedRows: null,
+      preview: null,
+      updatedAt: new Date(),
+    };
     this.sessions.set(session.id, session);
     return session;
   }
@@ -89,6 +103,7 @@ export class InMemoryImportRepository implements ImportRepository {
       status: input.to,
       approvedByUserId: input.approvedByUserId === undefined ? current.approvedByUserId : input.approvedByUserId,
       result: input.result === undefined ? current.result : input.result,
+      progress: input.progress === undefined ? current.progress : input.progress,
       failureCode: input.failureCode === undefined ? current.failureCode : input.failureCode,
       failureMessage: input.failureMessage === undefined ? current.failureMessage : input.failureMessage,
       completedAt: input.completedAt === undefined ? current.completedAt : input.completedAt,
@@ -99,6 +114,21 @@ export class InMemoryImportRepository implements ImportRepository {
     };
     this.sessions.set(session.id, session);
     return session;
+  }
+
+  async recordProgress(input: RecordImportProgressInput): Promise<ImportSessionRecord | null> {
+    const current = await this.findSession(input.workspaceId, input.importSessionId);
+    if (!current || current.status !== "IMPORTING") return null;
+    const session: ImportSessionRecord = { ...current, progress: input.progress, updatedAt: new Date() };
+    this.sessions.set(session.id, session);
+    return session;
+  }
+
+  async claimStalledImport(input: ClaimStalledImportInput): Promise<ImportSessionRecord | null> {
+    const current = await this.findSession(input.workspaceId, input.importSessionId);
+    if (!current || current.status !== "IMPORTING") return null;
+    if (current.progress && new Date(current.progress.heartbeatAt) >= input.staleBefore) return null;
+    return this.recordProgress(input);
   }
 
   async createAudit(input: CreateImportAuditInput): Promise<ImportAuditRecord> {
@@ -116,6 +146,13 @@ export class InMemoryImportRepository implements ImportRepository {
   forceStatus(importSessionId: string, status: ImportSessionStatus): void {
     const current = this.sessions.get(importSessionId);
     if (current) this.sessions.set(importSessionId, { ...current, status, updatedAt: new Date() });
+  }
+
+  setProgressHeartbeat(importSessionId: string, heartbeatAt: Date): void {
+    const current = this.sessions.get(importSessionId);
+    if (current?.progress) {
+      this.sessions.set(importSessionId, { ...current, progress: { ...current.progress, heartbeatAt: heartbeatAt.toISOString() } });
+    }
   }
 
   expireRawData(importSessionId: string): void {

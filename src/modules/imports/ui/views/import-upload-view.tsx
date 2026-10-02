@@ -118,7 +118,7 @@ export function ImportUploadView({
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragActive(false);
-    if (!busy) dispatch({ type: "filesChosen", files: event.dataTransfer.files });
+    if (!busy) dispatch({ type: "filesChosen", files: Array.from(event.dataTransfer.files) });
   }
 
   async function analyze() {
@@ -219,7 +219,7 @@ export function ImportUploadScreen({
   readonly inputRef?: RefObject<HTMLInputElement | null>;
   readonly chooseRef?: RefObject<HTMLButtonElement | null>;
   readonly onChoose?: () => void;
-  readonly onFilesChosen?: (files: FileList | null) => void;
+  readonly onFilesChosen?: (files: readonly File[]) => void;
   readonly onRemove?: () => void;
   readonly onAnalyze?: () => void;
   readonly onDrag?: (event: DragEvent<HTMLDivElement>) => void;
@@ -301,8 +301,9 @@ export function ImportUploadScreen({
               className="sr-only"
               disabled={busy}
               onChange={(event) => {
-                onFilesChosen?.(event.currentTarget.files);
+                const files = Array.from(event.currentTarget.files ?? []);
                 event.currentTarget.value = "";
+                onFilesChosen?.(files);
               }}
               ref={inputRef}
               tabIndex={-1}

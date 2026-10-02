@@ -128,7 +128,18 @@ export interface ImportResult {
   skippedExactDuplicateRowCount: number;
   failedRowCount: number;
   deferredPipelineCount: number;
+  inboxRowCount?: number;
+  failedRowNumbers?: number[];
   completedAt: string | null;
+}
+
+export type ImportProgressPhase = "IMPORT" | "FINALIZE";
+
+export interface ImportProgress {
+  phase: ImportProgressPhase;
+  processedRowCount: number;
+  totalRowCount: number;
+  heartbeatAt: string;
 }
 
 export interface ImportSessionRecord {
@@ -150,6 +161,7 @@ export interface ImportSessionRecord {
   mapping: ImportMapping | null;
   preview: ImportPreview | null;
   result: ImportResult | null;
+  progress: ImportProgress | null;
   rawDataExpiresAt: Date | null;
   failureCode: string | null;
   failureMessage: string | null;

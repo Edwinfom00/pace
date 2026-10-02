@@ -17,6 +17,7 @@ import type {
   ImportFileType,
   ImportMapping,
   ImportMappingDraft,
+  ImportProgress,
   ImportResult,
   ImportSessionRecord,
   ImportSessionStatus,
@@ -28,9 +29,24 @@ import { normalizeImportRows } from "./normalization";
 import { parseImportUpload, type ImportFileInput } from "./parsers";
 import { buildImportPreview } from "./preview";
 import type { ImportRepository } from "./repositories/import-repository";
-import { importColumnMappingRequestSchema } from "./validation";
+import {
+  activeImportAccounts,
+  defaultImportAccount,
+  defaultImportCategory,
+  importReviewIssues,
+  isLikelyInboxHandoff,
+  mappingFromConfirmedColumns,
+  requiresTransferAccount,
+  summarizeImportReview,
+  type ImportReviewIssue,
+  type ImportReviewSummary,
+} from "./review";
+import { importColumnMappingRequestSchema, importReviewRequestSchema } from "./validation";
 
 const RAW_DATA_RETENTION_MS = 24 * 60 * 60 * 1000;
+const IMPORT_LEASE_STALE_MS = 2 * 60 * 1000;
+const PROGRESS_WRITE_INTERVAL_ROWS = 5;
+const MAX_REPORTED_FAILED_ROWS = 50;
 
 export interface ImportSessionView {
   session: ImportSessionRecord;
@@ -52,13 +68,39 @@ export interface ImportColumnMappingView {
   saved: ImportColumnMapping | null;
 }
 
+export type ImportReviewState = "MAPPING_REQUIRED" | "STALE" | "REVIEW" | "EXECUTING" | "RESULT";
+
+export interface ImportReviewView {
+  state: ImportReviewState;
+  session: {
+    id: string;
+    fileName: string;
+    fileType: ImportFileType;
+    status: ImportSessionStatus;
+  };
+  accounts: { id: string; name: string; currency: string }[];
+  accountId: string | null;
+  transferAccountId: string | null;
+  transferAccountRequired: boolean;
+  summary: ImportReviewSummary | null;
+  blockingIssues: ImportReviewIssue[];
+  progress: ImportProgress | null;
+  result: ImportResult | null;
+}
+
+export interface ImportProgressView {
+  status: ImportSessionStatus;
+  progress: ImportProgress | null;
+  result: ImportResult | null;
+}
+
 export class ImportService {
   constructor(
     private readonly imports: ImportRepository,
     private readonly ledger: LedgerService,
     private readonly ledgerRecords: Pick<LedgerRepository, "listTransactions" | "findTransactionByFingerprint">,
     private readonly workspaces: Pick<WorkspaceRepository, "findMemberContext">,
-    private readonly inbox: Pick<FinancialInboxService, "ingestTransaction">,
+    private readonly inbox: Pick<FinancialInboxService, "ingestTransaction" | "routeTransactionForReview">,
     private readonly insights: Pick<InsightService, "refreshForMember">,
   ) {}
 
@@ -120,7 +162,7 @@ export class ImportService {
     await this.requireManageContext(actor, workspaceId);
     const session = await this.requireInitiatedSession(actor, workspaceId, importSessionId);
     const rows = this.hasLiveRawData(session) ? session.parsedRows ?? [] : [];
-    const editable = session.status === "MAPPING_REQUIRED" && this.hasLiveRawData(session);
+    const editable = isMappingEditable(session.status) && this.hasLiveRawData(session);
     return {
       session: {
         id: session.id,
@@ -148,7 +190,7 @@ export class ImportService {
     if (request.fileChecksum !== session.fileChecksum) {
       throw new DomainConflictError("IMPORT_FILE_CHANGED", "This import now refers to a different file.");
     }
-    if (session.status !== "MAPPING_REQUIRED" || !this.hasLiveRawData(session)) {
+    if (!isMappingEditable(session.status) || !this.hasLiveRawData(session)) {
       throw new DomainConflictError("IMPORT_SESSION_STALE", "This file is no longer available for mapping. Upload it again.");
     }
     const headers = new Set(session.headers);
@@ -224,8 +266,130 @@ export class ImportService {
     } catch (error) {
       throw new ConflictError(error instanceof Error ? error.message : "The import mapping is invalid.");
     }
+    const prepared = await this.stage(actor, context, session, mapping);
+    return { session: prepared, mappingDraft: detectImportMapping(prepared.headers), previewRows: prepared.stagedRows?.slice(0, 100) ?? [] };
+  }
+
+  async getImportReview(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    importSessionId: string,
+  ): Promise<ImportReviewView> {
+    const context = await this.requireManageContext(actor, workspaceId);
+    let session = await this.requireInitiatedSession(actor, workspaceId, importSessionId);
+    if (session.status === "MAPPING_REQUIRED") {
+      if (session.columnMapping?.fileChecksum !== session.fileChecksum) return this.toReviewView(session, [], "MAPPING_REQUIRED");
+      if (!this.hasLiveRawData(session)) return this.toReviewView(session, [], "STALE");
+      session = await this.stageConfirmedColumns(actor, context, session, {
+        accountId: session.mapping?.accountId ?? null,
+        transferAccountId: session.mapping?.transferAccountId ?? null,
+        explicit: false,
+      });
+    }
+    return this.toReviewView(session, await this.ledger.listAccounts(actor, workspaceId));
+  }
+
+  async updateImportReview(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    importSessionId: string,
+    input: unknown,
+  ): Promise<ImportReviewView> {
+    const request = importReviewRequestSchema.parse(input);
+    const context = await this.requireManageContext(actor, workspaceId);
+    let session = await this.requireInitiatedSession(actor, workspaceId, importSessionId);
+    if (session.status === "AWAITING_APPROVAL") {
+      const reopened = await this.imports.transitionSession({
+        workspaceId,
+        importSessionId,
+        from: ["AWAITING_APPROVAL"],
+        to: "READY_FOR_PREVIEW",
+      });
+      if (!reopened) throw new DomainConflictError("IMPORT_SESSION_STALE", "This import changed before it could be reviewed again.");
+      session = reopened;
+    }
+    if (!isMappingEditable(session.status) || !session.columnMapping || !this.hasLiveRawData(session)) {
+      throw new DomainConflictError("IMPORT_SESSION_STALE", "This import can no longer be reviewed. Upload the statement again.");
+    }
+    const staged = await this.stageConfirmedColumns(actor, context, session, { ...request, explicit: true });
+    return this.toReviewView(staged, await this.ledger.listAccounts(actor, workspaceId));
+  }
+
+  async getProgress(actor: AuthenticatedActor, workspaceId: string, importSessionId: string): Promise<ImportProgressView> {
+    await this.requireManageContext(actor, workspaceId);
+    const session = await this.requireInitiatedSession(actor, workspaceId, importSessionId);
+    return { status: session.status, progress: session.progress, result: session.result };
+  }
+
+  private async stageConfirmedColumns(
+    actor: AuthenticatedActor,
+    context: WorkspaceMemberContext,
+    session: ImportSessionRecord,
+    selection: { accountId: string | null; transferAccountId: string | null; explicit: boolean },
+  ): Promise<ImportSessionRecord> {
+    const [accounts, categories] = await Promise.all([
+      this.ledger.listAccounts(actor, session.workspaceId),
+      this.ledger.listCategories(actor, session.workspaceId),
+    ]);
+    const account = defaultImportAccount(accounts, selection.accountId, context.preferences.currency);
+    if (!account) throw new DomainConflictError("IMPORT_ACCOUNT_UNAVAILABLE", "Add an account before importing transactions.");
+    if (selection.explicit && account.id !== selection.accountId) {
+      throw new DomainConflictError("IMPORT_ACCOUNT_UNAVAILABLE", "The selected import account is not available in this workspace.");
+    }
+    const expense = defaultImportCategory(categories, "EXPENSE");
+    const income = defaultImportCategory(categories, "INCOME");
+    if (!expense || !income) throw new ConflictError("Default import categories are missing in this workspace.");
+    const transferAccount = selection.transferAccountId
+      ? activeImportAccounts(accounts).find((candidate) => candidate.id === selection.transferAccountId) ?? null
+      : null;
+    if (
+      selection.transferAccountId &&
+      (!transferAccount || transferAccount.id === account.id || transferAccount.currency !== account.currency)
+    ) {
+      throw new DomainConflictError("IMPORT_TRANSFER_ACCOUNT_INVALID", "Choose a different account with the same currency for transfers.");
+    }
+    const mapping = mappingFromConfirmedColumns(session.columnMapping!, {
+      rows: session.parsedRows ?? [],
+      locale: context.preferences.locale,
+      accountId: account.id,
+      transferAccountId: transferAccount?.id ?? null,
+      defaultExpenseCategoryId: expense.id,
+      defaultIncomeCategoryId: income.id,
+    });
+    return this.stage(actor, context, session, validateMappingAgainstParsedFile(mapping, { headers: session.headers }));
+  }
+
+  private toReviewView(
+    session: ImportSessionRecord,
+    accounts: readonly LedgerAccountRecord[],
+    forcedState?: ImportReviewState,
+  ): ImportReviewView {
+    const rows = session.stagedRows ?? [];
+    const account = accounts.find((candidate) => candidate.id === session.mapping?.accountId);
+    return {
+      state: forcedState ?? reviewState(session),
+      session: { id: session.id, fileName: session.fileName, fileType: session.fileType, status: session.status },
+      accounts: activeImportAccounts(accounts).map(({ id, name, currency }) => ({ id, name, currency })),
+      accountId: session.mapping?.accountId ?? null,
+      transferAccountId: session.mapping?.transferAccountId ?? null,
+      transferAccountRequired: requiresTransferAccount(rows),
+      summary: session.stagedRows ? summarizeImportReview(rows, account?.currency ?? session.mapping?.fallbackCurrency ?? null) : null,
+      blockingIssues: importReviewIssues(rows),
+      progress: session.progress,
+      result: session.result,
+    };
+  }
+
+  private async stage(
+    actor: AuthenticatedActor,
+    context: WorkspaceMemberContext,
+    session: ImportSessionRecord,
+    mapping: ImportMapping,
+  ): Promise<ImportSessionRecord> {
+    const workspaceId = session.workspaceId;
+    const importSessionId = session.id;
     const resolvedMapping = await this.validateMappingContext(actor, workspaceId, mapping);
-    const normalized = normalizeImportRows(session.parsedRows, resolvedMapping, {
+    const normalized = normalizeImportRows(session.parsedRows ?? [], resolvedMapping, {
       workspaceId,
       fallbackCurrency: resolvedMapping.fallbackCurrency,
       timezone: context.preferences.timezone,
@@ -249,7 +413,7 @@ export class ImportService {
       invalidRowCount: preview.invalidRowCount,
       exactDuplicateRowCount: preview.exactDuplicateRowCount,
     });
-    return { session: prepared, mappingDraft: detectImportMapping(prepared.headers), previewRows: deduplicated.slice(0, 100) };
+    return prepared;
   }
 
   async requestApproval(
@@ -259,6 +423,7 @@ export class ImportService {
   ): Promise<ImportSessionRecord> {
     await this.requireManageContext(actor, workspaceId);
     const session = await this.requireInitiatedSession(actor, workspaceId, importSessionId);
+    if (session.status === "AWAITING_APPROVAL") return session;
     if (
       !session.preview ||
       !session.stagedRows ||
@@ -298,43 +463,79 @@ export class ImportService {
       throw new ConflictError("This import has no approved staged rows.");
     }
 
-    if (session.status !== "IMPORTING") {
+    const acceptedRows = stagedRows.filter((row) => row.disposition === "ACCEPT");
+    const progressAt = (processedRowCount: number, phase: ImportProgress["phase"] = "IMPORT"): ImportProgress => ({
+      phase,
+      processedRowCount,
+      totalRowCount: acceptedRows.length,
+      heartbeatAt: new Date().toISOString(),
+    });
+
+    if (session.status === "IMPORTING") {
+      // Only a stalled run may be resumed; a live run keeps its lease so staged rows are never processed by two requests at once.
+      const claimed = await this.imports.claimStalledImport({
+        workspaceId,
+        importSessionId,
+        staleBefore: new Date(Date.now() - IMPORT_LEASE_STALE_MS),
+        progress: progressAt(0),
+      });
+      if (!claimed) return session;
+      await this.audit(claimed, actor.userId, "IMPORT_RESUMED", "IMPORTING", "IMPORTING");
+      session = claimed;
+    } else {
+      try {
+        await this.validateMappingContext(actor, workspaceId, mapping);
+      } catch (error) {
+        if (error instanceof NotFoundError || error instanceof ConflictError) {
+          throw new DomainConflictError("IMPORT_ACCOUNT_UNAVAILABLE", error.message);
+        }
+        throw error;
+      }
       const importing = await this.imports.transitionSession({
         workspaceId,
         importSessionId,
         from: ["AWAITING_APPROVAL", "PARTIALLY_COMPLETED"],
         to: "IMPORTING",
         approvedByUserId: actor.userId,
+        progress: progressAt(0),
       });
-      if (!importing) throw new ConflictError("This import changed before it could begin.");
+      if (!importing) {
+        const current = await this.requireSession(workspaceId, importSessionId);
+        if (current.status === "IMPORTING" || current.status === "COMPLETED") return current;
+        throw new ConflictError("This import changed before it could begin.");
+      }
       await this.audit(importing, actor.userId, "IMPORT_STARTED", session.status, "IMPORTING");
       session = importing;
     }
 
     let importedRowCount = 0;
     let skippedExactDuplicateRowCount = preview.exactDuplicateRowCount;
-    let failedRowCount = 0;
+    let inboxRowCount = 0;
     let deferredPipelineCount = 0;
-    for (const row of stagedRows) {
-      if (row.disposition !== "ACCEPT") continue;
+    let processedRowCount = 0;
+    const failedRowNumbers: number[] = [];
+    for (const row of acceptedRows) {
       const transaction = await this.findOrCreateLedgerTransaction(actor, workspaceId, session, row);
+      processedRowCount += 1;
       if (!transaction) {
-        failedRowCount += 1;
-        continue;
-      }
-      if (transaction.source.importSessionId === session.id) {
+        failedRowNumbers.push(row.sourceRowNumber);
+      } else if (transaction.source.importSessionId === session.id) {
         importedRowCount += 1;
+        try {
+          if (await this.handOffToInbox(actor, workspaceId, session, transaction, row)) inboxRowCount += 1;
+        } catch (error) {
+          deferredPipelineCount += 1;
+          console.error("Imported transaction classification deferred", error);
+        }
       } else {
         skippedExactDuplicateRowCount += 1;
-        continue;
       }
-      try {
-        await this.inbox.ingestTransaction(actor, workspaceId, { transaction });
-      } catch (error) {
-        deferredPipelineCount += 1;
-        console.error("Imported transaction classification deferred", error);
+      if (processedRowCount % PROGRESS_WRITE_INTERVAL_ROWS === 0 && processedRowCount < acceptedRows.length) {
+        await this.imports.recordProgress({ workspaceId, importSessionId, progress: progressAt(processedRowCount) });
       }
     }
+    await this.imports.recordProgress({ workspaceId, importSessionId, progress: progressAt(processedRowCount, "FINALIZE") });
+    const failedRowCount = failedRowNumbers.length;
     if (importedRowCount > 0) {
       try {
         await this.insights.refreshForMember(actor, workspaceId);
@@ -349,6 +550,8 @@ export class ImportService {
       skippedExactDuplicateRowCount,
       failedRowCount,
       deferredPipelineCount,
+      inboxRowCount,
+      failedRowNumbers: failedRowNumbers.slice(0, MAX_REPORTED_FAILED_ROWS),
       completedAt: failedRowCount ? null : completedAt.toISOString(),
     };
     const finalStatus: ImportSessionStatus = failedRowCount ? "PARTIALLY_COMPLETED" : "COMPLETED";
@@ -358,6 +561,7 @@ export class ImportService {
       from: ["IMPORTING"],
       to: finalStatus,
       result,
+      progress: progressAt(processedRowCount, "FINALIZE"),
       completedAt: failedRowCount ? null : completedAt,
       clearRawData: !failedRowCount,
       failureCode: failedRowCount ? "ROW_IMPORT_FAILURE" : null,
@@ -373,6 +577,22 @@ export class ImportService {
       { ...result },
     );
     return completed;
+  }
+
+  private async handOffToInbox(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    session: ImportSessionRecord,
+    transaction: LedgerTransactionRecord,
+    row: NormalizedImportRow,
+  ): Promise<boolean> {
+    const classified = await this.inbox.ingestTransaction(actor, workspaceId, { transaction });
+    if (!isLikelyInboxHandoff(row)) return (classified?.inboxItems.length ?? 0) > 0;
+    await this.inbox.routeTransactionForReview(actor, workspaceId, {
+      transactionId: transaction.id,
+      details: { code: "likely_duplicate", importSessionId: session.id, sourceRowNumber: row.sourceRowNumber },
+    });
+    return true;
   }
 
   async cancel(
@@ -454,6 +674,7 @@ export class ImportService {
       this.ledger.listCategories(actor, workspaceId),
     ]);
     const account = requireById(accounts, mapping.accountId, "The selected import account is not in this workspace.");
+    if (account.archivedAt) throw new ConflictError("The selected import account is archived.");
     requireCategory(categories, mapping.defaultExpenseCategoryId, "EXPENSE");
     requireCategory(categories, mapping.defaultIncomeCategoryId, "INCOME");
     if (mapping.transferAccountId) {
@@ -521,6 +742,27 @@ export class ImportService {
       toStatus,
       metadata,
     });
+  }
+}
+
+function isMappingEditable(status: ImportSessionStatus): boolean {
+  return status === "MAPPING_REQUIRED" || status === "READY_FOR_PREVIEW";
+}
+
+function reviewState(session: ImportSessionRecord): ImportReviewState {
+  switch (session.status) {
+    case "READY_FOR_PREVIEW":
+    case "AWAITING_APPROVAL":
+      return "REVIEW";
+    case "IMPORTING":
+      return "EXECUTING";
+    case "COMPLETED":
+    case "PARTIALLY_COMPLETED":
+      return "RESULT";
+    case "MAPPING_REQUIRED":
+      return "MAPPING_REQUIRED";
+    default:
+      return "STALE";
   }
 }
 
