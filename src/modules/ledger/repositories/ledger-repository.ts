@@ -1251,6 +1251,15 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return record ?? null;
   }
 
+  async listTransactionCorrections(
+    workspaceId: string,
+  ): Promise<LedgerTransactionCorrectionRecord[]> {
+    return db
+      .select()
+      .from(ledgerTransactionCorrections)
+      .where(eq(ledgerTransactionCorrections.workspaceId, workspaceId));
+  }
+
   async findTransactionCorrectionByOriginal(
     workspaceId: string,
     originalTransactionId: string,

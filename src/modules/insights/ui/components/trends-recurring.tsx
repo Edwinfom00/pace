@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { FiArrowRight } from "react-icons/fi";
 import {
   Bar,
   BarChart,
@@ -20,9 +22,11 @@ import {
   formatInsightsMonth,
   formatInsightsShare,
 } from "../insights-format";
+import { insightsRecurringHref } from "../insights-links";
 import {
   cashFlowChartData,
   hasRecurringSpending,
+  trendsQueryState,
   type CashFlowChartDatum,
 } from "../trends-format";
 
@@ -31,9 +35,11 @@ const RECURRING_COLOR = "#1769e8";
 export function TrendsRecurring({
   labels,
   trends,
+  workspaceSlug,
 }: {
   readonly labels: DashboardLabels;
   readonly trends: InsightsTrends;
+  readonly workspaceSlug: string;
 }) {
   const data = cashFlowChartData(trends.months, trends.currency, trends.locale);
   const hasData = hasRecurringSpending(trends.months);
@@ -149,6 +155,12 @@ export function TrendsRecurring({
       <p className="mt-2 text-[11px] leading-4 text-[#8a96ab]">
         {labels["insights.trends.recurring.note"]}
       </p>
+      <Link
+        className="mt-2 inline-flex items-center gap-1 rounded-sm text-[12px] leading-5 font-medium text-[#1769e8] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[#91b5fa]"
+        href={insightsRecurringHref(workspaceSlug, trendsQueryState(trends))}>
+        {labels["insights.recurring.view"]}
+        <FiArrowRight aria-hidden="true" className="size-3.5" />
+      </Link>
     </section>
   );
 }

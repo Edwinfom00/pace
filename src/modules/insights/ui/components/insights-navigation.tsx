@@ -17,7 +17,7 @@ import type { DashboardLabels } from "@/i18n/dashboard-messages";
 const MINIMUM_LOADING_DURATION_MS = 450;
 
 export type InsightsSearchUpdate = Readonly<
-  Record<"period" | "range" | "currency", string | null>
+  Record<"period" | "range" | "currency" | "horizon", string | null>
 >;
 
 type InsightsNavigationContextValue = {

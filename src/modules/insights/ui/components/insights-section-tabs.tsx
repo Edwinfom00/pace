@@ -8,7 +8,11 @@ import { cn } from "@/lib/utils";
 
 import { insightsSectionHref, type InsightsSection } from "../insights-links";
 
-const SECTIONS: readonly InsightsSection[] = ["overview", "trends"];
+const SECTIONS: readonly InsightsSection[] = [
+  "overview",
+  "trends",
+  "recurring",
+];
 
 export function InsightsSectionTabs({
   active,

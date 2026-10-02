@@ -1,4 +1,9 @@
 import type { InsightsRange } from "../overview/insights-overview.types";
+import {
+  DEFAULT_RECURRING_HORIZON,
+  RECURRING_HORIZONS,
+  type RecurringHorizon,
+} from "../recurring/insights-recurring.types";
 import { TRENDS_RANGES } from "../trends/insights-trends.types";
 
 export interface InsightsQueryState {
@@ -46,9 +51,39 @@ export function insightsTrendsHref(
   return `/w/${workspaceSlug}/insights/trends?${insightsQuery(state)}`;
 }
 
-export type InsightsSection = "overview" | "trends";
+export function insightsRecurringHref(
+  workspaceSlug: string,
+  state: InsightsQueryState & { readonly horizon?: RecurringHorizon },
+): string {
+  const params = new URLSearchParams(insightsQuery(state));
+  if (state.horizon && state.horizon !== DEFAULT_RECURRING_HORIZON)
+    params.set("horizon", state.horizon);
+  return `/w/${workspaceSlug}/insights/recurring?${params.toString()}`;
+}
 
-const SECTION_QUERY_KEYS = ["period", "range", "currency"] as const;
+export function recurringDetailHref(
+  workspaceSlug: string,
+  recurringId: string,
+): string {
+  return `/w/${workspaceSlug}/recurring/${encodeURIComponent(recurringId)}`;
+}
+
+export function transactionDetailHref(
+  workspaceSlug: string,
+  transactionId: string,
+): string {
+  return `/w/${workspaceSlug}/transactions/${encodeURIComponent(transactionId)}`;
+}
+
+export type InsightsSection = "overview" | "trends" | "recurring";
+
+const SECTION_QUERY_KEYS = ["period", "range", "currency", "horizon"] as const;
+
+const SECTION_PATHS: Readonly<Record<InsightsSection, string>> = {
+  overview: "",
+  trends: "/trends",
+  recurring: "/recurring",
+};
 
 export function insightsSectionHref(
   workspaceSlug: string,
@@ -62,16 +97,19 @@ export function insightsSectionHref(
     if (!value) continue;
     if (
       key === "range" &&
-      section === "trends" &&
+      section !== "overview" &&
       !(TRENDS_RANGES as readonly string[]).includes(value)
+    )
+      continue;
+    if (
+      key === "horizon" &&
+      (section !== "recurring" ||
+        !(RECURRING_HORIZONS as readonly string[]).includes(value))
     )
       continue;
     params.set(key, value);
   }
   const query = params.toString();
-  const path =
-    section === "trends"
-      ? `/w/${workspaceSlug}/insights/trends`
-      : `/w/${workspaceSlug}/insights`;
+  const path = `/w/${workspaceSlug}/insights${SECTION_PATHS[section]}`;
   return query ? `${path}?${query}` : path;
 }

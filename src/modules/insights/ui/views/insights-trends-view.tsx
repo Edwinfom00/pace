@@ -93,7 +93,11 @@ export function InsightsTrendsView({
                   />
                 </div>
                 <div className="grid gap-4 sm:gap-5 lg:grid-cols-2 lg:items-start">
-                  <TrendsRecurring labels={labels} trends={trends} />
+                  <TrendsRecurring
+                    labels={labels}
+                    trends={trends}
+                    workspaceSlug={workspaceSlug}
+                  />
                   <TrendsSignals
                     labels={labels}
                     trends={trends}
