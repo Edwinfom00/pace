@@ -7,6 +7,8 @@ import type {
   ReportRecommendation,
 } from "../domain/financial-report.types";
 import styles from "./financial-report.module.css";
+import { FinancialReportPage as ReportPage } from "./financial-report-page";
+import { CalendarDays } from "lucide-react";
 
 type Props = {
   readonly report: FinancialReportDTO;
@@ -47,48 +49,6 @@ function titleCaseMonth(report: FinancialReportDTO) {
     month: "long",
     year: "numeric",
   });
-}
-
-function ReportPage({
-  children,
-  number,
-  report,
-  section,
-  cover = false,
-}: {
-  children: React.ReactNode;
-  number: number;
-  report: FinancialReportDTO;
-  section?: string;
-  cover?: boolean;
-}) {
-  const labels = getReportLabels(report.meta.language);
-  return (
-    <article className={`${styles.page} ${cover ? styles.cover : ""}`}>
-      {!cover && (
-        <header className={styles.header}>
-          <PaceLogo width={54} height={18} />
-          <span>
-            {section} · {formatReportLabel(labels, "report.header.title")} ·{" "}
-            {titleCaseMonth(report)}
-          </span>
-        </header>
-      )}
-      <div className={cover ? styles.coverBody : styles.body}>{children}</div>
-      {!cover && (
-        <footer className={styles.footer}>
-          <span>Pace</span>
-          <span>{number}</span>
-        </footer>
-      )}
-      {cover && (
-        <footer className={styles.footer}>
-          <span>{labels["report.brand.tagline"]}</span>
-          <span>{number}</span>
-        </footer>
-      )}
-    </article>
-  );
 }
 
 function ReportIcon({
@@ -164,7 +124,9 @@ function Cover({ report }: { report: FinancialReportDTO }) {
         <i />
       </div>
       <div className={styles.period}>
-        <ReportIcon type="calendar" />
+        <span className={styles.periodIcon}>
+          <CalendarDays size={16} strokeWidth={2} />
+        </span>
         <div>
           <small>{l["report.cover.periodLabel"]}</small>
           <strong>
@@ -197,13 +159,11 @@ function Cover({ report }: { report: FinancialReportDTO }) {
 }
 
 function Metric({
-  report,
   label,
   value,
   type,
   delta,
 }: {
-  report: FinancialReportDTO;
   label: string;
   value: string;
   type: "income" | "expense" | "net" | "transactions";
@@ -227,8 +187,7 @@ function Summary({ report }: { report: FinancialReportDTO }) {
     <ReportPage
       report={report}
       number={2}
-      section={`01. ${l["report.section.executiveSummary"]}`}
-    >
+      section={`01. ${l["report.section.executiveSummary"]}`}>
       <PageIntro
         eyebrow={`01. ${l["report.section.executiveSummary"]}`}
         title={l["report.executive.title"]}
@@ -238,28 +197,24 @@ function Summary({ report }: { report: FinancialReportDTO }) {
       />
       <div className={styles.metricGrid}>
         <Metric
-          report={report}
           label={l["report.metric.income"]}
           value={money(report, m.income.minor)}
           type="income"
           delta={signed(report, m.income.deltaMinor)}
         />
         <Metric
-          report={report}
           label={l["report.metric.spending"]}
           value={money(report, m.spending.minor)}
           type="expense"
           delta={signed(report, m.spending.deltaMinor)}
         />
         <Metric
-          report={report}
           label={l["report.metric.net"]}
           value={signed(report, m.net.minor)}
           type="net"
           delta={signed(report, m.net.deltaMinor)}
         />
         <Metric
-          report={report}
           label={l["report.metric.transactions"]}
           value={String(m.transactions.current)}
           type="transactions"
@@ -342,8 +297,7 @@ function Trends({ report }: { report: FinancialReportDTO }) {
     <ReportPage
       report={report}
       number={3}
-      section={`02. ${l["report.section.incomeSpending"]}`}
-    >
+      section={`02. ${l["report.section.incomeSpending"]}`}>
       <PageIntro
         eyebrow={`02. ${l["report.section.incomeSpending"]}`}
         title={l["report.incomeSpending.title"]}
@@ -353,7 +307,7 @@ function Trends({ report }: { report: FinancialReportDTO }) {
       />
       <ChartTitle title={l["report.incomeSpending.title"]} />
       <div className={styles.bars}>
-        {months.map((m, i) => (
+        {months.map((m) => (
           <div className={styles.barGroup} key={m.month}>
             <div>
               <i
@@ -382,27 +336,42 @@ function ChartTitle({ title }: { title: string }) {
 function LineChart({ report }: { report: FinancialReportDTO }) {
   const data = report.incomeSpending.months;
   const nums = data.map((x) => BigInt(x.netMinor));
-  const min = nums.reduce((a, b) => (a < b ? a : b), 0n),
-    max = nums.reduce((a, b) => (a > b ? a : b), 1n);
-  const range = max - min || 1n;
-  const points = nums
-    .map(
-      (n, i) =>
-        `${10 + (i * 80) / Math.max(1, nums.length - 1)},${82 - Number(((n - min) * 65n) / range)}`,
-    )
-    .join(" ");
+  const max = nums.reduce((a, b) => (a > b ? a : b), 1n);
+  const ceiling = ((max + 99999n) / 100000n) * 100000n;
+  const x = (i: number) => 55 + (i * 545) / Math.max(1, nums.length - 1);
+  const y = (n: bigint) => 190 - Number((n * 160n) / ceiling);
+  const points = nums.map((n, i) => `${x(i)},${y(n)}`).join(" ");
+  const area = `55,190 ${points} 600,190`;
   return (
     <div className={styles.line}>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-        <path d="M 0 84 H 100 M 0 52 H 100 M 0 20 H 100" />
-        <polyline points={points} />
+      <svg viewBox="0 0 640 230" role="img" aria-label={report.meta.language === "fr" ? "Évolution du solde net mensuel" : "Monthly net balance trend"}>
+        <defs>
+          <linearGradient id="reportNetFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#2c83f7" stopOpacity="0.24" />
+            <stop offset="100%" stopColor="#2c83f7" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        {[0, 1, 2, 3, 4].map((step) => {
+          const value = (ceiling * BigInt(4 - step)) / 4n;
+          const ordinate = 30 + step * 40;
+          return (
+            <g key={step}>
+              <line x1="55" x2="600" y1={ordinate} y2={ordinate} className={styles.chartGridLine} />
+              <text x="45" y={ordinate + 4} textAnchor="end" className={styles.chartAxisLabel}>
+                {value === 0n ? "0" : `${Number(value / 1000n)}K`}
+              </text>
+            </g>
+          );
+        })}
+        <polygon points={area} fill="url(#reportNetFill)" />
+        <polyline points={points} className={styles.netLine} />
         {nums.map((n, i) => (
-          <circle
-            key={i}
-            cx={10 + (i * 80) / Math.max(1, nums.length - 1)}
-            cy={82 - Number(((n - min) * 65n) / range)}
-            r="1.6"
-          />
+          <g key={data[i].month}>
+            <circle cx={x(i)} cy={y(n)} r="4" className={styles.netPoint} />
+            <text x={x(i)} y="218" textAnchor="middle" className={styles.chartAxisLabel}>
+              {date(report, `${data[i].month}-01`, { month: "short" })}
+            </text>
+          </g>
         ))}
       </svg>
     </div>
@@ -412,20 +381,22 @@ function LineChart({ report }: { report: FinancialReportDTO }) {
 function Categories({ report }: { report: FinancialReportDTO }) {
   const l = getReportLabels(report.meta.language);
   const cats = report.categoryBreakdown.items;
-  let offset = 0;
-  const gradient = cats
-    .map((c, i) => {
-      const n = offset;
-      offset += c.shareBps / 100;
-      return `${colors[i % colors.length]} ${n}% ${offset}%`;
-    })
-    .join(", ");
+  const gradient = cats.reduce(
+    (parts, c, i) => {
+      const start = parts.offset;
+      const offset = start + c.shareBps / 100;
+      return {
+        offset,
+        stops: [...parts.stops, `${colors[i % colors.length]} ${start}% ${offset}%`],
+      };
+    },
+    { offset: 0, stops: [] as string[] },
+  ).stops.join(", ");
   return (
     <ReportPage
       report={report}
       number={4}
-      section={`03. ${l["report.section.categories"]}`}
-    >
+      section={`03. ${l["report.section.categories"]}`}>
       <PageIntro
         eyebrow={`03. ${l["report.section.categories"]}`}
         title={l["report.categories.title"]}
@@ -438,8 +409,7 @@ function Categories({ report }: { report: FinancialReportDTO }) {
           className={styles.donut}
           style={{
             background: `conic-gradient(${gradient || "#e8eef7 0 100%"})`,
-          }}
-        >
+          }}>
           <div>
             <strong>
               {money(report, report.categoryBreakdown.totalMinor)}
@@ -485,8 +455,7 @@ function EvolutionTable({ report }: { report: FinancialReportDTO }) {
                   BigInt(c.previousMinor) > BigInt(c.amountMinor)
                     ? styles.good
                     : styles.bad
-                }
-              >
+                }>
                 {c.changePercentage
                   ? `${c.direction === "up" ? "+" : ""}${c.changePercentage}%`
                   : l["report.categories.new"]}
@@ -506,8 +475,7 @@ function Transactions({ report }: { report: FinancialReportDTO }) {
     <ReportPage
       report={report}
       number={5}
-      section={`04. ${l["report.section.transactions"]}`}
-    >
+      section={`04. ${l["report.section.transactions"]}`}>
       <PageIntro
         eyebrow={`04. ${l["report.section.transactions"]}`}
         title={l["report.transactions.title"]}
@@ -541,8 +509,7 @@ function Transactions({ report }: { report: FinancialReportDTO }) {
                     BigInt(t.signedMinor) >= 0n
                       ? styles.positive
                       : styles.negative
-                  }
-                >
+                  }>
                   {signed(report, t.signedMinor)}
                 </td>
               </tr>
@@ -562,8 +529,7 @@ function Accounts({ report }: { report: FinancialReportDTO }) {
     <ReportPage
       report={report}
       number={6}
-      section={`05. ${l["report.section.accounts"]}`}
-    >
+      section={`05. ${l["report.section.accounts"]}`}>
       <PageIntro
         eyebrow={`05. ${l["report.section.accounts"]}`}
         title={l["report.accounts.title"]}
@@ -614,8 +580,7 @@ function Accounts({ report }: { report: FinancialReportDTO }) {
                       BigInt(x.netMinor) >= 0n
                         ? styles.positive
                         : styles.negative
-                    }
-                  >
+                    }>
                     {signed(report, x.netMinor)}
                   </td>
                 </tr>
@@ -637,8 +602,7 @@ function Recurring({ report }: { report: FinancialReportDTO }) {
     <ReportPage
       report={report}
       number={7}
-      section={`06. ${l["report.section.recurring"]}`}
-    >
+      section={`06. ${l["report.section.recurring"]}`}>
       <PageIntro
         eyebrow={`06. ${l["report.section.recurring"]}`}
         title={l["report.recurring.title"]}
@@ -706,8 +670,7 @@ function Insights({ report }: { report: FinancialReportDTO }) {
     <ReportPage
       report={report}
       number={8}
-      section={`07. ${l["report.section.insights"]}`}
-    >
+      section={`07. ${l["report.section.insights"]}`}>
       <PageIntro
         eyebrow={`07. ${l["report.section.insights"]}`}
         title={l["report.insights.title"]}
@@ -747,8 +710,7 @@ function Recommendations({ report }: { report: FinancialReportDTO }) {
     <ReportPage
       report={report}
       number={9}
-      section={`08. ${l["report.section.recommendations"]}`}
-    >
+      section={`08. ${l["report.section.recommendations"]}`}>
       <PageIntro
         eyebrow={`08. ${l["report.section.recommendations"]}`}
         title={l["report.recommendations.title"]}

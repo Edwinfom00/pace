@@ -451,6 +451,13 @@
 }
 .coverBody {
   height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.coverBody > :not(.coverArt) {
+  position: relative;
+  z-index: 1;
 }
 .coverTop {
   align-items: flex-start;
@@ -458,11 +465,15 @@
   display: flex;
   font-size: 1.9mm;
   justify-content: space-between;
+  position: relative;
   text-align: right;
+  z-index: 1;
 }
 .coverHeading {
   margin-top: 24mm;
+  position: relative;
   width: 95mm;
+  z-index: 1;
 }
 .coverHeading h1 {
   font-size: 9mm;
@@ -485,6 +496,8 @@
   display: flex;
   gap: 3mm;
   margin-top: 11mm;
+  position: relative;
+  z-index: 1;
 }
 .period small,
 .period em {
@@ -499,32 +512,21 @@
   margin: 0.7mm 0;
 }
 .coverArt {
-  background: linear-gradient(
-    175deg,
-    transparent 0 16%,
-    #dceafd 16% 35%,
-    #b5d0ef 35% 55%,
-    #6385b9 55% 56%,
-    #294d85 56% 72%,
-    #123563 72%
-  );
+  background-color: #dceafd;
+  background-image: url("/reports/pace-report-cover.webp");
+  background-position: center 72%;
+  background-repeat: no-repeat;
+  background-size: cover;
   bottom: 0;
-  clip-path: polygon(
-    0 23%,
-    13% 40%,
-    26% 25%,
-    39% 40%,
-    54% 14%,
-    66% 35%,
-    79% 11%,
-    100% 36%,
-    100% 100%,
-    0 100%
-  );
   height: 96mm;
   left: 0;
   position: absolute;
   right: 0;
+  z-index: 0;
+}
+
+.cover > .footer {
+  z-index: 1;
 }
 
 @media (max-width: 700px) {
@@ -554,5 +556,277 @@
   .page:last-child {
     break-after: auto;
     page-break-after: auto;
+  }
+}
+
+.canvas {
+  --page-x: 13mm;
+  gap: 6mm;
+  padding: 6mm;
+}
+
+.page {
+  font-size: 3.4mm;
+  line-height: 1.48;
+  padding-top: 13mm;
+}
+
+.header {
+  font-size: 2.25mm;
+  height: 13mm;
+}
+
+.footer {
+  bottom: 9mm;
+  font-size: 2.2mm;
+}
+
+.body {
+  padding-top: 11mm;
+}
+
+.eyebrow {
+  font-size: 3.3mm;
+  margin-bottom: 2mm;
+}
+
+.page h1 {
+  font-size: 10.5mm;
+  letter-spacing: -0.35mm;
+  margin-bottom: 3mm;
+}
+
+.subtitle {
+  font-size: 3.2mm;
+  max-width: 160mm;
+}
+
+.page h2 {
+  font-size: 4.1mm;
+}
+
+.metricGrid {
+  gap: 4mm;
+  margin-top: 11mm;
+}
+
+.metric {
+  border-radius: 3mm;
+  min-height: 40mm;
+  padding: 6mm;
+}
+
+.metric small,
+.metric em,
+.accounts small,
+.recurringHero small {
+  font-size: 2.75mm;
+}
+
+.metric strong {
+  font-size: 5.2mm;
+}
+
+.highlight {
+  margin-top: 8mm;
+  padding: 7mm;
+}
+
+.chartTitle {
+  margin-top: 11mm;
+}
+
+.page table {
+  font-size: 3mm;
+}
+
+.page th,
+.page td {
+  padding: 3.2mm 3mm;
+}
+
+.transactionTable td small,
+.note,
+.donut small,
+.legend em,
+.good,
+.bad {
+  font-size: 2.55mm;
+}
+
+.accounts {
+  gap: 3mm;
+  margin-top: 10mm;
+}
+
+.accounts > div {
+  min-height: 27mm;
+  padding: 5mm;
+}
+
+.accounts strong,
+.recurringHero strong {
+  font-size: 4.1mm;
+}
+
+.insights,
+.recommendations {
+  gap: 7mm;
+  margin-top: 11mm;
+}
+
+.insights > div {
+  min-height: 37mm;
+}
+
+.recommendations > div {
+  min-height: 35mm;
+  padding: 5mm;
+}
+
+.cover {
+  padding-top: 14mm;
+}
+
+.coverBody {
+  height: 100%;
+}
+
+.coverTop {
+  font-size: 2.45mm;
+}
+
+.coverHeading {
+  margin-top: 27mm;
+  width: 130mm;
+}
+
+.coverHeading h1 {
+  font-size: 16mm;
+  letter-spacing: -0.55mm;
+  line-height: 1.06;
+  margin-bottom: 3mm;
+}
+
+.coverHeading p {
+  font-size: 3.85mm;
+  line-height: 1.45;
+  max-width: 115mm;
+}
+
+.coverHeading i {
+  margin-top: 10mm;
+  width: 17mm;
+}
+
+.period {
+  gap: 4mm;
+  margin-top: 20mm;
+}
+
+.periodIcon {
+  align-items: center;
+  background: #ecf4ff;
+  border-radius: 2mm;
+  color: #1264eb;
+  display: inline-flex;
+  height: 13mm;
+  justify-content: center;
+  width: 13mm;
+}
+
+.period small,
+.period em {
+  font-size: 2.45mm;
+}
+
+.period strong {
+  font-size: 3.75mm;
+}
+
+.coverArt {
+  background-image: url("/report/financial-cover-mountains.png");
+  background-position: center top;
+  background-size: 100% 100%;
+  bottom: 13mm;
+  clip-path: polygon(0 0, 100% 0, 100% 91%, 90% 94%, 75% 97%, 58% 99%, 40% 99%, 21% 97%, 0 94%);
+  height: auto;
+  left: calc(-1 * var(--page-x));
+  right: calc(-1 * var(--page-x));
+  top: -14mm;
+}
+
+.coverFooterBrand {
+  align-items: center;
+  display: flex;
+  gap: 3mm;
+  line-height: 1.25;
+  max-width: 80mm;
+}
+
+.coverFooterBrand > span {
+  max-width: 54mm;
+}
+
+.line {
+  background: #fff;
+  border: 0;
+  height: 63mm;
+}
+
+.line svg {
+  display: block;
+  height: 100%;
+  overflow: visible;
+  width: 100%;
+}
+
+.line .chartGridLine {
+  stroke: #e5edf7;
+  stroke-width: 1;
+}
+
+.line .chartAxisLabel {
+  fill: #4b6389;
+  font-size: 12px;
+}
+
+.line .netLine {
+  fill: none;
+  stroke: #1479f8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.line .netPoint {
+  fill: #1479f8;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+@media (max-width: 700px) {
+  .canvas {
+    display: flex;
+    flex-direction: column;
+    overflow-x: auto;
+  }
+
+  .page {
+    flex: none;
+    margin-bottom: 0;
+    transform: none;
+  }
+}
+
+@media print {
+  .canvas {
+    background: #fff;
+    gap: 0;
+    padding: 0;
+  }
+
+  .page {
+    box-shadow: none;
   }
 }
