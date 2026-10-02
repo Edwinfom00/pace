@@ -24,28 +24,45 @@ export type ImportMappingLabels = {
   readonly description: string;
   readonly rowsOne: string;
   readonly rowsOther: string;
-  readonly columnsLabel: string;
-  readonly colFileColumn: string;
-  readonly colSample: string;
-  readonly colMapTo: string;
-  readonly colStatus: string;
-  readonly sampleEmpty: string;
-  readonly fieldFor: string;
-  readonly chooseField: string;
-  readonly ignoreColumn: string;
-  readonly requiredOptions: string;
-  readonly optionalOptions: string;
+  readonly columnCount: string;
+  readonly previewTitle: string;
+  readonly previewHint: string;
+  readonly previewMissing: string;
+  readonly previewRaw: string;
+  readonly slotsTitle: string;
+  readonly slotsDescription: string;
+  readonly requiredBadge: string;
+  readonly optionalBadge: string;
+  readonly optionalTitle: string;
+  readonly slotColumnLabel: string;
+  readonly slotNone: string;
+  readonly slotDetected: string;
+  readonly slotManual: string;
+  readonly slotMissing: string;
+  readonly slotCovered: string;
+  readonly optionUsedBy: string;
+  readonly optionEmptySample: string;
+  readonly amountSplit: string;
+  readonly amountSingle: string;
   readonly fields: Readonly<Record<ImportField, string>>;
-  readonly statuses: Readonly<Record<ImportColumnStatus, string>>;
-  readonly requiredTitle: string;
+  readonly fieldHints: Readonly<Record<ImportField, string>>;
   readonly requiredGroups: Readonly<Record<ImportRequiredGroupId, string>>;
+  readonly requiredCount: string;
   readonly requiredMet: string;
   readonly requiredMissing: string;
-  readonly requiredCount: string;
-  readonly optionalTitle: string;
-  readonly optionalMapped: string;
-  readonly optionalUnmapped: string;
+  readonly columnsTitle: string;
+  readonly columnsSummary: string;
+  readonly columnPosition: string;
+  readonly columnUsedAs: string;
+  readonly columnNotUsed: string;
+  readonly columnIgnored: string;
+  readonly ignoreColumn: string;
+  readonly restoreColumn: string;
+  readonly ignoreRemaining: string;
+  readonly remainingIgnored: string;
   readonly fieldMoved: string;
+  readonly safeTitle: string;
+  readonly safeDescription: string;
   readonly back: string;
   readonly continue: string;
   readonly saving: string;
@@ -57,20 +74,29 @@ export type ImportMappingLabels = {
 
 const en: ImportMappingLabels = {
   title: "Map columns",
-  description: "Match the columns in your file to Pace fields.",
+  description: "Tell Pace where each piece of information lives in your file.",
   rowsOne: "{count} row",
   rowsOther: "{count} rows",
-  columnsLabel: "File columns",
-  colFileColumn: "File column",
-  colSample: "Sample value",
-  colMapTo: "Map to",
-  colStatus: "Status",
-  sampleEmpty: "Empty",
-  fieldFor: "Pace field for {column}",
-  chooseField: "Choose a field",
-  ignoreColumn: "Ignore this column",
-  requiredOptions: "Required",
-  optionalOptions: "Optional",
+  columnCount: "{count} columns",
+  previewTitle: "Live preview",
+  previewHint: "Your first rows, as Pace will read them",
+  previewMissing: "{field}?",
+  previewRaw: "Values are shown exactly as in your file. Nothing is converted or imported yet.",
+  slotsTitle: "Pace fields",
+  slotsDescription: "Pick the column from your file for each field.",
+  requiredBadge: "Required",
+  optionalBadge: "Optional",
+  optionalTitle: "Optional details",
+  slotColumnLabel: "File column for {field}",
+  slotNone: "No column",
+  slotDetected: "Detected by Pace",
+  slotManual: "Chosen by you",
+  slotMissing: "Choose a column",
+  slotCovered: "Covered by {field}",
+  optionUsedBy: "→ {field}",
+  optionEmptySample: "empty",
+  amountSplit: "My file has separate debit and credit columns",
+  amountSingle: "Use a single amount column",
   fields: {
     transactionDate: "Date",
     bookingDate: "Booking date",
@@ -81,24 +107,37 @@ const en: ImportMappingLabels = {
     credit: "Credit",
     currency: "Currency",
     accountReference: "Account",
-    transactionType: "Type (Expense/Income)",
+    transactionType: "Type",
   },
-  statuses: {
-    DETECTED: "Detected",
-    MAPPED: "Mapped",
-    OPTIONAL: "Optional",
-    IGNORED: "Ignored",
-    UNMAPPED: "Not mapped",
+  fieldHints: {
+    transactionDate: "When the transaction happened",
+    bookingDate: "When your bank recorded it",
+    description: "What the transaction was for",
+    merchant: "Store, person or payee",
+    amount: "One column, negative for money out",
+    debit: "Money leaving the account",
+    credit: "Money coming in",
+    currency: "Currency code, such as XAF",
+    accountReference: "Which account it belongs to",
+    transactionType: "Expense, income or transfer",
   },
-  requiredTitle: "Required fields",
   requiredGroups: { date: "Date", amount: "Amount", description: "Description" },
+  requiredCount: "{count} / {total} required",
   requiredMet: "{field}: mapped",
   requiredMissing: "{field}: not mapped yet",
-  requiredCount: "{count} / {total} mapped",
-  optionalTitle: "Optional columns",
-  optionalMapped: "{field}: mapped",
-  optionalUnmapped: "{field}: not mapped",
-  fieldMoved: "{field} is now mapped to {column}.",
+  columnsTitle: "Your file's columns",
+  columnsSummary: "{used} used · {unused} not used",
+  columnPosition: "Column {letter}",
+  columnUsedAs: "→ {field}",
+  columnNotUsed: "Not used",
+  columnIgnored: "Ignored",
+  ignoreColumn: "Ignore {column}",
+  restoreColumn: "Restore {column}",
+  ignoreRemaining: "Ignore unused columns",
+  remainingIgnored: "Unused columns are now ignored.",
+  fieldMoved: "{column} now fills {field}.",
+  safeTitle: "Nothing is imported yet",
+  safeDescription: "You'll review every transaction before anything is added to Pace.",
   back: "Back",
   continue: "Continue",
   saving: "Saving…",
@@ -119,20 +158,29 @@ const en: ImportMappingLabels = {
 
 const fr: ImportMappingLabels = {
   title: "Correspondance des colonnes",
-  description: "Associez les colonnes de votre fichier à vos champs Pace.",
+  description: "Indiquez à Pace où se trouve chaque information dans votre fichier.",
   rowsOne: "{count} ligne",
   rowsOther: "{count} lignes",
-  columnsLabel: "Colonnes du fichier",
-  colFileColumn: "Colonne dans le fichier",
-  colSample: "Exemple de valeur",
-  colMapTo: "Associer à",
-  colStatus: "Statut",
-  sampleEmpty: "Vide",
-  fieldFor: "Champ Pace pour {column}",
-  chooseField: "Choisir un champ",
-  ignoreColumn: "Ignorer cette colonne",
-  requiredOptions: "Requis",
-  optionalOptions: "Optionnels",
+  columnCount: "{count} colonnes",
+  previewTitle: "Aperçu en direct",
+  previewHint: "Vos premières lignes, telles que Pace les lira",
+  previewMissing: "{field} ?",
+  previewRaw: "Les valeurs sont affichées telles quelles. Rien n’est encore converti ni importé.",
+  slotsTitle: "Champs Pace",
+  slotsDescription: "Choisissez la colonne de votre fichier pour chaque champ.",
+  requiredBadge: "Requis",
+  optionalBadge: "Optionnel",
+  optionalTitle: "Détails optionnels",
+  slotColumnLabel: "Colonne du fichier pour {field}",
+  slotNone: "Aucune colonne",
+  slotDetected: "Détecté par Pace",
+  slotManual: "Choisi par vous",
+  slotMissing: "Choisissez une colonne",
+  slotCovered: "Couvert par {field}",
+  optionUsedBy: "→ {field}",
+  optionEmptySample: "vide",
+  amountSplit: "Mon fichier a des colonnes débit et crédit séparées",
+  amountSingle: "Utiliser une seule colonne de montant",
   fields: {
     transactionDate: "Date",
     bookingDate: "Date comptable",
@@ -143,24 +191,37 @@ const fr: ImportMappingLabels = {
     credit: "Crédit",
     currency: "Devise",
     accountReference: "Compte",
-    transactionType: "Type (Dépense/Revenu)",
+    transactionType: "Type",
   },
-  statuses: {
-    DETECTED: "Détecté",
-    MAPPED: "Associé",
-    OPTIONAL: "Optionnel",
-    IGNORED: "Ignoré",
-    UNMAPPED: "Non associé",
+  fieldHints: {
+    transactionDate: "Quand la transaction a eu lieu",
+    bookingDate: "Quand votre banque l’a enregistrée",
+    description: "À quoi correspond la transaction",
+    merchant: "Magasin, personne ou bénéficiaire",
+    amount: "Une colonne, négative pour les sorties",
+    debit: "Argent qui sort du compte",
+    credit: "Argent qui entre",
+    currency: "Code devise, par exemple XAF",
+    accountReference: "Compte concerné",
+    transactionType: "Dépense, revenu ou virement",
   },
-  requiredTitle: "Champs requis",
   requiredGroups: { date: "Date", amount: "Montant", description: "Description" },
+  requiredCount: "{count} / {total} requis",
   requiredMet: "{field} : associé",
   requiredMissing: "{field} : pas encore associé",
-  requiredCount: "{count} / {total} associés",
-  optionalTitle: "Colonnes optionnelles",
-  optionalMapped: "{field} : associé",
-  optionalUnmapped: "{field} : non associé",
-  fieldMoved: "{field} est maintenant associé à {column}.",
+  columnsTitle: "Colonnes de votre fichier",
+  columnsSummary: "{used} utilisées · {unused} non utilisées",
+  columnPosition: "Colonne {letter}",
+  columnUsedAs: "→ {field}",
+  columnNotUsed: "Non utilisée",
+  columnIgnored: "Ignorée",
+  ignoreColumn: "Ignorer {column}",
+  restoreColumn: "Rétablir {column}",
+  ignoreRemaining: "Ignorer les colonnes non utilisées",
+  remainingIgnored: "Les colonnes non utilisées sont maintenant ignorées.",
+  fieldMoved: "{column} remplit maintenant {field}.",
+  safeTitle: "Rien n’est encore importé",
+  safeDescription: "Vous vérifierez chaque transaction avant tout ajout dans Pace.",
   back: "Retour",
   continue: "Continuer",
   saving: "Enregistrement…",
@@ -181,20 +242,29 @@ const fr: ImportMappingLabels = {
 
 const de: ImportMappingLabels = {
   title: "Spalten zuordnen",
-  description: "Ordnen Sie die Spalten Ihrer Datei den Pace-Feldern zu.",
+  description: "Zeigen Sie Pace, wo welche Information in Ihrer Datei steht.",
   rowsOne: "{count} Zeile",
   rowsOther: "{count} Zeilen",
-  columnsLabel: "Dateispalten",
-  colFileColumn: "Spalte in der Datei",
-  colSample: "Beispielwert",
-  colMapTo: "Zuordnen zu",
-  colStatus: "Status",
-  sampleEmpty: "Leer",
-  fieldFor: "Pace-Feld für {column}",
-  chooseField: "Feld auswählen",
-  ignoreColumn: "Diese Spalte ignorieren",
-  requiredOptions: "Erforderlich",
-  optionalOptions: "Optional",
+  columnCount: "{count} Spalten",
+  previewTitle: "Live-Vorschau",
+  previewHint: "Ihre ersten Zeilen, so wie Pace sie liest",
+  previewMissing: "{field}?",
+  previewRaw: "Werte werden genau wie in Ihrer Datei angezeigt. Noch wird nichts umgerechnet oder importiert.",
+  slotsTitle: "Pace-Felder",
+  slotsDescription: "Wählen Sie für jedes Feld die Spalte aus Ihrer Datei.",
+  requiredBadge: "Erforderlich",
+  optionalBadge: "Optional",
+  optionalTitle: "Optionale Details",
+  slotColumnLabel: "Dateispalte für {field}",
+  slotNone: "Keine Spalte",
+  slotDetected: "Von Pace erkannt",
+  slotManual: "Von Ihnen gewählt",
+  slotMissing: "Spalte auswählen",
+  slotCovered: "Abgedeckt durch {field}",
+  optionUsedBy: "→ {field}",
+  optionEmptySample: "leer",
+  amountSplit: "Meine Datei hat getrennte Soll- und Haben-Spalten",
+  amountSingle: "Eine einzige Betragsspalte verwenden",
   fields: {
     transactionDate: "Datum",
     bookingDate: "Buchungsdatum",
@@ -205,24 +275,37 @@ const de: ImportMappingLabels = {
     credit: "Haben",
     currency: "Währung",
     accountReference: "Konto",
-    transactionType: "Typ (Ausgabe/Einnahme)",
+    transactionType: "Typ",
   },
-  statuses: {
-    DETECTED: "Erkannt",
-    MAPPED: "Zugeordnet",
-    OPTIONAL: "Optional",
-    IGNORED: "Ignoriert",
-    UNMAPPED: "Nicht zugeordnet",
+  fieldHints: {
+    transactionDate: "Wann die Transaktion stattfand",
+    bookingDate: "Wann Ihre Bank sie gebucht hat",
+    description: "Wofür die Transaktion war",
+    merchant: "Geschäft, Person oder Empfänger",
+    amount: "Eine Spalte, negativ für Ausgänge",
+    debit: "Geld, das das Konto verlässt",
+    credit: "Eingehendes Geld",
+    currency: "Währungscode, z. B. XAF",
+    accountReference: "Zu welchem Konto sie gehört",
+    transactionType: "Ausgabe, Einnahme oder Überweisung",
   },
-  requiredTitle: "Pflichtfelder",
   requiredGroups: { date: "Datum", amount: "Betrag", description: "Beschreibung" },
+  requiredCount: "{count} / {total} erforderlich",
   requiredMet: "{field}: zugeordnet",
   requiredMissing: "{field}: noch nicht zugeordnet",
-  requiredCount: "{count} / {total} zugeordnet",
-  optionalTitle: "Optionale Spalten",
-  optionalMapped: "{field}: zugeordnet",
-  optionalUnmapped: "{field}: nicht zugeordnet",
-  fieldMoved: "{field} ist jetzt {column} zugeordnet.",
+  columnsTitle: "Spalten Ihrer Datei",
+  columnsSummary: "{used} verwendet · {unused} nicht verwendet",
+  columnPosition: "Spalte {letter}",
+  columnUsedAs: "→ {field}",
+  columnNotUsed: "Nicht verwendet",
+  columnIgnored: "Ignoriert",
+  ignoreColumn: "{column} ignorieren",
+  restoreColumn: "{column} wiederherstellen",
+  ignoreRemaining: "Nicht verwendete Spalten ignorieren",
+  remainingIgnored: "Nicht verwendete Spalten werden jetzt ignoriert.",
+  fieldMoved: "{column} füllt jetzt {field}.",
+  safeTitle: "Noch wird nichts importiert",
+  safeDescription: "Sie prüfen jede Transaktion, bevor etwas zu Pace hinzugefügt wird.",
   back: "Zurück",
   continue: "Weiter",
   saving: "Wird gespeichert…",

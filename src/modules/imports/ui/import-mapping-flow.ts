@@ -1,9 +1,12 @@
 import { IMPORT_FIELDS, type ImportField } from "../domain";
 import {
+  assignFieldToColumn,
   assignImportColumn,
   columnsFromAssignments,
   evaluateImportColumns,
   IMPORT_COLUMN_IGNORED,
+  ignoreUnmappedColumns,
+  setAmountMode,
   IMPORT_REQUIRED_GROUPS,
   type ImportColumnAssignments,
   type ImportColumnMappingEvaluation,
@@ -33,6 +36,50 @@ export function parseColumnTarget(value: string): ImportColumnTarget {
   return (IMPORT_FIELDS as readonly string[]).includes(value) ? (value as ImportField) : null;
 }
 
+export const IMPORT_COLUMN_FILTERS = ["ALL", "TO_MAP", "MAPPED", "IGNORED"] as const;
+export type ImportColumnFilter = (typeof IMPORT_COLUMN_FILTERS)[number];
+
+export function columnMatchesFilter(status: ImportColumnStatus, filter: ImportColumnFilter): boolean {
+  switch (filter) {
+    case "ALL":
+      return true;
+    case "TO_MAP":
+      return status === "UNMAPPED";
+    case "IGNORED":
+      return status === "IGNORED";
+    case "MAPPED":
+      return status === "DETECTED" || status === "MAPPED" || status === "OPTIONAL";
+  }
+}
+
+export type ImportColumnSummary = Readonly<Record<ImportColumnFilter, number>> & { readonly DETECTED: number };
+
+export function summarizeImportColumns(
+  columns: readonly ImportDetectedColumn[],
+  assignments: ImportColumnAssignments,
+): ImportColumnSummary {
+  const statuses = columns.map((column) => importColumnStatus(column, assignments[column.header] ?? null));
+  const count = (filter: ImportColumnFilter) => statuses.filter((status) => columnMatchesFilter(status, filter)).length;
+  return {
+    ALL: statuses.length,
+    TO_MAP: count("TO_MAP"),
+    MAPPED: count("MAPPED"),
+    IGNORED: count("IGNORED"),
+    DETECTED: statuses.filter((status) => status === "DETECTED").length,
+  };
+}
+
+export function spreadsheetColumnLetter(index: number): string {
+  let value = index + 1;
+  let letter = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    letter = String.fromCharCode(65 + remainder) + letter;
+    value = Math.floor((value - 1) / 26);
+  }
+  return letter;
+}
+
 export function missingRequiredGroups(evaluation: ImportColumnMappingEvaluation): ImportRequiredGroupId[] {
   return evaluation.groups.filter((group) => !group.satisfied).map((group) => group.id);
 }
@@ -47,6 +94,9 @@ export type ImportMappingState = {
 
 export type ImportMappingAction =
   | { readonly type: "assigned"; readonly header: string; readonly target: ImportColumnTarget }
+  | { readonly type: "unmappedIgnored" }
+  | { readonly type: "fieldAssigned"; readonly field: ImportField; readonly header: string | null }
+  | { readonly type: "amountModeChanged"; readonly split: boolean }
   | { readonly type: "continueBlocked"; readonly code: ImportMappingErrorCode }
   | { readonly type: "saveStarted" }
   | { readonly type: "saveFailed"; readonly code: ImportMappingErrorCode }
@@ -73,6 +123,30 @@ export function importMappingReducer(state: ImportMappingState, action: ImportMa
         errorCode,
         moved: displaced && field ? { field, column: action.header } : null,
       };
+    }
+    case "fieldAssigned": {
+      if (state.saving || state.stale) return state;
+      const assignments = assignFieldToColumn(state.assignments, action.field, action.header);
+      if (assignments === state.assignments) return state;
+      const stillBlocked = state.errorCode === "REQUIRED_FIELDS_MISSING" || state.errorCode === "AMOUNT_MODE_CONFLICT";
+      const errorCode = stillBlocked ? blockedContinueCode(evaluateImportColumns(columnsFromAssignments(assignments).columns)) : null;
+      const previous = action.header ? state.assignments[action.header] : null;
+      const moved = action.header && previous && previous !== IMPORT_COLUMN_IGNORED && previous !== action.field
+        ? { field: action.field, column: action.header }
+        : null;
+      return { ...state, assignments, errorCode, moved };
+    }
+    case "amountModeChanged": {
+      if (state.saving || state.stale) return state;
+      const assignments = setAmountMode(state.assignments, action.split);
+      const stillBlocked = state.errorCode === "REQUIRED_FIELDS_MISSING" || state.errorCode === "AMOUNT_MODE_CONFLICT";
+      const errorCode = stillBlocked ? blockedContinueCode(evaluateImportColumns(columnsFromAssignments(assignments).columns)) : null;
+      return { ...state, assignments, errorCode, moved: null };
+    }
+    case "unmappedIgnored": {
+      if (state.saving || state.stale) return state;
+      const assignments = ignoreUnmappedColumns(state.assignments);
+      return assignments === state.assignments ? state : { ...state, assignments, moved: null };
     }
     case "continueBlocked":
       return { ...state, errorCode: action.code };

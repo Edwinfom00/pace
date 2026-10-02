@@ -23,7 +23,7 @@ import type {
   NormalizedImportRow,
 } from "./domain";
 import { detectImportMapping, validateMappingAgainstParsedFile } from "./mapping";
-import { buildDetectedColumns, evaluateImportColumns, type ImportDetectedColumn } from "./mapping/column-mapping";
+import { buildDetectedColumns, buildPreviewRows, evaluateImportColumns, type ImportDetectedColumn } from "./mapping/column-mapping";
 import { normalizeImportRows } from "./normalization";
 import { parseImportUpload, type ImportFileInput } from "./parsers";
 import { buildImportPreview } from "./preview";
@@ -48,6 +48,7 @@ export interface ImportColumnMappingView {
   };
   editable: boolean;
   columns: ImportDetectedColumn[];
+  previewRows: Record<string, string>[];
   saved: ImportColumnMapping | null;
 }
 
@@ -130,6 +131,7 @@ export class ImportService {
       },
       editable,
       columns: editable ? buildDetectedColumns(session.headers, rows, detectImportMapping(session.headers)) : [],
+      previewRows: editable ? buildPreviewRows(session.headers, rows) : [],
       saved: session.columnMapping?.fileChecksum === session.fileChecksum ? session.columnMapping : null,
     };
   }

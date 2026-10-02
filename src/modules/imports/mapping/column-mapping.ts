@@ -122,3 +122,42 @@ export function evaluateImportColumns(columns: Partial<Record<ImportField, strin
   const satisfiedCount = groups.filter((group) => group.satisfied).length;
   return { groups, satisfiedCount, issues, ready: satisfiedCount === groups.length && issues.length === 0 };
 }
+
+export function ignoreUnmappedColumns(assignments: ImportColumnAssignments): ImportColumnAssignments {
+  if (!Object.values(assignments).some((target) => target === null)) return assignments;
+  return Object.fromEntries(Object.entries(assignments).map(([header, target]) => [header, target ?? IMPORT_COLUMN_IGNORED]));
+}
+
+export function columnForFields(assignments: ImportColumnAssignments, fields: readonly ImportField[]): string | null {
+  for (const field of fields) {
+    const header = Object.entries(assignments).find(([, target]) => target === field)?.[0];
+    if (header) return header;
+  }
+  return null;
+}
+
+export const MAX_PREVIEW_ROWS = 3;
+
+export function buildPreviewRows(headers: readonly string[], rows: readonly ParsedImportRow[]): Record<string, string>[] {
+  return rows.slice(0, MAX_PREVIEW_ROWS).map((row) =>
+    Object.fromEntries(headers.map((header) => {
+      const value = row.values[header]?.trim() ?? "";
+      return [header, value.length > MAX_SAMPLE_VALUE_LENGTH ? `${value.slice(0, MAX_SAMPLE_VALUE_LENGTH - 1)}…` : value];
+    })),
+  );
+}
+
+export function assignFieldToColumn(
+  assignments: ImportColumnAssignments,
+  field: ImportField,
+  header: string | null,
+): ImportColumnAssignments {
+  if (header !== null) return assignImportColumn(assignments, header, field);
+  const current = columnForFields(assignments, [field]);
+  return current ? assignImportColumn(assignments, current, null) : assignments;
+}
+
+export function setAmountMode(assignments: ImportColumnAssignments, split: boolean): ImportColumnAssignments {
+  const cleared: readonly ImportField[] = split ? ["amount"] : ["debit", "credit"];
+  return cleared.reduce((next, field) => assignFieldToColumn(next, field, null), assignments);
+}

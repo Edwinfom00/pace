@@ -43,6 +43,7 @@ export default async function TransactionImportMappingPage({
       key={`${view.session.id}:${view.session.fileChecksum}`}
       labels={getImportMappingLabels(language)}
       locale={workspace.preferences.locale}
+      previewRows={view.previewRows}
       session={view.session}
       workspaceId={workspace.workspace.id}
       workspaceSlug={workspace.workspace.slug}
