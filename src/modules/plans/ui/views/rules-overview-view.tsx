@@ -27,6 +27,7 @@ import {
 } from "@/modules/plans/rules/rules-overview";
 import { cn } from "@/lib/utils";
 
+import { RuleBuilderDialog, type RuleBuilderMode } from "../components/rule-builder-dialog";
 import { RuleDetailPanel } from "../components/rule-detail-panel";
 import { RuleManagementActions } from "../components/rule-management-actions";
 import { RulesCardList, RulesTable } from "../components/rules-list";
@@ -59,6 +60,7 @@ export function RulesOverviewView({
   const [selecting, startSelecting] = useTransition();
   const [requestedRuleId, setRequestedRuleId] = useState<string | null>(null);
   const [searchDraft, setSearchDraft] = useState(overview.filters.query);
+  const [builder, setBuilder] = useState<{ readonly mode: RuleBuilderMode; readonly session: number } | null>(null);
   const submittedQuery = useRef(overview.filters.query);
 
   const visible = useMemo(() => {
@@ -118,6 +120,16 @@ export function RulesOverviewView({
     }, startFiltering);
   };
   const refresh = () => startFiltering(() => router.refresh());
+  const openBuilder = (mode: RuleBuilderMode) => setBuilder({ mode, session: Date.now() });
+  const onRuleSaved = (ruleId: string) => {
+    setBuilder(null);
+    setRequestedRuleId(ruleId);
+    navigate((params) => params.set("rule", ruleId), startSelecting);
+  };
+  const onStaleRule = () => {
+    setBuilder(null);
+    refresh();
+  };
 
   const detail = selecting ? (
     <RuleDetailSkeleton />
@@ -125,6 +137,18 @@ export function RulesOverviewView({
     <RuleDetailPanel
       actions={
         <RuleManagementActions
+          editAction={
+            overview.builder && selected.rule.capabilities.canEdit ? (
+              <Button
+                className="h-9 min-w-20 rounded-[9px] border-[#d8e0eb] text-[13px]"
+                onClick={() => openBuilder({ kind: "edit", rule: selected.rule })}
+                type="button"
+                variant="outline"
+              >
+                {labels.edit}
+              </Button>
+            ) : undefined
+          }
           key={`${selected.rule.id}:${selected.rule.updatedAt}`}
           labels={labels}
           onChanged={refresh}
@@ -190,19 +214,17 @@ export function RulesOverviewView({
                   />
                 </label>
                 <RulesStatusSelect labels={labels} onChange={selectStatus} value={overview.filters.status} />
-                <Button
-                  aria-describedby="rules-new-rule-hint"
-                  className="h-10 gap-1.5 rounded-[10px] bg-[#1769e8] px-4 text-[13px] font-semibold text-white hover:bg-[#145bd0]"
-                  disabled
-                  title={labels.newRuleSoon}
-                  type="button"
-                >
-                  <FiPlus aria-hidden className="size-4" />
-                  {labels.newRule}
-                </Button>
-                <span className="sr-only" id="rules-new-rule-hint">
-                  {labels.newRuleSoon}
-                </span>
+                {overview.builder ? (
+                  <Button
+                    className="h-10 gap-1.5 rounded-[10px] bg-[#1769e8] px-4 text-[13px] font-semibold text-white hover:bg-[#145bd0]"
+                    data-new-rule
+                    onClick={() => openBuilder({ kind: "create" })}
+                    type="button"
+                  >
+                    <FiPlus aria-hidden className="size-4" />
+                    {labels.newRule}
+                  </Button>
+                ) : null}
               </div>
             </header>
 
@@ -260,6 +282,21 @@ export function RulesOverviewView({
           ) : null}
         </div>
       </div>
+      {builder && overview.builder ? (
+        <RuleBuilderDialog
+          key={builder.session}
+          labels={labels}
+          locale={locale}
+          mode={builder.mode}
+          onOpenChange={(open) => !open && setBuilder(null)}
+          onSaved={onRuleSaved}
+          onStale={onStaleRule}
+          open
+          references={overview.builder}
+          timeZone={timeZone}
+          workspaceId={workspaceId}
+        />
+      ) : null}
     </main>
   );
 }

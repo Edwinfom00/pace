@@ -1,6 +1,6 @@
 import { jsonError, parseJson } from "@/app/api/_lib/http";
 import { requireAuthenticatedActor } from "@/authorization/session";
-import { manageRuleRequest } from "@/modules/plans/rules/rule-contract";
+import { manageRuleRequest, updateRuleCommand } from "@/modules/plans/rules/rule-contract";
 import { getRulesService } from "@/modules/plans/rules/server";
 
 interface RouteContext {
@@ -36,6 +36,22 @@ export async function PATCH(
         enabled: rule.enabled,
         updatedAt: rule.updatedAt.toISOString(),
       },
+    });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+export async function PUT(request: Request, context: RouteContext): Promise<Response> {
+  try {
+    const [{ workspaceId, ruleId }, actor, input] = await Promise.all([
+      context.params,
+      requireAuthenticatedActor(),
+      parseJson(request, updateRuleCommand),
+    ]);
+    const rule = await getRulesService().updateRule(actor, workspaceId, ruleId, input);
+    return Response.json({
+      rule: { id: rule.id, revision: rule.revision, updatedAt: rule.updatedAt.toISOString() },
     });
   } catch (error) {
     return jsonError(error);

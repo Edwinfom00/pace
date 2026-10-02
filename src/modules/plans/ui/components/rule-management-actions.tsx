@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { FiMoreHorizontal } from "react-icons/fi";
 
 import { Button } from "@/components/ui/button";
@@ -31,11 +31,13 @@ export function ruleToggleMutation(rule: Pick<RuleListItem, "status" | "capabili
 }
 
 export function RuleManagementActions({
+  editAction,
   labels,
   onChanged,
   rule,
   workspaceId,
 }: {
+  readonly editAction?: ReactNode;
   readonly labels: RulesUiLabels;
   readonly onChanged: () => void;
   readonly rule: RuleListItem;
@@ -79,7 +81,7 @@ export function RuleManagementActions({
     }
   };
 
-  if (!toggle && !rule.capabilities.canArchive) return null;
+  if (!toggle && !rule.capabilities.canArchive && !editAction) return null;
 
   const feedback = (
     <>
@@ -120,6 +122,7 @@ export function RuleManagementActions({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
+      {editAction}
       {toggle ? (
         <Button
           className="h-9 min-w-24 rounded-[9px]"

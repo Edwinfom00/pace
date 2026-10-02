@@ -1,4 +1,5 @@
 import type {
+  RuleAction,
   RuleActionSkipReason,
   RuleActionType,
   RuleCondition,
@@ -44,7 +45,9 @@ export type RuleListItem = {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly createdByActor: boolean;
-  readonly capabilities: { readonly canToggle: boolean; readonly canArchive: boolean };
+  readonly enabled: boolean;
+  readonly definition: { readonly conditions: readonly RuleCondition[]; readonly action: RuleAction };
+  readonly capabilities: { readonly canToggle: boolean; readonly canArchive: boolean; readonly canEdit: boolean };
 };
 
 export type RuleExecutionView = {
@@ -70,6 +73,20 @@ export type RulesKpis = {
   readonly sentForReviewThisMonth: number;
 };
 
+export type RuleBuilderCategoryOption = {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: "EXPENSE" | "INCOME";
+  readonly key: string | null;
+  readonly parentName: string | null;
+};
+
+export type RuleBuilderReferences = {
+  readonly categories: readonly RuleBuilderCategoryOption[];
+  readonly accounts: readonly { readonly id: string; readonly name: string }[];
+  readonly suggestedPriority: number;
+};
+
 export type RulesOverview = {
   readonly kpis: RulesKpis;
   readonly rules: readonly RuleListItem[];
@@ -81,6 +98,7 @@ export type RulesOverview = {
   } | null;
   readonly filters: { readonly query: string; readonly status: RuleStatusFilter };
   readonly canManage: boolean;
+  readonly builder: RuleBuilderReferences | null;
 };
 
 export type RuleReferenceNames = {
@@ -98,7 +116,7 @@ export function ruleDisplayStatus(rule: Pick<RuleRecord, "status" | "enabled">):
   return rule.enabled ? "ACTIVE" : "PAUSED";
 }
 
-function conditionView(condition: RuleCondition, names: RuleReferenceNames): RuleConditionView {
+export function toRuleConditionView(condition: RuleCondition, names: RuleReferenceNames): RuleConditionView {
   switch (condition.field) {
     case "COUNTERPARTY":
     case "NOTE":
@@ -122,7 +140,7 @@ function conditionView(condition: RuleCondition, names: RuleReferenceNames): Rul
 
 const TRIGGER_FIELD_PRECEDENCE: readonly RuleConditionField[] = ["COUNTERPARTY", "NOTE"];
 
-function splitTrigger(conditions: readonly RuleCondition[]): {
+export function splitRuleTrigger(conditions: readonly RuleCondition[]): {
   readonly trigger: RuleCondition | null;
   readonly rest: readonly RuleCondition[];
 } {
@@ -156,7 +174,7 @@ export function toRuleListItem(
     null,
   );
   const status = ruleDisplayStatus(rule);
-  const { trigger, rest } = splitTrigger(rule.conditions);
+  const { trigger, rest } = splitRuleTrigger(rule.conditions);
   const mutable = context.canManage && status !== "ARCHIVED";
   return {
     id: rule.id,
@@ -164,15 +182,17 @@ export function toRuleListItem(
     status,
     priority: rule.priority,
     origin: rule.origin,
-    trigger: trigger ? conditionView(trigger, context.names) : null,
-    conditions: rest.map((condition) => conditionView(condition, context.names)),
+    trigger: trigger ? toRuleConditionView(trigger, context.names) : null,
+    conditions: rest.map((condition) => toRuleConditionView(condition, context.names)),
     action: actionView(rule, context.names),
     appliedCount: applied.length,
     lastAppliedAt: lastApplied?.toISOString() ?? null,
     createdAt: rule.createdAt.toISOString(),
     updatedAt: rule.updatedAt.toISOString(),
     createdByActor: rule.createdByUserId === context.actorUserId,
-    capabilities: { canToggle: mutable, canArchive: mutable },
+    enabled: rule.enabled,
+    definition: { conditions: rule.conditions, action: rule.action },
+    capabilities: { canToggle: mutable, canArchive: mutable, canEdit: mutable },
   };
 }
 

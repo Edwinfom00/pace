@@ -150,7 +150,7 @@ function ConditionChip({
   );
 }
 
-function signedAmount(transaction: NonNullable<RuleExecutionView["transaction"]>, locale: string): string {
+export function signedTransactionAmount(transaction: NonNullable<RuleExecutionView["transaction"]>, locale: string): string {
   if (transaction.kind === "EXPENSE")
     return formatSignedMoney(transaction.amountMinor, transaction.currency, locale, "-");
   if (transaction.kind === "INCOME" || transaction.kind === "REFUND")
@@ -189,7 +189,7 @@ function ExecutionRow({
               transaction.kind === "EXPENSE" ? "text-[#e14958]" : "text-[#18243b]",
             )}
           >
-            {signedAmount(transaction, locale)}
+            {signedTransactionAmount(transaction, locale)}
           </span>
         ) : null}
         <RuleOutcomePill execution={execution} labels={labels} />

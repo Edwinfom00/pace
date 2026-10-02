@@ -11,12 +11,14 @@ import { DatabaseLedgerRepository } from "@/modules/ledger/repositories/ledger-r
 import { calendarMonthPeriod } from "@/money/period";
 
 import type { RuleExecutionRecord, RuleRecord } from "../domain";
+import { suggestRulePriority } from "../rule-draft";
 import {
   computeRulesKpis,
   filterRuleItems,
   RECENT_RULE_EXECUTIONS_LIMIT,
   selectRule,
   toRuleListItem,
+  type RuleBuilderReferences,
   type RuleExecutionView,
   type RuleReferenceNames,
   type RulesOverview,
@@ -98,6 +100,41 @@ export async function getRulesOverviewWithReaders(
     selected: selection ? { ...selection, executions: recent } : null,
     filters,
     canManage,
+    builder: canManage ? builderReferences(workspaceId, scopedRecords, categories, accounts) : null,
+  };
+}
+
+function builderReferences(
+  workspaceId: string,
+  rules: readonly RuleRecord[],
+  categories: readonly LedgerCategoryRecord[],
+  accounts: readonly LedgerAccountRecord[],
+): RuleBuilderReferences {
+  const referencedAccounts = new Set(
+    rules.flatMap((rule) => rule.conditions.flatMap((condition) => (condition.field === "ACCOUNT" ? condition.values : []))),
+  );
+  const names = new Map(categories.map((category) => [category.id, category.name]));
+  return {
+    categories: categories
+      .filter((category) => category.workspaceId === null || category.workspaceId === workspaceId)
+      .map((category) => ({
+        id: category.id,
+        name: category.name,
+        kind: category.kind,
+        key: category.systemKey,
+        parentName: category.parentCategoryId ? (names.get(category.parentCategoryId) ?? null) : null,
+      }))
+      .sort((left, right) =>
+        (left.parentName ?? left.name).localeCompare(right.parentName ?? right.name) ||
+        Number(left.parentName !== null) - Number(right.parentName !== null) ||
+        left.name.localeCompare(right.name),
+      ),
+    accounts: accounts
+      .filter((account) => account.workspaceId === workspaceId && (!account.archivedAt || referencedAccounts.has(account.id)))
+      .map((account) => ({ id: account.id, name: account.name })),
+    suggestedPriority: suggestRulePriority(
+      rules.filter((rule) => rule.status === "ACTIVE").map((rule) => rule.priority),
+    ),
   };
 }
 

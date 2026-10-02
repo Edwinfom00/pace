@@ -372,8 +372,8 @@ test("enable, disable and archive capabilities follow the canonical manage_ledge
   const fixture = await seededFixture();
   const ownerView = await fixture.overview();
   assert.equal(ownerView.canManage, true);
-  assert.deepEqual(byName(ownerView, "Orange Money → Transport").capabilities, { canToggle: true, canArchive: true });
-  assert.deepEqual(byName(ownerView, "Old archive").capabilities, { canToggle: false, canArchive: false });
+  assert.deepEqual(byName(ownerView, "Orange Money → Transport").capabilities, { canToggle: true, canArchive: true, canEdit: true });
+  assert.deepEqual(byName(ownerView, "Old archive").capabilities, { canToggle: false, canArchive: false, canEdit: false });
   assert.equal(ruleToggleMutation(byName(ownerView, "Orange Money → Transport")), "DISABLE");
   assert.equal(ruleToggleMutation(byName(ownerView, "Café → Food")), "ENABLE");
   assert.equal(ruleToggleMutation(byName(ownerView, "Old archive")), null);
@@ -479,7 +479,7 @@ test("rules view renders a desktop table with detail rail and stacks list/detail
   assert.match(implicit, /<div class="hidden lg:block"><div[^>]*><table/);
   assert.match(implicit, /<div class="lg:hidden"><ul/);
   assert.match(implicit, /data-rule-detail="[^"]+"/);
-  assert.match(implicit, /<button[^>]*disabled=""[^>]*>.*New rule/);
+  assert.match(implicit, /<button[^>]*data-new-rule="true"[^>]*>.*New rule/);
   assert.doesNotMatch(implicit, /Old archive/);
 
   const explicit = render(await fixture.overview({ ruleId: fixture.review.id }));

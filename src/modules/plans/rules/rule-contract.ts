@@ -152,7 +152,20 @@ export const testRuleCommand = z
   })
   .strict();
 
+export const DEFAULT_RULE_DRY_RUN_LIMIT = 25;
+export const MAX_RULE_DRY_RUN_LIMIT = 50;
+
+export const dryRunRuleCommand = z
+  .object({
+    definition: ruleDefinitionSchema,
+    priority: priority.optional(),
+    ruleId: id.optional(),
+    limit: z.number().int().min(1).max(MAX_RULE_DRY_RUN_LIMIT).optional(),
+  })
+  .strict();
+
 export type CreateRuleCommand = z.input<typeof createRuleCommand>;
+export type DryRunRuleCommand = z.input<typeof dryRunRuleCommand>;
 export type UpdateRuleCommand = z.input<typeof updateRuleCommand>;
 export type SetRuleEnabledCommand = z.input<typeof setRuleEnabledCommand>;
 export type ArchiveRuleCommand = z.input<typeof archiveRuleCommand>;

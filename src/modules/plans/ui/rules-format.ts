@@ -64,3 +64,11 @@ export function createdByLabel(labels: RulesUiLabels, rule: Pick<RuleListItem, "
   if (rule.origin === "AGENT") return labels.byPace;
   return rule.createdByActor ? labels.byYou : labels.byMember;
 }
+
+export function ruleLabel(labels: RulesUiLabels, key: string): string {
+  return label(labels, key) ?? key;
+}
+
+export function ruleCategoryOptionLabel(category: { readonly name: string; readonly parentName: string | null }): string {
+  return category.parentName ? `${category.parentName} › ${category.name}` : category.name;
+}

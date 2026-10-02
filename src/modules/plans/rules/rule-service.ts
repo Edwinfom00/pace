@@ -11,7 +11,7 @@ import {
 import type { AuthenticatedActor } from "@/authorization/session";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
 import type { FinancialInboxService } from "@/modules/financial-inbox/financial-inbox-service";
-import type { LedgerTransactionRecord } from "@/modules/ledger/domain";
+import type { LedgerCategoryRecord, LedgerTransactionRecord } from "@/modules/ledger/domain";
 import type { LedgerService } from "@/modules/ledger/ledger-service";
 import { getTransactionCapabilities } from "@/modules/transactions/domain/transaction-action-policy";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
@@ -36,11 +36,14 @@ import type { CreateRuleManagementAudit, RuleUpdate, RulesRepository } from "./r
 import {
   archiveRuleCommand,
   createRuleCommand,
+  DEFAULT_RULE_DRY_RUN_LIMIT,
+  dryRunRuleCommand,
   setRuleEnabledCommand,
   testRuleCommand,
   updateRuleCommand,
   type ArchiveRuleCommand,
   type CreateRuleCommand,
+  type DryRunRuleCommand,
   type SetRuleEnabledCommand,
   type TestRuleCommand,
   type UpdateRuleCommand,
@@ -68,6 +71,25 @@ export interface RuleDryRunResult {
   readonly wouldApply: boolean;
 }
 
+export interface RuleDraftDryRunTransaction {
+  readonly transactionId: string;
+  readonly kind: LedgerTransactionRecord["kind"];
+  readonly amountMinor: string;
+  readonly currency: string;
+  readonly occurredAt: string;
+  readonly label: string | null;
+  readonly match: RuleMatchExplanation;
+  readonly applicability: RuleActionApplicability;
+  readonly shadowedBy: Pick<RuleRecord, "id" | "name" | "priority"> | null;
+  readonly wouldApply: boolean;
+}
+
+export interface RuleDraftDryRunResult {
+  readonly evaluatedCount: number;
+  readonly matchingCount: number;
+  readonly transactions: readonly RuleDraftDryRunTransaction[];
+}
+
 export type RuleApplicationResult =
   | {
       readonly status: "EVALUATED";
@@ -92,7 +114,7 @@ export class RulesService {
     private readonly rules: RulesRepository,
     private readonly ledgerRecords: Pick<
       LedgerRepository,
-      "findTransaction" | "findCategory" | "listCategories" | "findAccount" | "findMerchant"
+      "findTransaction" | "findCategory" | "listCategories" | "findAccount" | "findMerchant" | "listTransactionListPage"
     >,
     private readonly ledger: Pick<LedgerService, "getCurrentEffectiveTransaction" | "updateTransactionDetails">,
     private readonly inbox: Pick<FinancialInboxService, "findOpenReviewItem" | "routeTransactionForReview">,
@@ -333,6 +355,87 @@ export class RulesService {
       applicability,
       shadowedBy: winner ? { id: winner.rule.id, name: winner.rule.name, priority: winner.rule.priority } : null,
       wouldApply: own?.decision === "APPLY",
+    };
+  }
+
+  async dryRunRule(actor: AuthenticatedActor, workspaceId: string, input: DryRunRuleCommand): Promise<RuleDraftDryRunResult> {
+    await this.requireReadContext(actor, workspaceId);
+    const command = parseCommand(dryRunRuleCommand, input);
+    const existing = command.ruleId ? await this.rules.findRule(workspaceId, command.ruleId) : null;
+    if (command.ruleId && !existing) throw new NotFoundError("Rule not found in this workspace.");
+    const candidate: RuleEvaluationCandidate = {
+      id: existing?.id ?? DRAFT_RULE_ID,
+      name: existing?.name ?? "Draft rule",
+      priority: command.priority ?? existing?.priority ?? Number.MAX_SAFE_INTEGER,
+      revision: existing?.revision ?? 0,
+      createdAt: existing?.createdAt ?? new Date(8.64e15),
+      ...command.definition,
+    };
+    const [rows, categories, enabled] = await Promise.all([
+      this.ledgerRecords.listTransactionListPage(workspaceId, {
+        offset: 0,
+        limit: command.limit ?? DEFAULT_RULE_DRY_RUN_LIMIT,
+        sort: "NEWEST",
+      }),
+      this.ledgerRecords.listCategories(workspaceId),
+      this.enabledRules(workspaceId),
+    ]);
+    const others = enabled.filter((rule) => rule.id !== candidate.id);
+    const categoryMap = new Map<string, Pick<LedgerCategoryRecord, "id" | "kind">>(
+      categories.map((category) => [category.id, category]),
+    );
+    const transactions: RuleDraftDryRunTransaction[] = [];
+    for (const row of rows) {
+      const transaction = row.transaction;
+      if (transaction.workspaceId !== workspaceId) continue;
+      const merchantName = row.merchant?.workspaceId === workspaceId ? row.merchant.name : null;
+      const facts = toRuleTransactionFacts(transaction, merchantName);
+      if (!facts) continue;
+      const match = evaluateRuleConditions(candidate.conditions, facts);
+      const base = {
+        transactionId: transaction.id,
+        kind: transaction.kind,
+        amountMinor: transaction.amountMinor.toString(),
+        currency: transaction.currency,
+        occurredAt: transaction.occurredAt.toISOString(),
+        label: merchantName ?? transaction.note ?? null,
+        match,
+      };
+      if (!match.matched) {
+        transactions.push({ ...base, applicability: { applicable: false, reason: null }, shadowedBy: null, wouldApply: false });
+        continue;
+      }
+      const context: RuleActionContext = {
+        categories: categoryMap,
+        hasOpenReview: (await this.inbox.findOpenReviewItem(actor, workspaceId, transaction.id)) !== null,
+        detailsEditable: getTransactionCapabilities({
+          transaction,
+          workspaceRole: "MEMBER",
+          refundedAmountMinor: 0n,
+        }).canEdit,
+      };
+      const plan = planRuleEvaluation({
+        trigger: candidate.trigger,
+        facts,
+        rules: [...others, candidate],
+        context,
+      });
+      const own = plan.evaluated.find((entry) => entry.rule.id === candidate.id);
+      const winner =
+        own?.decision === "SHADOWED"
+          ? plan.evaluated.find((entry) => entry.decision === "APPLY" && entry.rule.action.type === candidate.action.type)
+          : undefined;
+      transactions.push({
+        ...base,
+        applicability: assessRuleAction(candidate.action, facts, context),
+        shadowedBy: winner ? { id: winner.rule.id, name: winner.rule.name, priority: winner.rule.priority } : null,
+        wouldApply: own?.decision === "APPLY",
+      });
+    }
+    return {
+      evaluatedCount: transactions.length,
+      matchingCount: transactions.filter((transaction) => transaction.match.matched).length,
+      transactions,
     };
   }
 
