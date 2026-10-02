@@ -1,4 +1,4 @@
-import type { TransactionListItem } from "@/modules/transactions/types/transaction-ui.types";
+import type { SerializedMoney, TransactionListItem } from "@/modules/transactions/types/transaction-ui.types";
 
 import type {
   ClassificationSource,
@@ -16,9 +16,10 @@ import type {
 } from "../ledger/domain";
 import type { InboxResolutionCapabilities } from "./inbox-resolution-policy";
 
-export const INBOX_OVERVIEW_PAGE_SIZE = 25;
+export const INBOX_OVERVIEW_PAGE_SIZE = 10;
 export const INBOX_OVERVIEW_MAX_PAGE = 100_000;
-export const INBOX_OVERVIEW_SORTS = ["NEWEST", "OLDEST"] as const;
+export const INBOX_OVERVIEW_SORTS = ["NEWEST", "OLDEST", "LARGEST"] as const;
+export const INBOX_REASON_SAMPLE_SIZE = 2;
 
 export type InboxOverviewFilter = InboxReason | null;
 export type InboxOverviewSort = (typeof INBOX_OVERVIEW_SORTS)[number];
@@ -29,6 +30,7 @@ export type InboxOverviewReadInput = {
   readonly sort: InboxOverviewSort;
   readonly offset: number;
   readonly limit: number;
+  readonly resolvedSince: Date;
 };
 
 
@@ -58,6 +60,9 @@ export type InboxOverviewReadResult = {
   /** Count after the selected canonical reason filter is applied. */
   readonly filteredCount: number;
   readonly reasonCounts: readonly InboxReasonCount[];
+  readonly resolvedSinceCount: number;
+  readonly openAmountTotals: readonly { readonly currency: string; readonly minor: bigint; readonly count: number }[];
+  readonly reasonMerchantSamples: readonly { readonly reason: InboxReason; readonly merchantName: string | null }[];
 };
 
 export interface InboxOverviewReader {
@@ -101,8 +106,17 @@ export type InboxOverviewItem = {
   readonly provenance: "IMPORT" | "MANUAL" | null;
 };
 
+export type InboxReasonSummary = {
+  readonly reason: InboxReason;
+  readonly count: number;
+  readonly merchants: readonly string[];
+};
+
 export type InboxOverview = {
   readonly unresolvedCount: number;
+  readonly reviewedTodayCount: number;
+  readonly amountToReview: (SerializedMoney & { readonly count: number }) | null;
+  readonly reasonSummaries: readonly InboxReasonSummary[];
   readonly availableFilters: readonly InboxReasonCount[];
   readonly activeFilter: InboxOverviewFilter;
   readonly sort: InboxOverviewSort;

@@ -1,4 +1,5 @@
 import { AuthorizationError } from "@/authorization/errors";
+import { localDateForInstant, zonedLocalDateTimeToInstant } from "@/money/period";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
 import { getInboxResolutionCapabilities } from "@/modules/financial-inbox/inbox-resolution-policy";
@@ -12,9 +13,11 @@ import {
 } from "../domain";
 import {
   INBOX_OVERVIEW_PAGE_SIZE,
+  INBOX_REASON_SAMPLE_SIZE,
   type InboxOverview,
   type InboxOverviewFilter,
   type InboxOverviewItem,
+  type InboxOverviewReadResult,
   type InboxOverviewReader,
   type InboxOverviewSort,
 } from "../inbox-overview";
@@ -29,6 +32,9 @@ export type GetInboxOverviewInput = {
   readonly page: number;
   readonly pageSize?: number;
   readonly unknownMerchantName: string;
+  readonly currency: string;
+  readonly timeZone: string;
+  readonly now: Date;
 };
 
 export async function getInboxOverview(
@@ -45,12 +51,14 @@ export async function getInboxOverview(
   const pageSize = normalizePageSize(input.pageSize);
   const sort = input.sort ?? "NEWEST";
   const requestedPage = Math.max(1, Math.floor(input.page));
+  const resolvedSince = startOfLocalDay(input.now, input.timeZone);
   let result = await dependencies.reader.readInboxOverview({
     workspaceId: input.workspaceId,
     reason: input.reason,
     sort,
     offset: (requestedPage - 1) * pageSize,
     limit: pageSize,
+    resolvedSince,
   });
   const totalPages = Math.max(1, Math.ceil(result.filteredCount / pageSize));
   const page = Math.min(requestedPage, totalPages);
@@ -64,11 +72,15 @@ export async function getInboxOverview(
       sort,
       offset: (page - 1) * pageSize,
       limit: pageSize,
+      resolvedSince,
     });
   }
 
   return {
     unresolvedCount: result.unresolvedCount,
+    reviewedTodayCount: result.resolvedSinceCount,
+    amountToReview: primaryAmountTotal(result.openAmountTotals, input.currency),
+    reasonSummaries: reasonSummaries(result, input.unknownMerchantName),
     availableFilters: INBOX_REASONS.flatMap((reason) => {
       const count = result.reasonCounts.find((entry) => entry.reason === reason)?.count ?? 0;
       return count > 0 ? [{ reason, count }] : [];
@@ -130,6 +142,40 @@ function toInboxOverviewItem(
     recurring: row.recurring,
     provenance: transactionProvenance(row.transaction.transaction.source),
   };
+}
+
+function startOfLocalDay(now: Date, timeZone: string): Date {
+  const today = localDateForInstant(now, timeZone);
+  try {
+    return zonedLocalDateTimeToInstant(today, { hour: 0, minute: 0 }, timeZone);
+  } catch {
+    return zonedLocalDateTimeToInstant(today, { hour: 1, minute: 0 }, timeZone);
+  }
+}
+
+// Amounts in different currencies are never summed together; the card shows the
+// workspace currency total, or the largest single-currency group otherwise.
+function primaryAmountTotal(
+  totals: InboxOverviewReadResult["openAmountTotals"],
+  currency: string,
+): InboxOverview["amountToReview"] {
+  const preferred = totals.find((total) => total.currency === currency)
+    ?? [...totals].sort((left, right) => right.count - left.count)[0];
+  if (!preferred) return null;
+  return { currency: preferred.currency, minor: preferred.minor.toString(), count: preferred.count };
+}
+
+function reasonSummaries(result: InboxOverviewReadResult, unknownMerchantName: string): InboxOverview["reasonSummaries"] {
+  return INBOX_REASONS.flatMap((reason) => {
+    const count = result.reasonCounts.find((entry) => entry.reason === reason)?.count ?? 0;
+    if (count === 0) return [];
+    const merchants = [...new Set(
+      result.reasonMerchantSamples
+        .filter((sample) => sample.reason === reason)
+        .map((sample) => sample.merchantName?.trim() || unknownMerchantName),
+    )].slice(0, INBOX_REASON_SAMPLE_SIZE);
+    return [{ reason, count, merchants }];
+  });
 }
 
 function normalizePageSize(value: number | undefined): number {

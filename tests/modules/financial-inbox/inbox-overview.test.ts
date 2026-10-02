@@ -178,8 +178,23 @@ function result(rows: readonly InboxOverviewReadRow[], filteredCount = rows.leng
       { reason: "POSSIBLE_RECURRING", count: 1 },
       { reason: "CLASSIFICATION_REVIEW", count: 2 },
     ],
+    resolvedSinceCount: 2,
+    openAmountTotals: [
+      { currency: "EUR", minor: 900n, count: 2 },
+      { currency: "XAF", minor: 3750n, count: 1 },
+    ],
+    reasonMerchantSamples: [
+      { reason: "CLASSIFICATION_REVIEW", merchantName: "Café de la Gare" },
+      { reason: "CLASSIFICATION_REVIEW", merchantName: "Café de la Gare" },
+      { reason: "CLASSIFICATION_REVIEW", merchantName: null },
+      { reason: "POSSIBLE_RECURRING", merchantName: "Netflix" },
+    ],
   };
 }
+
+const now = new Date("2026-09-20T15:00:00.000Z");
+const resolvedSince = new Date("2026-09-19T23:00:00.000Z");
+const context = { currency: "XAF", timeZone: "Africa/Douala", now };
 
 test("Inbox overview keeps ledger truth, review proposal, recurring link, and import provenance separate", async () => {
   const recurring = { id: "recurring-1", status: "CANDIDATE" as const, origin: "DETECTED" as const, cadenceDays: 30 };
@@ -193,6 +208,7 @@ test("Inbox overview keeps ledger truth, review proposal, recurring link, and im
     reason: null,
     page: 1,
     unknownMerchantName: "Unknown merchant",
+    ...context,
   }, { reader, workspaces: memberRepository() });
 
   assert.equal(overview.unresolvedCount, 3);
@@ -211,12 +227,18 @@ test("Inbox overview keeps ledger truth, review proposal, recurring link, and im
   assert.deepEqual(overview.items[0]?.recurring, recurring);
   assert.equal(overview.items[0]?.provenance, "IMPORT");
   assert.equal(overview.sort, "NEWEST");
-  assert.deepEqual(reader.calls, [{ workspaceId, reason: null, sort: "NEWEST", offset: 0, limit: 25 }]);
+  assert.equal(overview.reviewedTodayCount, 2);
+  assert.deepEqual(overview.amountToReview, { currency: "XAF", minor: "3750", count: 1 });
+  assert.deepEqual(overview.reasonSummaries, [
+    { reason: "POSSIBLE_RECURRING", count: 1, merchants: ["Netflix"] },
+    { reason: "CLASSIFICATION_REVIEW", count: 2, merchants: ["Café de la Gare", "Unknown merchant"] },
+  ]);
+  assert.deepEqual(reader.calls, [{ workspaceId, reason: null, sort: "NEWEST", offset: 0, limit: 10, resolvedSince }]);
 });
 
 test("Inbox overview clamps stale pages and retains the canonical reason filter", async () => {
   const reader = new StubInboxOverviewReader((input) => result(
-    input.offset === 25 ? [row({ id: "last-page", reason: "POSSIBLE_TRANSFER", withProposal: false })] : [],
+    input.offset === 20 ? [row({ id: "last-page", reason: "POSSIBLE_TRANSFER", withProposal: false })] : [],
     26,
   ));
 
@@ -227,15 +249,16 @@ test("Inbox overview clamps stale pages and retains the canonical reason filter"
     sort: "OLDEST",
     page: 9,
     unknownMerchantName: "Unknown merchant",
+    ...context,
   }, { reader, workspaces: memberRepository() });
 
   assert.equal(overview.activeFilter, "POSSIBLE_TRANSFER");
-  assert.equal(overview.pagination.page, 2);
+  assert.equal(overview.pagination.page, 3);
   assert.equal(overview.pagination.totalCount, 26);
   assert.equal(overview.items[0]?.reason, "POSSIBLE_TRANSFER");
   assert.deepEqual(reader.calls, [
-    { workspaceId, reason: "POSSIBLE_TRANSFER", sort: "OLDEST", offset: 200, limit: 25 },
-    { workspaceId, reason: "POSSIBLE_TRANSFER", sort: "OLDEST", offset: 25, limit: 25 },
+    { workspaceId, reason: "POSSIBLE_TRANSFER", sort: "OLDEST", offset: 80, limit: 10, resolvedSince },
+    { workspaceId, reason: "POSSIBLE_TRANSFER", sort: "OLDEST", offset: 20, limit: 10, resolvedSince },
   ]);
 });
 
@@ -248,6 +271,7 @@ test("Inbox overview keeps non-default ordering in its shareable query", () => {
     inboxOverviewHref("/w/household/inbox", { reason: "POSSIBLE_TRANSFER", sort: "OLDEST", page: 2 }),
     "/w/household/inbox?reason=POSSIBLE_TRANSFER&sort=OLDEST&page=2",
   );
+  assert.equal(parseInboxOverviewSearchParams({ sort: "LARGEST" }).sort, "LARGEST");
   assert.deepEqual(parseInboxOverviewSearchParams({ sort: "unknown" }), {
     reason: null,
     sort: "NEWEST",
@@ -265,6 +289,7 @@ test("Inbox overview refuses a workspace without a membership before querying da
       reason: null,
       page: 1,
       unknownMerchantName: "Unknown merchant",
+      ...context,
     }, { reader, workspaces: memberRepository(null) }),
     AuthorizationError,
   );

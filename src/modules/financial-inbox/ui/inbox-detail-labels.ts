@@ -35,7 +35,13 @@ export type InboxCategoryResolutionLabels = {
 
 export type InboxDetailLabels = {
   readonly back: string;
+  readonly inbox: string;
   readonly breadcrumb: string;
+  readonly progress: string;
+  readonly step: { readonly detected: string; readonly suggested: string; readonly review: string; readonly resolved: string };
+  readonly viewAll: string;
+  readonly matchScore: string;
+  readonly dateAt: string;
   readonly status: { readonly open: string; readonly resolved: string; readonly dismissed: string };
   readonly transactionInformation: string;
   readonly currentClassification: string;
@@ -88,7 +94,18 @@ export type InboxDetailLabels = {
 export function getInboxDetailLabels(labels: DashboardLabels): InboxDetailLabels {
   return {
     back: labels["inbox.detail.back"],
+    inbox: labels["inbox.title"],
     breadcrumb: labels["inbox.detail.breadcrumb"],
+    progress: labels["inbox.detail.progress"],
+    step: {
+      detected: labels["inbox.detail.step.detected"],
+      suggested: labels["inbox.detail.step.suggested"],
+      review: labels["inbox.detail.step.review"],
+      resolved: labels["inbox.detail.step.resolved"],
+    },
+    viewAll: labels["inbox.detail.viewAll"],
+    matchScore: labels["inbox.detail.matchScore"],
+    dateAt: labels["inbox.detail.dateAt"],
     status: {
       open: labels["inbox.detail.status.open"],
       resolved: labels["inbox.status.resolved"],

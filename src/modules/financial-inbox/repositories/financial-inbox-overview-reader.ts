@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, isNull, ne, notExists, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull, ne, notExists, or, sum } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/db/client";
@@ -20,8 +20,10 @@ import type {
   InboxOverviewReadRow,
   InboxReasonCount,
   InboxOverviewReader,
+  InboxOverviewSort,
 } from "../inbox-overview";
 
+const REASON_SAMPLE_SCAN_LIMIT = 50;
 
 export class DatabaseFinancialInboxOverviewReader implements InboxOverviewReader {
   async readInboxOverview(input: InboxOverviewReadInput): Promise<InboxOverviewReadResult> {
@@ -32,7 +34,7 @@ export class DatabaseFinancialInboxOverviewReader implements InboxOverviewReader
       : basePredicates;
     const suggestedCategory = alias(ledgerCategories, "inbox_suggested_category");
 
-    const [records, recentlyResolvedRecords, unresolved, filtered, reasonCounts] = await Promise.all([
+    const [records, recentlyResolvedRecords, unresolved, filtered, reasonCounts, resolvedSince, amountTotals, merchantSamples] = await Promise.all([
       db
         .select({
           item: financialInboxItems,
@@ -89,10 +91,7 @@ export class DatabaseFinancialInboxOverviewReader implements InboxOverviewReader
           ),
         )
         .where(and(...filteredPredicates))
-        .orderBy(
-          input.sort === "OLDEST" ? asc(financialInboxItems.createdAt) : desc(financialInboxItems.createdAt),
-          input.sort === "OLDEST" ? asc(financialInboxItems.id) : desc(financialInboxItems.id),
-        )
+        .orderBy(...overviewOrder(input.sort))
         .offset(input.offset)
         .limit(input.limit),
       db
@@ -187,6 +186,46 @@ export class DatabaseFinancialInboxOverviewReader implements InboxOverviewReader
         )
         .where(and(...basePredicates))
         .groupBy(financialInboxItems.reason),
+      db
+        .select({ total: count() })
+        .from(financialInboxItems)
+        .innerJoin(
+          ledgerTransactions,
+          and(
+            eq(ledgerTransactions.id, financialInboxItems.transactionId),
+            eq(ledgerTransactions.workspaceId, input.workspaceId),
+          ),
+        )
+        .where(and(...recentlyResolvedPredicates, gte(financialInboxItems.resolvedAt, input.resolvedSince))),
+      db
+        .select({ currency: ledgerTransactions.currency, total: sum(ledgerTransactions.amountMinor), items: count() })
+        .from(financialInboxItems)
+        .innerJoin(
+          ledgerTransactions,
+          and(
+            eq(ledgerTransactions.id, financialInboxItems.transactionId),
+            eq(ledgerTransactions.workspaceId, input.workspaceId),
+          ),
+        )
+        .where(and(...basePredicates))
+        .groupBy(ledgerTransactions.currency),
+      db
+        .select({ reason: financialInboxItems.reason, merchantName: ledgerMerchants.name })
+        .from(financialInboxItems)
+        .innerJoin(
+          ledgerTransactions,
+          and(
+            eq(ledgerTransactions.id, financialInboxItems.transactionId),
+            eq(ledgerTransactions.workspaceId, input.workspaceId),
+          ),
+        )
+        .leftJoin(
+          ledgerMerchants,
+          and(eq(ledgerMerchants.id, ledgerTransactions.merchantId), eq(ledgerMerchants.workspaceId, input.workspaceId)),
+        )
+        .where(and(...basePredicates))
+        .orderBy(desc(financialInboxItems.createdAt), desc(financialInboxItems.id))
+        .limit(REASON_SAMPLE_SCAN_LIMIT),
     ]);
 
     return {
@@ -234,10 +273,27 @@ export class DatabaseFinancialInboxOverviewReader implements InboxOverviewReader
         reason: entry.reason as InboxReason,
         count: entry.total,
       })) satisfies readonly InboxReasonCount[],
+      resolvedSinceCount: resolvedSince[0]?.total ?? 0,
+      openAmountTotals: amountTotals.map((entry) => ({
+        currency: entry.currency,
+        minor: BigInt(entry.total ?? "0"),
+        count: entry.items,
+      })),
+      reasonMerchantSamples: merchantSamples.map((sample) => ({
+        reason: sample.reason as InboxReason,
+        merchantName: sample.merchantName,
+      })),
     };
   }
 }
 
+function overviewOrder(sort: InboxOverviewSort) {
+  if (sort === "LARGEST") {
+    return [desc(ledgerTransactions.amountMinor), desc(financialInboxItems.createdAt), desc(financialInboxItems.id)];
+  }
+  if (sort === "OLDEST") return [asc(financialInboxItems.createdAt), asc(financialInboxItems.id)];
+  return [desc(financialInboxItems.createdAt), desc(financialInboxItems.id)];
+}
 
 function currentInboxPredicates(workspaceId: string, status: "OPEN" | "RESOLVED") {
   const reversal = alias(ledgerTransactions, "inbox_transaction_reversal");

@@ -14,22 +14,27 @@ type InboxPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function InboxPage({ params, searchParams }: InboxPageProps) {
+export default async function InboxPage({
+  params,
+  searchParams,
+}: InboxPageProps) {
   const [{ workspaceSlug }, query] = await Promise.all([params, searchParams]);
   const destination = `/w/${workspaceSlug}/inbox`;
   const actor = await getAuthenticatedActor();
 
   if (!actor) redirect(loginPathForReturnTo(destination));
 
-  const workspace = await new DatabaseWorkspaceRepository().findMemberContextBySlug(
-    workspaceSlug,
-    actor.userId,
-  );
+  const workspace =
+    await new DatabaseWorkspaceRepository().findMemberContextBySlug(
+      workspaceSlug,
+      actor.userId,
+    );
   if (!workspace) notFound();
 
   const language = await getPersistedDashboardLanguage(actor.userId);
   const labels = getDashboardLabels(language);
   const filters = parseInboxOverviewSearchParams(query);
+  const now = new Date();
   const overview = await getServerInboxOverview({
     actor,
     workspaceId: workspace.workspace.id,
@@ -37,6 +42,9 @@ export default async function InboxPage({ params, searchParams }: InboxPageProps
     sort: filters.sort,
     page: filters.page,
     unknownMerchantName: labels["transactions.merchant.unknown"],
+    currency: workspace.preferences.currency,
+    timeZone: workspace.preferences.timezone,
+    now,
   });
 
   return (
@@ -44,7 +52,7 @@ export default async function InboxPage({ params, searchParams }: InboxPageProps
       labels={labels}
       language={language}
       locale={workspace.preferences.locale}
-      now={new Date().toISOString()}
+      now={now.toISOString()}
       overview={overview}
       timeZone={workspace.preferences.timezone}
       workspaceId={workspace.workspace.id}
