@@ -12,6 +12,7 @@ import {
   parseInsightsRange,
 } from "@/modules/insights/overview/insights-overview.types";
 import { InsightsOverviewView } from "@/modules/insights/ui/views/insights-overview-view";
+import { parseReportLanguage } from "@/modules/reports/domain/financial-report.types";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 type WorkspaceInsightsPageProps = {
@@ -73,6 +74,7 @@ export default async function WorkspaceInsightsPage({
       insights={insights}
       labels={labels}
       overview={overview}
+      reportLanguage={parseReportLanguage(language)}
       workspaceSlug={workspace.workspace.slug}
     />
   );

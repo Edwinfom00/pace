@@ -1,4 +1,6 @@
 import type { DashboardLabels } from "@/i18n/dashboard-messages";
+import type { ReportLanguage } from "@/modules/reports/domain/financial-report.types";
+import { FinancialReportExport } from "@/modules/reports/ui/financial-report-export";
 
 import type { InsightsAccountSummary } from "../../account/account-analysis.types";
 import type {
@@ -33,6 +35,7 @@ export function InsightsOverviewView({
   insights,
   labels,
   overview,
+  reportLanguage,
   workspaceSlug,
 }: {
   readonly accounts: readonly InsightsAccountSummary[];
@@ -40,6 +43,7 @@ export function InsightsOverviewView({
   readonly insights: InsightsDeterministicInsights;
   readonly labels: DashboardLabels;
   readonly overview: InsightsOverview;
+  readonly reportLanguage: ReportLanguage;
   readonly workspaceSlug: string;
 }) {
   return (
@@ -54,12 +58,20 @@ export function InsightsOverviewView({
               workspaceSlug={workspaceSlug}
             />
             <div className="space-y-1">
-              <InsightsPeriodControls
-                currentPeriodKey={currentPeriodKey}
-                labels={labels}
-                locale={overview.locale}
-                periodKey={overview.periodKey}
-              />
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <InsightsPeriodControls
+                  currentPeriodKey={currentPeriodKey}
+                  labels={labels}
+                  locale={overview.locale}
+                  periodKey={overview.periodKey}
+                />
+                <FinancialReportExport
+                  currency={overview.currency}
+                  language={reportLanguage}
+                  periodKey={overview.periodKey}
+                  workspaceSlug={workspaceSlug}
+                />
+              </div>
               <p className="text-[13px] leading-5 text-[#667085]">
                 {formatInsightsWindow(overview.current, overview.locale)}
                 <span aria-hidden="true"> · </span>

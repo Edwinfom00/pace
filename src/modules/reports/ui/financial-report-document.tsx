@@ -13,6 +13,7 @@ import { CalendarDays } from "lucide-react";
 type Props = {
   readonly report: FinancialReportDTO;
   readonly onlyPage?: string;
+  readonly pdf?: boolean;
 };
 const colors = [
   "#1976ef",
@@ -756,22 +757,18 @@ const pages: Record<
   insights: Insights,
   recommendations: Recommendations,
 };
-export function FinancialReportDocument({ report, onlyPage }: Props) {
+export function FinancialReportDocument({ report, onlyPage, pdf = false }: Props) {
   const selected = onlyPage
     ? [onlyPage]
-    : [
-        "cover",
-        "summary",
-        "income",
-        "categories",
-        "transactions",
-        "accounts",
-        "recurring",
-        "insights",
-        "recommendations",
-      ];
+    : report.meta.pages.map((page) =>
+        page === "executiveSummary"
+          ? "summary"
+          : page === "incomeSpending"
+            ? "income"
+            : page,
+      );
   return (
-    <main className={styles.canvas}>
+    <main className={`${styles.canvas} ${pdf ? styles.pdfCanvas : ""}`}>
       {selected.map((key) => {
         const Page = pages[key];
         return Page ? <Page key={key} report={report} /> : null;

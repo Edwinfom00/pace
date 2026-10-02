@@ -805,6 +805,23 @@
   stroke-width: 1.5;
 }
 
+.pdfCanvas {
+  background: #fff;
+  display: block;
+  padding: 0;
+  width: 210mm;
+}
+
+.pdfCanvas .page {
+  box-shadow: none;
+  break-after: page;
+  margin: 0;
+}
+
+.pdfCanvas .page:last-child {
+  break-after: auto;
+}
+
 @media (max-width: 700px) {
   .canvas {
     display: flex;
