@@ -59,6 +59,13 @@ export interface ImportMapping {
   defaultIncomeCategoryId: string;
 }
 
+export interface ImportColumnMapping {
+  columns: Partial<Record<ImportField, string>>;
+  ignoredHeaders: string[];
+  fileChecksum: string;
+  confirmedAt: string;
+}
+
 export interface ImportMappingDraft {
   columns: Partial<Record<ImportField, string>>;
   confidence: Partial<Record<ImportField, number>>;
@@ -139,6 +146,7 @@ export interface ImportSessionRecord {
   headers: string[];
   parsedRows: ParsedImportRow[] | null;
   stagedRows: NormalizedImportRow[] | null;
+  columnMapping: ImportColumnMapping | null;
   mapping: ImportMapping | null;
   preview: ImportPreview | null;
   result: ImportResult | null;

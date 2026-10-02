@@ -260,6 +260,13 @@
       "when": 1790100000012,
       "tag": "0036_plan_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790100000013,
+      "tag": "0037_import_column_mapping",
+      "breakpoints": true
     }
   ]
 }

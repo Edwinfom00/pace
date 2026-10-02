@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { AuthorizationError, ConflictError, NotFoundError } from "@/authorization/errors";
+import { AuthorizationError, ConflictError, DomainConflictError, NotFoundError } from "@/authorization/errors";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
 import type { AuthenticatedActor } from "@/authorization/session";
 import type { FinancialInboxService } from "@/modules/financial-inbox/financial-inbox-service";
@@ -13,6 +13,8 @@ import type { WorkspaceRepository } from "@/modules/workspaces/repositories/work
 
 import { applyImportDeduplication } from "./deduplication";
 import type {
+  ImportColumnMapping,
+  ImportFileType,
   ImportMapping,
   ImportMappingDraft,
   ImportResult,
@@ -21,10 +23,12 @@ import type {
   NormalizedImportRow,
 } from "./domain";
 import { detectImportMapping, validateMappingAgainstParsedFile } from "./mapping";
+import { buildDetectedColumns, evaluateImportColumns, type ImportDetectedColumn } from "./mapping/column-mapping";
 import { normalizeImportRows } from "./normalization";
 import { parseImportUpload, type ImportFileInput } from "./parsers";
 import { buildImportPreview } from "./preview";
 import type { ImportRepository } from "./repositories/import-repository";
+import { importColumnMappingRequestSchema } from "./validation";
 
 const RAW_DATA_RETENTION_MS = 24 * 60 * 60 * 1000;
 
@@ -32,6 +36,19 @@ export interface ImportSessionView {
   session: ImportSessionRecord;
   mappingDraft: ImportMappingDraft;
   previewRows: NormalizedImportRow[];
+}
+
+export interface ImportColumnMappingView {
+  session: {
+    id: string;
+    fileName: string;
+    fileType: ImportFileType;
+    fileChecksum: string;
+    rowCount: number;
+  };
+  editable: boolean;
+  columns: ImportDetectedColumn[];
+  saved: ImportColumnMapping | null;
 }
 
 export class ImportService {
@@ -92,6 +109,76 @@ export class ImportService {
       mappingDraft: detectImportMapping(session.headers),
       previewRows: session.stagedRows?.slice(0, 100) ?? [],
     };
+  }
+
+  async getColumnMapping(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    importSessionId: string,
+  ): Promise<ImportColumnMappingView> {
+    await this.requireManageContext(actor, workspaceId);
+    const session = await this.requireInitiatedSession(actor, workspaceId, importSessionId);
+    const rows = this.hasLiveRawData(session) ? session.parsedRows ?? [] : [];
+    const editable = session.status === "MAPPING_REQUIRED" && this.hasLiveRawData(session);
+    return {
+      session: {
+        id: session.id,
+        fileName: session.fileName,
+        fileType: session.fileType,
+        fileChecksum: session.fileChecksum,
+        rowCount: rows.length,
+      },
+      editable,
+      columns: editable ? buildDetectedColumns(session.headers, rows, detectImportMapping(session.headers)) : [],
+      saved: session.columnMapping?.fileChecksum === session.fileChecksum ? session.columnMapping : null,
+    };
+  }
+
+  async confirmColumnMapping(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    importSessionId: string,
+    input: unknown,
+  ): Promise<ImportColumnMapping> {
+    const request = importColumnMappingRequestSchema.parse(input);
+    await this.requireManageContext(actor, workspaceId);
+    const session = await this.requireInitiatedSession(actor, workspaceId, importSessionId);
+    if (request.fileChecksum !== session.fileChecksum) {
+      throw new DomainConflictError("IMPORT_FILE_CHANGED", "This import now refers to a different file.");
+    }
+    if (session.status !== "MAPPING_REQUIRED" || !this.hasLiveRawData(session)) {
+      throw new DomainConflictError("IMPORT_SESSION_STALE", "This file is no longer available for mapping. Upload it again.");
+    }
+    const headers = new Set(session.headers);
+    const mapped = Object.values(request.columns).filter((header): header is string => Boolean(header));
+    const ignoredHeaders = [...new Set(request.ignoredHeaders)];
+    if (
+      [...mapped, ...ignoredHeaders].some((header) => !headers.has(header)) ||
+      new Set(mapped).size !== mapped.length ||
+      ignoredHeaders.some((header) => mapped.includes(header))
+    ) {
+      throw new DomainConflictError("INVALID_COLUMN_MAPPING", "Each file column can be mapped to one Pace field only.");
+    }
+    const evaluation = evaluateImportColumns(request.columns);
+    if (evaluation.issues.includes("AMOUNT_MODE_CONFLICT")) {
+      throw new DomainConflictError("AMOUNT_MODE_CONFLICT", "Map either a signed amount or debit/credit columns, not both.");
+    }
+    if (!evaluation.ready) {
+      throw new DomainConflictError("REQUIRED_FIELDS_MISSING", "Map a date, an amount and a description before continuing.");
+    }
+    const columnMapping: ImportColumnMapping = {
+      columns: request.columns,
+      ignoredHeaders,
+      fileChecksum: session.fileChecksum,
+      confirmedAt: new Date().toISOString(),
+    };
+    const saved = await this.imports.saveColumnMapping({ workspaceId, importSessionId, columnMapping });
+    if (!saved) throw new DomainConflictError("IMPORT_SESSION_STALE", "This import changed before its columns could be saved.");
+    await this.audit(saved, actor.userId, "COLUMNS_CONFIRMED", saved.status, saved.status, {
+      mappedFields: Object.keys(request.columns).sort(),
+      ignoredColumnCount: ignoredHeaders.length,
+    });
+    return columnMapping;
   }
 
   /** Trusted scheduler entry point. Expired statement rows are never ledger mutations. */
@@ -376,6 +463,10 @@ export class ImportService {
       throw new ConflictError("The fallback currency must match the selected Pace account.");
     }
     return { ...mapping, fallbackCurrency: account.currency };
+  }
+
+  private hasLiveRawData(session: ImportSessionRecord): boolean {
+    return Boolean(session.parsedRows && session.rawDataExpiresAt && session.rawDataExpiresAt > new Date());
   }
 
   private async requireManageContext(actor: AuthenticatedActor, workspaceId: string): Promise<WorkspaceMemberContext> {

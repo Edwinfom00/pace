@@ -5,6 +5,7 @@ import { importAudits, importSessions } from "@/db/schema";
 
 import type {
   ImportAuditRecord,
+  ImportColumnMapping,
   ImportMapping,
   ImportPreview,
   ImportResult,
@@ -37,6 +38,12 @@ export interface PrepareImportSessionInput {
   preview: ImportPreview;
 }
 
+export interface SaveImportColumnMappingInput {
+  workspaceId: string;
+  importSessionId: string;
+  columnMapping: ImportColumnMapping;
+}
+
 export interface TransitionImportSessionInput {
   workspaceId: string;
   importSessionId: string;
@@ -66,6 +73,7 @@ export interface ImportRepository {
   findSession(workspaceId: string, importSessionId: string): Promise<ImportSessionRecord | null>;
   listExpiredSessions(now: Date): Promise<ImportSessionRecord[]>;
   prepareSession(input: PrepareImportSessionInput): Promise<ImportSessionRecord | null>;
+  saveColumnMapping(input: SaveImportColumnMappingInput): Promise<ImportSessionRecord | null>;
   transitionSession(input: TransitionImportSessionInput): Promise<ImportSessionRecord | null>;
   createAudit(input: CreateImportAuditInput): Promise<ImportAuditRecord>;
   listAudit(workspaceId: string, importSessionId: string): Promise<ImportAuditRecord[]>;
@@ -126,6 +134,22 @@ export class DatabaseImportRepository implements ImportRepository {
           eq(importSessions.workspaceId, input.workspaceId),
           eq(importSessions.id, input.importSessionId),
           inArray(importSessions.status, ["MAPPING_REQUIRED", "READY_FOR_PREVIEW", "PARTIALLY_COMPLETED"]),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async saveColumnMapping(input: SaveImportColumnMappingInput): Promise<ImportSessionRecord | null> {
+    const [record] = await db
+      .update(importSessions)
+      .set({ columnMapping: input.columnMapping, updatedAt: new Date() })
+      .where(
+        and(
+          eq(importSessions.workspaceId, input.workspaceId),
+          eq(importSessions.id, input.importSessionId),
+          eq(importSessions.fileChecksum, input.columnMapping.fileChecksum),
+          eq(importSessions.status, "MAPPING_REQUIRED"),
         ),
       )
       .returning();

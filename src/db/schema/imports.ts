@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import type {
+  ImportColumnMapping,
   ImportMapping,
   ImportPreview,
   ImportResult,
@@ -57,6 +58,7 @@ export const importSessions = pgTable(
     headers: jsonb("headers").$type<string[]>().notNull().default([]),
     parsedRows: jsonb("parsed_rows").$type<ParsedImportRow[]>(),
     stagedRows: jsonb("staged_rows").$type<NormalizedImportRow[]>(),
+    columnMapping: jsonb("column_mapping").$type<ImportColumnMapping>(),
     mapping: jsonb("mapping").$type<ImportMapping>(),
     preview: jsonb("preview").$type<ImportPreview>(),
     result: jsonb("result").$type<ImportResult>(),

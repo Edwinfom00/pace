@@ -54,4 +54,12 @@ export const importMappingSchema = z
     }
   });
 
+export const importColumnMappingRequestSchema = z
+  .object({
+    fileChecksum: z.string().regex(/^[a-f0-9]{64}$/),
+    columns: z.object(Object.fromEntries(IMPORT_FIELDS.map((field) => [field, optionalColumnSchema]))).partial().strict(),
+    ignoredHeaders: z.array(z.string().min(1).max(200)).max(80),
+  })
+  .strict();
+
 export const importMappingRequestSchema = z.object({ mapping: importMappingSchema });

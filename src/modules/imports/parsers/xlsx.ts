@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import * as yauzl from "yauzl";
 
 import type { ParsedImportFile } from "../domain";
@@ -9,6 +10,8 @@ const MAX_ROWS = 10_000;
 const MAX_COLUMNS = 80;
 const MAX_ARCHIVE_ENTRIES = 100;
 const MAX_UNCOMPRESSED_BYTES = 25 * 1024 * 1024;
+const SPREADSHEET_NAMESPACE = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const PREFIXED_SPREADSHEET_NAMESPACE = /xmlns:([A-Za-z_][\w.-]*)="http:\/\/schemas\.openxmlformats\.org\/spreadsheetml\/2006\/main"/;
 
 export async function parseXlsx(bytes: Uint8Array): Promise<ParsedImportFile> {
   if (!hasZipSignature(bytes)) throw new ImportParseError("The XLSX file is not a valid ZIP archive.", "INVALID_XLSX");
@@ -16,7 +19,7 @@ export async function parseXlsx(bytes: Uint8Array): Promise<ParsedImportFile> {
 
   const workbook = new ExcelJS.Workbook();
   try {
-    await workbook.xlsx.load(Buffer.from(bytes) as never);
+    await workbook.xlsx.load(await withExcelJsCompatibleParts(Buffer.from(bytes)) as never);
   } catch {
     throw new ImportParseError("The XLSX workbook could not be read.", "MALFORMED_XLSX");
   }
@@ -68,6 +71,32 @@ function spreadsheetCellToText(value: ExcelJS.CellValue, renderedText: string): 
   if (value === null || value === undefined) return "";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
   return renderedText;
+}
+
+// ExcelJS only reads unprefixed SpreadsheetML with relative worksheet part targets; OpenXML SDK
+// writers emit `<x:worksheet xmlns:x=...>` and absolute `/xl/...` targets, which ExcelJS cannot load.
+async function withExcelJsCompatibleParts(buffer: Buffer): Promise<Buffer> {
+  const archive = await JSZip.loadAsync(buffer);
+  let changed = false;
+  for (const entry of Object.values(archive.files)) {
+    if (entry.dir) continue;
+    if (entry.name.endsWith(".xml")) {
+      const xml = await entry.async("string");
+      const prefix = xml.match(PREFIXED_SPREADSHEET_NAMESPACE)?.[1];
+      if (!prefix) continue;
+      archive.file(entry.name, xml
+        .replaceAll(`<${prefix}:`, "<")
+        .replaceAll(`</${prefix}:`, "</")
+        .replaceAll(`xmlns:${prefix}="${SPREADSHEET_NAMESPACE}"`, `xmlns="${SPREADSHEET_NAMESPACE}"`));
+      changed = true;
+    } else if (/^xl\/worksheets\/_rels\/[^/]+\.rels$/.test(entry.name)) {
+      const rels = await entry.async("string");
+      if (!rels.includes('Target="/xl/')) continue;
+      archive.file(entry.name, rels.replaceAll('Target="/xl/', 'Target="../'));
+      changed = true;
+    }
+  }
+  return changed ? archive.generateAsync({ type: "nodebuffer" }) : buffer;
 }
 
 function hasZipSignature(bytes: Uint8Array): boolean {

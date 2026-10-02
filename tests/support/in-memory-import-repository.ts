@@ -8,6 +8,7 @@ import type {
   CreateImportSessionInput,
   ImportRepository,
   PrepareImportSessionInput,
+  SaveImportColumnMappingInput,
   TransitionImportSessionInput,
 } from "@/modules/imports/repositories/import-repository";
 
@@ -23,6 +24,7 @@ export class InMemoryImportRepository implements ImportRepository {
       status: "UPLOADED",
       parsedRows: input.parsedRows,
       stagedRows: null,
+      columnMapping: null,
       mapping: null,
       preview: null,
       result: null,
@@ -67,6 +69,14 @@ export class InMemoryImportRepository implements ImportRepository {
       failureMessage: null,
       updatedAt: new Date(),
     };
+    this.sessions.set(session.id, session);
+    return session;
+  }
+
+  async saveColumnMapping(input: SaveImportColumnMappingInput): Promise<ImportSessionRecord | null> {
+    const current = await this.findSession(input.workspaceId, input.importSessionId);
+    if (!current || current.status !== "MAPPING_REQUIRED" || current.fileChecksum !== input.columnMapping.fileChecksum) return null;
+    const session: ImportSessionRecord = { ...current, columnMapping: input.columnMapping, updatedAt: new Date() };
     this.sessions.set(session.id, session);
     return session;
   }
