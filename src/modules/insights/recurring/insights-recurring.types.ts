@@ -4,9 +4,9 @@ import type {
   InsightsCurrencyOption,
   InsightsExclusions,
   InsightsMetric,
+  InsightsRange,
   InsightsWindow,
 } from "../overview/insights-overview.types";
-import type { TrendsRange } from "../trends/insights-trends.types";
 
 export const RECURRING_HORIZONS = ["30d", "60d", "90d"] as const;
 export type RecurringHorizon = (typeof RECURRING_HORIZONS)[number];
@@ -139,7 +139,7 @@ export interface InsightsRecurring {
   readonly currency: string;
   readonly workspaceCurrency: string;
   readonly locale: string;
-  readonly range: TrendsRange;
+  readonly range: InsightsRange;
   readonly horizon: RecurringHorizon;
   readonly periodKey: string;
   readonly current: InsightsWindow;

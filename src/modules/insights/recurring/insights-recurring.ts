@@ -35,8 +35,8 @@ import {
 import {
   INSIGHTS_RANGE_MONTHS,
   type InsightsCurrencyOption,
+  type InsightsRange,
 } from "../overview/insights-overview.types";
-import type { TrendsRange } from "../trends/insights-trends.types";
 import {
   RECURRING_HORIZON_DAYS,
   type InsightsRecurring,
@@ -85,7 +85,7 @@ export interface BuildInsightsRecurringInput {
   readonly workspaceCurrency: string;
   readonly locale: string;
   readonly timeZone: string;
-  readonly range: TrendsRange;
+  readonly range: InsightsRange;
   readonly horizon: RecurringHorizon;
   readonly periodKey: string | undefined;
   readonly now: Date;
@@ -382,7 +382,7 @@ function monthBuckets(
   transactions: readonly MoneyTransaction[],
   anchorMonth: Period,
   current: Period,
-  range: TrendsRange,
+  range: InsightsRange,
   timeZone: string,
   now: Date,
   currency: string,

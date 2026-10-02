@@ -8,7 +8,7 @@ import {
 } from "@/modules/ledger/domain";
 import type { WorkspaceMembershipRecord } from "@/modules/workspaces/domain";
 
-import type { TrendsRange } from "../trends/insights-trends.types";
+import type { InsightsRange } from "../overview/insights-overview.types";
 import {
   buildInsightsRecurring,
   type RecurringAnalyticsCorrection,
@@ -44,7 +44,7 @@ export interface GetInsightsRecurringInput {
   readonly workspaceCurrency: string;
   readonly locale: string;
   readonly timeZone: string;
-  readonly range: TrendsRange;
+  readonly range: InsightsRange;
   readonly horizon: RecurringHorizon;
   readonly periodKey: string | undefined;
   readonly requestedCurrency: string | null;
