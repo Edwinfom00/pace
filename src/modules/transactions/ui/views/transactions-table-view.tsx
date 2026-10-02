@@ -17,6 +17,7 @@ import { TransactionTable } from "../components/transaction-table";
 import { TransactionTableSkeleton } from "../components/transaction-table-skeleton";
 import { TransactionToolbar } from "../components/transaction-toolbar";
 import { TransactionCreateControl } from "../components/transaction-create-control";
+import { TransactionImportLink } from "../components/transaction-import-link";
 import type { TransactionUiLabels } from "../transaction-ui-labels";
 import type { TransactionAccountOptionsState } from "../../domain/transaction-account-options";
 import type { TransactionCategoryOptionsState } from "../../domain/transaction-category-options";
@@ -38,6 +39,7 @@ export function TransactionsTableView({
   workspaceId,
   workspaceSlug,
   language,
+  canImport = false,
   loading = false,
 }: {
   readonly transactions: readonly TransactionListItem[];
@@ -55,6 +57,7 @@ export function TransactionsTableView({
   readonly workspaceId: string;
   readonly workspaceSlug: string;
   readonly language: "en" | "fr" | "de";
+  readonly canImport?: boolean;
   readonly loading?: boolean;
 }) {
   const pathname = `/w/${workspaceSlug}/transactions`;
@@ -86,6 +89,7 @@ export function TransactionsTableView({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <TransactionsAskPace language={language} locale={locale} pageContext={pageContext} timeZone={timeZone} workspaceId={workspaceId} />
+            {canImport ? <TransactionImportLink label={labels.actionImport} workspaceSlug={workspaceSlug} /> : null}
             <TransactionCreateControl
               accountOptions={accountOptions}
               categoryOptions={categoryOptions}

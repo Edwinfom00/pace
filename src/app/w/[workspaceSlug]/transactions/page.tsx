@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
 import { getAuthenticatedActor } from "@/authorization/session";
+import { canPerformWorkspaceAction } from "@/authorization/workspace-permissions";
 import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import { getPersistedDashboardLanguage } from "@/i18n/dashboard-server";
 import { isCurrencyCode, toCurrencyCode } from "@/money/currency";
@@ -87,6 +88,7 @@ export default async function TransactionsPage({ params, searchParams }: Transac
       workspaceId={workspace.workspace.id}
       workspaceSlug={workspace.workspace.slug}
       language={language}
+      canImport={canPerformWorkspaceAction(workspace.membership.role, "manage_ledger")}
     />
   );
 }

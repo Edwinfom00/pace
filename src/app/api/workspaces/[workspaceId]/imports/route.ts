@@ -1,4 +1,6 @@
 import { requireAuthenticatedActor } from "@/authorization/session";
+import { MAX_IMPORT_FILE_BYTES } from "@/modules/imports/import-file-policy";
+import { ImportParseError } from "@/modules/imports/parsers";
 import { presentImportSession } from "@/modules/imports/presenters";
 import { getImportService } from "@/modules/imports/server";
 
@@ -17,6 +19,9 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
     const file = body.get("file");
     if (!(file instanceof File)) {
       return Response.json({ error: "A CSV or XLSX file is required." }, { status: 400 });
+    }
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      throw new ImportParseError("The uploaded file exceeds the 5 MB import limit.", "FILE_SIZE_LIMIT");
     }
     const result = await getImportService().upload(actor, workspaceId, {
       name: file.name,

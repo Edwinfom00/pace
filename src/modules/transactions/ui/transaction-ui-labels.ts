@@ -120,6 +120,7 @@ export type TransactionUiLabels = {
   readonly formTipTransfer: string;
   readonly actionRemove: string;
   readonly actionCancel: string;
+  readonly actionImport: string;
   readonly actionAddExpense: string;
   readonly actionSavingExpense: string;
   readonly actionAddIncome: string;
@@ -319,6 +320,7 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     formTipTransfer: labels["transactions.form.tip.transfer"],
     actionRemove: labels["transactions.actions.remove"],
     actionCancel: labels["transactions.actions.cancel"],
+    actionImport: labels["transactions.actions.import"],
     actionAddExpense: labels["transactions.actions.addExpense"],
     actionSavingExpense: labels["transactions.actions.savingExpense"],
     actionAddIncome: labels["transactions.actions.addIncome"],
