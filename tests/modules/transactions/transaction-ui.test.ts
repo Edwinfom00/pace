@@ -18,11 +18,11 @@ import { formatTransactionAmount, formatTransactionDate } from "@/modules/transa
 import { TransactionMerchantCell } from "@/modules/transactions/ui/components/transaction-merchant-cell";
 import { TransactionMobileCard } from "@/modules/transactions/ui/components/transaction-mobile-card";
 import { TransactionNoteField } from "@/modules/transactions/ui/components/transaction-note-field";
-import { visiblePages } from "@/modules/transactions/ui/components/transaction-pagination";
 import { TransactionRowActions } from "@/modules/transactions/ui/components/transaction-row-actions";
 import { TransactionStatusBadge } from "@/modules/transactions/ui/components/transaction-status-badge";
 import { TransactionTable } from "@/modules/transactions/ui/components/transaction-table";
 import { TransactionTableSkeleton } from "@/modules/transactions/ui/components/transaction-table-skeleton";
+import { paginationWindow } from "@/modules/transactions/ui/components/transaction-list-pagination";
 import { formatTransactionFormTime } from "@/modules/transactions/ui/components/transaction-time-field";
 import { TransactionTransferForm } from "@/modules/transactions/ui/components/transaction-transfer-form";
 import { TransactionTypeSelector } from "@/modules/transactions/ui/components/transaction-type-selector";
@@ -112,10 +112,11 @@ test("table, skeleton, empty state, and mobile presentation expose the foundatio
   assert.match(mobileCard, /md:hidden|Weekly groceries/);
 });
 
-test("pagination produces a compact stable page window", () => {
-  assert.deepEqual(visiblePages(1, 8), [1, 2, 3, 4, 8]);
-  assert.deepEqual(visiblePages(4, 8), [1, 3, 4, 5, 8]);
-  assert.deepEqual(visiblePages(8, 8), [1, 5, 6, 7, 8]);
+test("pagination produces a compact stable page window with ellipses", () => {
+  assert.deepEqual(paginationWindow(1, 5), [1, 2, 3, 4, 5]);
+  assert.deepEqual(paginationWindow(1, 16), [1, 2, 3, 4, 5, "ellipsis-end", 16]);
+  assert.deepEqual(paginationWindow(8, 16), [1, "ellipsis-start", 7, 8, 9, "ellipsis-end", 16]);
+  assert.deepEqual(paginationWindow(16, 16), [1, "ellipsis-start", 12, 13, 14, 15, 16]);
 });
 
 test("transactions labels are complete across English, French, and German", () => {

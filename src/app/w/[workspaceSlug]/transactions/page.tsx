@@ -45,6 +45,7 @@ export default async function TransactionsPage({ params, searchParams }: Transac
   const language = await getPersistedDashboardLanguage(actor.userId);
   const labels = getTransactionUiLabels(getDashboardLabels(language));
   const filters = parseTransactionSearchParams(query);
+  const defaultCurrency = isCurrencyCode(workspace.preferences.currency) ? workspace.preferences.currency : toCurrencyCode("USD");
   const accountOptions = loadTransactionAccountOptions(() => getServerTransactionAccountOptions({
     actor,
     workspaceId: workspace.workspace.id,
@@ -59,13 +60,15 @@ export default async function TransactionsPage({ params, searchParams }: Transac
     filters,
     timeZone: workspace.preferences.timezone,
     unknownMerchantName: labels.unknownMerchant,
+    summaryCurrency: defaultCurrency,
   });
   const [transactionsPage, transactionAccounts, transactionCategories] = await Promise.all([
     page,
     accountOptions,
     categoryOptions,
   ]);
-  const canonicalHref = transactionListHref(destination, { ...transactionsPage.filters, page: transactionsPage.page });
+  const listState = { ...transactionsPage.filters, page: transactionsPage.page, pageSize: transactionsPage.pageSize };
+  const canonicalHref = transactionListHref(destination, listState);
   const requestedHref = requestHref(destination, query);
 
 
@@ -76,13 +79,14 @@ export default async function TransactionsPage({ params, searchParams }: Transac
       accountOptions={transactionAccounts}
       categoryOptions={transactionCategories}
       amountSortingAvailable={transactionsPage.amountSortingAvailable}
-      defaultCurrency={isCurrencyCode(workspace.preferences.currency) ? workspace.preferences.currency : toCurrencyCode("USD")}
+      defaultCurrency={defaultCurrency}
       filterOptions={transactionsPage.options}
-      filterState={{ ...transactionsPage.filters, page: transactionsPage.page }}
+      filterState={listState}
       labels={labels}
       locale={workspace.preferences.locale}
       now={new Date().toISOString()}
       pagination={transactionsPage.pagination}
+      summary={transactionsPage.summary}
       timeZone={workspace.preferences.timezone}
       transactions={transactionsPage.items}
       workspaceId={workspace.workspace.id}

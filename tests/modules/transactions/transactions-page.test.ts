@@ -6,7 +6,7 @@ import type { AuthenticatedActor } from "@/authorization/session";
 import { toCurrencyCode } from "@/money/currency";
 import { DEFAULT_TRANSACTION_FILTER_STATE, transactionListHref } from "@/modules/transactions/domain/transaction-list-url";
 import { parsePacePageContext } from "@/modules/pace-assistant/domain/page-context";
-import { getTransactionsPage } from "@/modules/transactions/queries/get-transactions-page";
+import { getTransactionsPage, previousCalendarMonth } from "@/modules/transactions/queries/get-transactions-page";
 import { parseTransactionSearchParams } from "@/modules/transactions/queries/transaction-search-params";
 import { startOfWorkspaceDay } from "@/modules/transactions/queries/workspace-date-range";
 import { LedgerService } from "@/modules/ledger/ledger-service";
@@ -96,6 +96,7 @@ test("transaction search params are typed, bounded, and independently fall back 
     pageSize: 20,
     search: "Carrefour",
     kind: "EXPENSE",
+    status: undefined,
     categoryId: undefined,
     accountId: undefined,
     from: undefined,
@@ -103,6 +104,15 @@ test("transaction search params are typed, bounded, and independently fall back 
     sort: "NEWEST",
   });
   assert.equal(parseTransactionSearchParams({ from: "2026-10-02", to: "2026-10-01" }).from, undefined);
+  assert.equal(parseTransactionSearchParams({ status: "pending", size: "50" }).status, "PENDING");
+  assert.equal(parseTransactionSearchParams({ status: "pending", size: "50" }).pageSize, 50);
+  assert.equal(parseTransactionSearchParams({ status: "posted", size: "1000" }).status, undefined);
+  assert.equal(parseTransactionSearchParams({ status: "posted", size: "1000" }).pageSize, 20);
+  assert.equal(
+    transactionListHref("/w/house/transactions", { ...DEFAULT_TRANSACTION_FILTER_STATE, page: 2, pageSize: 10, status: "PENDING" }),
+    "/w/house/transactions?page=2&size=10&status=PENDING",
+  );
+  assert.equal(transactionListHref("/w/house/transactions", { ...DEFAULT_TRANSACTION_FILTER_STATE, page: 1, pageSize: 20 }), "/w/house/transactions");
   assert.equal(
     transactionListHref("/w/house/transactions", {
       page: 3, search: "Carrefour", kind: "EXPENSE", categoryId: "11111111-1111-4111-8111-111111111111",
@@ -110,6 +120,53 @@ test("transaction search params are typed, bounded, and independently fall back 
     }),
     "/w/house/transactions?page=3&q=Carrefour&type=EXPENSE&category=11111111-1111-4111-8111-111111111111&account=22222222-2222-4222-8222-222222222222&from=2026-09-01&to=2026-09-30&sort=OLDEST",
   );
+});
+
+test("previous calendar month comparison is only derived from a full-month range", () => {
+  assert.deepEqual(previousCalendarMonth("2026-01-01", "2026-01-31"), { from: "2025-12-01", to: "2025-12-31" });
+  assert.deepEqual(previousCalendarMonth("2026-03-01", "2026-03-31"), { from: "2026-02-01", to: "2026-02-28" });
+  assert.equal(previousCalendarMonth("2026-03-01", "2026-03-30"), null);
+  assert.equal(previousCalendarMonth("2026-03-02", "2026-03-31"), null);
+  assert.equal(previousCalendarMonth(undefined, undefined), null);
+});
+
+test("transaction list summary is posted-only, refund-adjusted, exact, and currency-safe", async () => {
+  const { ledger, workspaces } = await fixture();
+  const summaryPage = (filters: Partial<ReturnType<typeof parseTransactionSearchParams>>) => getTransactionsPage({
+    actor: owner,
+    workspaceId,
+    filters: { ...parseTransactionSearchParams({}), ...filters },
+    timeZone: "Africa/Douala",
+    unknownMerchantName: "Transaction",
+    summaryCurrency: "USD",
+  }, { ledger, workspaces });
+
+  const all = await summaryPage({});
+  assert.deepEqual(all.summary, {
+    currency: "USD",
+    current: { incomeMinor: "750000", spendingMinor: "27850" },
+    hasOtherCurrencies: true,
+    comparison: null,
+  });
+
+  const september = await summaryPage({ from: "2026-09-01", to: "2026-09-30", accountId: undefined });
+  assert.deepEqual(september.summary?.comparison, {
+    from: "2026-08-01",
+    totalCount: 0,
+    totals: { incomeMinor: "0", spendingMinor: "0" },
+  });
+
+  const pending = await summaryPage({ status: "PENDING" });
+  assert.equal(pending.totalCount, 0);
+
+  const withoutSummary = await getTransactionsPage({
+    actor: owner,
+    workspaceId,
+    filters: parseTransactionSearchParams({}),
+    timeZone: "Africa/Douala",
+    unknownMerchantName: "Transaction",
+  }, { ledger, workspaces });
+  assert.equal(withoutSummary.summary, null);
 });
 
 test("Pace receives typed transaction filter context and never the financial dataset", () => {

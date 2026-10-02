@@ -208,6 +208,13 @@ export interface LedgerTransactionListFilters {
   occurredFrom?: Date;
   occurredToExclusive?: Date;
   search?: string;
+  status?: LedgerTransactionStatus;
+}
+
+export interface LedgerTransactionListSummaryRow {
+  currency: string;
+  incomeMinor: bigint;
+  spendingMinor: bigint;
 }
 
 export interface LedgerTransactionListPageInput extends LedgerTransactionListFilters {

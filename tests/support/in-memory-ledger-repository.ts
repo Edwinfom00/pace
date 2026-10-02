@@ -11,6 +11,7 @@ import type {
   LedgerTransactionListFilters,
   LedgerTransactionListPageInput,
   LedgerTransactionListRow,
+  LedgerTransactionListSummaryRow,
   LedgerTransactionFilters,
   LedgerTransactionRecord,
 } from "@/modules/ledger/domain";
@@ -821,6 +822,21 @@ export class InMemoryLedgerRepository implements LedgerRepository {
     return [...new Set(this.transactionListRows(workspaceId, filters).map(({ transaction }) => transaction.currency))].slice(0, 2);
   }
 
+  async summarizeTransactionList(
+    workspaceId: string,
+    filters: LedgerTransactionListFilters,
+  ): Promise<readonly LedgerTransactionListSummaryRow[]> {
+    const totals = new Map<string, LedgerTransactionListSummaryRow>();
+    for (const { transaction } of this.transactionListRows(workspaceId, filters)) {
+      const current = totals.get(transaction.currency) ?? { currency: transaction.currency, incomeMinor: 0n, spendingMinor: 0n };
+      if (transaction.status === "POSTED" && transaction.kind === "INCOME") current.incomeMinor += transaction.amountMinor;
+      if (transaction.status === "POSTED" && transaction.kind === "EXPENSE") current.spendingMinor += transaction.amountMinor;
+      if (transaction.status === "POSTED" && transaction.kind === "REFUND") current.spendingMinor -= transaction.amountMinor;
+      totals.set(transaction.currency, current);
+    }
+    return [...totals.values()];
+  }
+
   async listTransactionListPage(
     workspaceId: string,
     input: LedgerTransactionListPageInput,
@@ -971,6 +987,7 @@ export class InMemoryLedgerRepository implements LedgerRepository {
       if (nonCurrentCorrectionTransactionIds.has(transaction.id)) return [];
       if (transaction.reversalOfTransactionId !== null || reversedTransactionIds.has(transaction.id)) return [];
       if (filters.kind && transaction.kind !== filters.kind) return [];
+      if (filters.status && transaction.status !== filters.status) return [];
       if (
         filters.accountId
         && transaction.accountId !== filters.accountId

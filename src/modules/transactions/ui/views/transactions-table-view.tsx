@@ -1,21 +1,18 @@
-import { hasActiveTransactionFilters, transactionListHref } from "../../domain/transaction-list-url";
 import type {
   TransactionFilterOptions,
-  TransactionFilterState,
   TransactionListItem,
+  TransactionListState,
+  TransactionListSummary,
   TransactionPaginationState,
 } from "../../types/transaction-ui.types";
-import { TransactionEmptyState } from "../components/transaction-empty-state";
-import { TransactionMobileCard } from "../components/transaction-mobile-card";
+import { transactionListHref } from "../../domain/transaction-list-url";
 import {
   TransactionNavigationLoadingSurface,
   TransactionNavigationProvider,
 } from "../components/transaction-navigation";
-import { TransactionPagination } from "../components/transaction-pagination";
 import { TransactionsAskPace } from "../components/transactions-ask-pace";
-import { TransactionTable } from "../components/transaction-table";
-import { TransactionTableSkeleton } from "../components/transaction-table-skeleton";
-import { TransactionToolbar } from "../components/transaction-toolbar";
+import { TransactionsDataTable } from "../components/transactions-data-table";
+import { TransactionSummaryCards } from "../components/transaction-summary-cards";
 import { TransactionCreateControl } from "../components/transaction-create-control";
 import { TransactionImportLink } from "../components/transaction-import-link";
 import type { TransactionUiLabels } from "../transaction-ui-labels";
@@ -33,6 +30,7 @@ export function TransactionsTableView({
   filterState,
   filterOptions,
   amountSortingAvailable,
+  summary,
   accountOptions,
   categoryOptions,
   defaultCurrency,
@@ -48,9 +46,10 @@ export function TransactionsTableView({
   readonly timeZone: string;
   readonly now: string;
   readonly pagination: TransactionPaginationState;
-  readonly filterState: TransactionFilterState & { readonly page: number };
+  readonly filterState: TransactionListState;
   readonly filterOptions: TransactionFilterOptions;
   readonly amountSortingAvailable: boolean;
+  readonly summary: TransactionListSummary | null;
   readonly accountOptions: TransactionAccountOptionsState;
   readonly categoryOptions: TransactionCategoryOptionsState;
   readonly defaultCurrency: CurrencyCode;
@@ -61,8 +60,8 @@ export function TransactionsTableView({
   readonly loading?: boolean;
 }) {
   const pathname = `/w/${workspaceSlug}/transactions`;
-  const filtered = hasActiveTransactionFilters(filterState);
   const totalCount = pagination.totalCount;
+  const exportHref = transactionListHref(`/api/workspaces/${workspaceId}/transactions/export`, { ...filterState, page: 1, pageSize: undefined });
   const pageContext = {
     page: "transactions" as const,
     filters: {
@@ -79,13 +78,15 @@ export function TransactionsTableView({
   return (
     <TransactionNavigationProvider>
       <main className="mx-auto w-full max-w-360 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-        <header className="flex flex-wrap items-end justify-between gap-3 pb-5">
+        <header className="flex flex-wrap items-end justify-between gap-3 pb-6">
           <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-[27px] font-semibold tracking-[-0.04em] text-[#101a35] sm:text-[30px]">{labels.title}</h1>
-              {totalCount > 0 ? <span className="rounded-[7px] bg-[#eef2f7] px-2 py-0.5 text-[12px] font-medium text-[#53627b]">{totalCount}</span> : null}
+            <div className="flex items-center gap-3">
+              <h1 className="text-[28px] font-semibold tracking-[-0.04em] text-[#101a35] sm:text-[32px]">{labels.title}</h1>
+              {totalCount > 0 ? (
+                <span className="rounded-[8px] bg-[#eef2f7] px-2.5 py-0.5 text-[14px] font-semibold tabular-nums text-[#34405d]">{totalCount}</span>
+              ) : null}
             </div>
-            <p className="mt-1 text-[13px] text-[#71809a]">{labels.description}</p>
+            <p className="mt-1 text-[14px] text-[#71809a]">{labels.description}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <TransactionsAskPace language={language} locale={locale} pageContext={pageContext} timeZone={timeZone} workspaceId={workspaceId} />
@@ -103,40 +104,22 @@ export function TransactionsTableView({
             />
           </div>
         </header>
-        <TransactionToolbar amountSortingAvailable={amountSortingAvailable} labels={labels} locale={locale} options={filterOptions} pathname={pathname} state={filterState} />
         <TransactionNavigationLoadingSurface label={labels.loading}>
-          <section aria-label={labels.title} className="pt-5">
-            {loading ? (
-              <TransactionTableSkeleton />
-            ) : transactions.length === 0 ? (
-              <TransactionEmptyState clearFiltersHref={filtered ? transactionListHref(pathname, { kind: "ALL", page: 1, search: "", sort: "NEWEST" }) : undefined} filtered={filtered} labels={labels} />
-            ) : (
-              <>
-                <TransactionTable
-                  getDetailHref={(transaction) => `${pathname}/${transaction.id}`}
-                  labels={labels}
-                  locale={locale}
-                  now={now}
-                  timeZone={timeZone}
-                  transactions={transactions}
-                />
-                <div className="space-y-2.5 md:hidden">
-                  {transactions.map((transaction) => (
-                    <TransactionMobileCard
-                      key={transaction.id}
-                      labels={labels}
-                      locale={locale}
-                      now={now}
-                      timeZone={timeZone}
-                      transaction={transaction}
-                      detailHref={`${pathname}/${transaction.id}`}
-                    />
-                  ))}
-                </div>
-                <TransactionPagination labels={labels} pagination={pagination} pathname={pathname} state={filterState} />
-              </>
-            )}
-          </section>
+          <TransactionsDataTable
+            amountSortingAvailable={amountSortingAvailable}
+            exportHref={exportHref}
+            filterOptions={filterOptions}
+            labels={labels}
+            loading={loading}
+            locale={locale}
+            now={now}
+            pagination={pagination}
+            pathname={pathname}
+            state={filterState}
+            summary={summary ? <TransactionSummaryCards labels={labels} locale={locale} summary={summary} totalCount={totalCount} /> : null}
+            timeZone={timeZone}
+            transactions={transactions}
+          />
         </TransactionNavigationLoadingSurface>
       </main>
     </TransactionNavigationProvider>

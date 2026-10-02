@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation";
 import { FilterLoadingSurface } from "@/components/pace/shared/filter-loading-surface";
 
 import { transactionListHref } from "../../domain/transaction-list-url";
-import type { TransactionFilterState } from "../../types/transaction-ui.types";
+import type { TransactionListState } from "../../types/transaction-ui.types";
 
 type TransactionNavigationContextValue = {
   readonly isPending: boolean;
-  readonly navigate: (pathname: string, state: TransactionFilterState & { readonly page: number }, replace?: boolean) => void;
+  readonly navigate: (pathname: string, state: TransactionListState, replace?: boolean) => void;
 };
 
 const TransactionNavigationContext = createContext<TransactionNavigationContextValue | null>(null);
@@ -18,7 +18,7 @@ const TransactionNavigationContext = createContext<TransactionNavigationContextV
 export function TransactionNavigationProvider({ children }: { readonly children: React.ReactNode }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const navigate = useCallback((pathname: string, state: TransactionFilterState & { readonly page: number }, replace = false) => {
+  const navigate = useCallback((pathname: string, state: TransactionListState, replace = false) => {
     const href = transactionListHref(pathname, state);
     startTransition(() => router[replace ? "replace" : "push"](href, { scroll: false }));
   }, [router]);

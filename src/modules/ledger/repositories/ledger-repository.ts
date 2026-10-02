@@ -13,6 +13,7 @@ import {
   ne,
   notExists,
   or,
+  sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
@@ -47,6 +48,7 @@ import type {
   LedgerTransactionListFilters,
   LedgerTransactionListPageInput,
   LedgerTransactionListRow,
+  LedgerTransactionListSummaryRow,
   LedgerTransactionFilters,
   LedgerTransactionRecord,
 } from "../domain";
@@ -328,6 +330,10 @@ export interface LedgerRepository {
     workspaceId: string,
     filters: LedgerTransactionListFilters,
   ): Promise<readonly string[]>;
+  summarizeTransactionList(
+    workspaceId: string,
+    filters: LedgerTransactionListFilters,
+  ): Promise<readonly LedgerTransactionListSummaryRow[]>;
   listTransactionListPage(
     workspaceId: string,
     input: LedgerTransactionListPageInput,
@@ -1855,6 +1861,28 @@ export class DatabaseLedgerRepository implements LedgerRepository {
     return records.map((record) => record.currency);
   }
 
+  async summarizeTransactionList(
+    workspaceId: string,
+    filters: LedgerTransactionListFilters,
+  ): Promise<readonly LedgerTransactionListSummaryRow[]> {
+    // Only posted movements count toward totals; refunds offset spending.
+    const records = await db
+      .select({
+        currency: ledgerTransactions.currency,
+        incomeMinor: sql<string>`coalesce(sum(${ledgerTransactions.amountMinor}) filter (where ${ledgerTransactions.status} = 'POSTED' and ${ledgerTransactions.kind} = 'INCOME'), 0)::text`,
+        spendingMinor: sql<string>`(coalesce(sum(${ledgerTransactions.amountMinor}) filter (where ${ledgerTransactions.status} = 'POSTED' and ${ledgerTransactions.kind} = 'EXPENSE'), 0) - coalesce(sum(${ledgerTransactions.amountMinor}) filter (where ${ledgerTransactions.status} = 'POSTED' and ${ledgerTransactions.kind} = 'REFUND'), 0))::text`,
+      })
+      .from(ledgerTransactions)
+      .leftJoin(ledgerMerchants, eq(ledgerMerchants.id, ledgerTransactions.merchantId))
+      .where(and(...this.transactionListPredicates(workspaceId, filters)))
+      .groupBy(ledgerTransactions.currency);
+    return records.map((record) => ({
+      currency: record.currency,
+      incomeMinor: BigInt(record.incomeMinor),
+      spendingMinor: BigInt(record.spendingMinor),
+    }));
+  }
+
   async listTransactionListPage(
     workspaceId: string,
     input: LedgerTransactionListPageInput,
@@ -1988,6 +2016,7 @@ export class DatabaseLedgerRepository implements LedgerRepository {
       ),
     ];
     if (filters.kind) predicates.push(eq(ledgerTransactions.kind, filters.kind));
+    if (filters.status) predicates.push(eq(ledgerTransactions.status, filters.status));
     if (filters.accountId) predicates.push(eq(ledgerTransactions.accountId, filters.accountId));
     if (filters.categoryId) predicates.push(eq(ledgerTransactions.categoryId, filters.categoryId));
     if (filters.occurredFrom) predicates.push(gte(ledgerTransactions.occurredAt, filters.occurredFrom));

@@ -70,6 +70,23 @@ export type TransactionUiLabels = {
   readonly paginationPage: string;
   readonly paginationSummary: string;
   readonly paginationPerPage: string;
+  readonly paginationPageSize: string;
+  readonly tabAll: string;
+  readonly tabPending: string;
+  readonly filterPeriod: string;
+  readonly filterAllTime: string;
+  readonly filterCustomRange: string;
+  readonly exportLabel: string;
+  readonly exportSelected: string;
+  readonly summaryCount: string;
+  readonly summarySpent: string;
+  readonly summaryIncome: string;
+  readonly summaryComparison: string;
+  readonly summaryOtherCurrencies: string;
+  readonly columnMerchant: string;
+  readonly selectAll: string;
+  readonly selectRow: string;
+  readonly actionView: string;
   readonly formAmount: string;
   readonly formAmountExpenseHelper: string;
   readonly formAmountIncomeHelper: string;
@@ -249,6 +266,23 @@ export function getTransactionUiLabels(labels: DashboardLabels): TransactionUiLa
     paginationPage: labels["transactions.pagination.page"],
     paginationSummary: labels["transactions.pagination.summary"],
     paginationPerPage: labels["transactions.pagination.perPage"],
+    paginationPageSize: labels["transactions.pagination.pageSize"],
+    tabAll: labels["transactions.tabs.all"],
+    tabPending: labels["transactions.tabs.pending"],
+    filterPeriod: labels["transactions.filters.period"],
+    filterAllTime: labels["transactions.filters.allTime"],
+    filterCustomRange: labels["transactions.filters.customRange"],
+    exportLabel: labels["transactions.export.label"],
+    exportSelected: labels["transactions.export.selected"],
+    summaryCount: labels["transactions.summary.count"],
+    summarySpent: labels["transactions.summary.spent"],
+    summaryIncome: labels["transactions.summary.income"],
+    summaryComparison: labels["transactions.summary.comparison"],
+    summaryOtherCurrencies: labels["transactions.summary.otherCurrencies"],
+    columnMerchant: labels["transactions.columns.merchant"],
+    selectAll: labels["transactions.selection.all"],
+    selectRow: labels["transactions.selection.row"],
+    actionView: labels["transactions.actions.view"],
     formAmount: labels["transactions.form.amount"],
     formAmountExpenseHelper: labels["transactions.form.amountExpenseHelper"],
     formAmountIncomeHelper: labels["transactions.form.amountIncomeHelper"],

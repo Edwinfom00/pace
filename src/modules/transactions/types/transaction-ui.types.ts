@@ -34,14 +34,28 @@ export type TransactionListItem = {
   readonly status: LedgerTransactionStatus;
 };
 
-export const TRANSACTION_FILTER_KINDS = ["ALL", "EXPENSE", "INCOME", "TRANSFER", "REFUND"] as const;
+export const TRANSACTION_FILTER_KINDS = [
+  "ALL",
+  "EXPENSE",
+  "INCOME",
+  "TRANSFER",
+  "REFUND",
+] as const;
 export type TransactionFilterKind = (typeof TRANSACTION_FILTER_KINDS)[number];
 
-export const TRANSACTION_SORT_VALUES = ["NEWEST", "OLDEST", "HIGHEST", "LOWEST"] as const;
+export const TRANSACTION_SORT_VALUES = [
+  "NEWEST",
+  "OLDEST",
+  "HIGHEST",
+  "LOWEST",
+] as const;
 export type TransactionSortValue = (typeof TRANSACTION_SORT_VALUES)[number];
+
+export type TransactionFilterStatus = "PENDING";
 
 export type TransactionFilterState = {
   readonly kind: TransactionFilterKind;
+  readonly status?: TransactionFilterStatus;
   readonly search: string;
   readonly categoryId?: string;
   readonly accountId?: string;
@@ -60,6 +74,27 @@ export type TransactionFilterOption = {
 export type TransactionFilterOptions = {
   readonly categories: readonly TransactionFilterOption[];
   readonly accounts: readonly TransactionFilterOption[];
+};
+
+export type TransactionListState = TransactionFilterState & {
+  readonly page: number;
+  readonly pageSize?: number;
+};
+
+export type TransactionSummaryTotals = {
+  readonly incomeMinor: string;
+  readonly spendingMinor: string;
+};
+
+export type TransactionListSummary = {
+  readonly currency: string;
+  readonly current: TransactionSummaryTotals;
+  readonly hasOtherCurrencies: boolean;
+  readonly comparison: {
+    readonly from: string;
+    readonly totalCount: number;
+    readonly totals: TransactionSummaryTotals;
+  } | null;
 };
 
 export type TransactionPaginationState = {

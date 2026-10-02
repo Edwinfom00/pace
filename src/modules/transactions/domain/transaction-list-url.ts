@@ -1,6 +1,7 @@
-import type { TransactionFilterState } from "../types/transaction-ui.types";
+import type { TransactionFilterState, TransactionListState } from "../types/transaction-ui.types";
 
 export const TRANSACTIONS_PAGE_SIZE = 20;
+export const TRANSACTION_PAGE_SIZES = [10, 20, 50] as const;
 
 export const DEFAULT_TRANSACTION_FILTER_STATE: TransactionFilterState = {
   kind: "ALL",
@@ -9,11 +10,13 @@ export const DEFAULT_TRANSACTION_FILTER_STATE: TransactionFilterState = {
 };
 
 /** Produces a compact, shareable URL while retaining only non-default state. */
-export function transactionListHref(pathname: string, state: TransactionFilterState & { readonly page: number }): string {
+export function transactionListHref(pathname: string, state: TransactionListState): string {
   const params = new URLSearchParams();
   if (state.page > 1) params.set("page", String(state.page));
+  if (state.pageSize && state.pageSize !== TRANSACTIONS_PAGE_SIZE) params.set("size", String(state.pageSize));
   if (state.search) params.set("q", state.search);
   if (state.kind !== "ALL") params.set("type", state.kind);
+  if (state.status) params.set("status", state.status);
   if (state.categoryId) params.set("category", state.categoryId);
   if (state.accountId) params.set("account", state.accountId);
   if (state.from) params.set("from", state.from);
@@ -27,6 +30,7 @@ export function hasActiveTransactionFilters(state: TransactionFilterState): bool
   return Boolean(
     state.search ||
       state.kind !== "ALL" ||
+      state.status ||
       state.categoryId ||
       state.accountId ||
       state.from ||
