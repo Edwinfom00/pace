@@ -82,6 +82,7 @@ export type InboxOverviewItem = {
   /** Current source transaction metadata-edit version. */
   readonly transactionUpdatedAt: string;
   readonly transaction: TransactionListItem;
+  readonly currentCategoryId: string | null;
   readonly classification: {
     readonly id: string;
     readonly source: ClassificationSource;

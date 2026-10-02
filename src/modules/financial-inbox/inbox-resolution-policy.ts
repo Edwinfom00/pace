@@ -20,6 +20,7 @@ export const INBOX_RESOLUTION_ACTIONS = [
   "ACCEPT_CATEGORY_SUGGESTION",
   "CHOOSE_CATEGORY",
   "CREATE_CLASSIFICATION_RULE",
+  "REVIEW_TRANSFER",
   "DISMISS",
 ] as const;
 export type InboxResolutionAction = (typeof INBOX_RESOLUTION_ACTIONS)[number];
@@ -58,6 +59,7 @@ export type InboxResolutionCapabilities = {
   readonly canAcceptCategorySuggestion: boolean;
   readonly canChooseCategory: boolean;
   readonly canCreateClassificationRule: boolean;
+  readonly canReviewTransfer: boolean;
   readonly canDismiss: boolean;
   readonly allowedActions: readonly InboxResolutionAction[];
   readonly reasons: Partial<Record<InboxResolutionAction, InboxResolutionActionReason>>;
@@ -82,7 +84,7 @@ export type InboxResolutionPolicyInput = {
   >;
   readonly effectiveTransaction: Pick<
     LedgerTransactionRecord,
-    "id" | "workspaceId" | "kind" | "status" | "categoryId" | "reversalOfTransactionId"
+    "id" | "workspaceId" | "kind" | "status" | "categoryId" | "reversalOfTransactionId" | "updatedAt"
   >;
   readonly classification: Pick<
     TransactionClassificationRecord,
@@ -93,6 +95,7 @@ export type InboxResolutionPolicyInput = {
     | "suggestedCategoryId"
     | "appliedCategoryId"
     | "status"
+    | "createdAt"
   > | null;
   readonly suggestedCategory: Pick<LedgerCategoryRecord, "id" | "workspaceId" | "kind"> | null;
   readonly recurring: Pick<RecurringPaymentRecord, "id" | "origin" | "status"> & {
@@ -119,17 +122,20 @@ export function getInboxResolutionCapabilities(
   const categoryReason = categoryActionReason(input, baseReason);
   const acceptReason = categoryReason ?? suggestionActionReason(input);
   const createRuleReason = categoryReason ?? classificationRuleReason(input);
+  const reviewTransferReason = reviewTransferActionReason(input, baseReason);
   const dismissReason = dismissActionReason(input, baseReason);
   const recurringReason = recurringActionReason(input, baseReason);
 
   const canAcceptCategorySuggestion = acceptReason === null;
   const canChooseCategory = categoryReason === null;
   const canCreateClassificationRule = createRuleReason === null;
+  const canReviewTransfer = reviewTransferReason === null;
   const canDismiss = dismissReason === null;
   const allowedActions = [
     ...(canAcceptCategorySuggestion ? ["ACCEPT_CATEGORY_SUGGESTION" as const] : []),
     ...(canChooseCategory ? ["CHOOSE_CATEGORY" as const] : []),
     ...(canCreateClassificationRule ? ["CREATE_CLASSIFICATION_RULE" as const] : []),
+    ...(canReviewTransfer ? ["REVIEW_TRANSFER" as const] : []),
     ...(canDismiss ? ["DISMISS" as const] : []),
   ];
 
@@ -142,12 +148,14 @@ export function getInboxResolutionCapabilities(
     canAcceptCategorySuggestion,
     canChooseCategory,
     canCreateClassificationRule,
+    canReviewTransfer,
     canDismiss,
     allowedActions,
     reasons: {
       ...(acceptReason ? { ACCEPT_CATEGORY_SUGGESTION: acceptReason } : {}),
       ...(categoryReason ? { CHOOSE_CATEGORY: categoryReason } : {}),
       ...(createRuleReason ? { CREATE_CLASSIFICATION_RULE: createRuleReason } : {}),
+      ...(reviewTransferReason ? { REVIEW_TRANSFER: reviewTransferReason } : {}),
       ...(dismissReason ? { DISMISS: dismissReason } : {}),
     },
     recurring: input.item.reason === "POSSIBLE_RECURRING"
@@ -225,6 +233,15 @@ function classificationRuleReason(input: InboxResolutionPolicyInput): InboxResol
   return null;
 }
 
+function reviewTransferActionReason(
+  input: InboxResolutionPolicyInput,
+  baseReason: InboxResolutionActionReason | null,
+): InboxResolutionActionReason | null {
+  if (input.item.reason !== "POSSIBLE_TRANSFER") return "REASON_NOT_ACTIONABLE";
+  if (baseReason) return baseReason;
+  return input.item.actions.includes("REVIEW_TRANSFER") ? null : "ACTION_NOT_SUPPORTED";
+}
+
 function dismissActionReason(
   input: InboxResolutionPolicyInput,
   baseReason: InboxResolutionActionReason | null,
@@ -258,8 +275,13 @@ function isReasonUnresolved(
   }
 }
 
+// Imports assign the mapping's default category before the review is created, so a
+// category only counts as a decision once the transaction changed after the review began.
 function isCategoryConfirmed(input: InboxResolutionPolicyInput): boolean {
-  if (input.effectiveTransaction.categoryId !== null) return true;
+  if (input.effectiveTransaction.categoryId !== null) {
+    if (!hasCurrentClassification(input)) return true;
+    return input.effectiveTransaction.updatedAt.getTime() > input.classification!.createdAt.getTime();
+  }
   const classification = input.classification;
   return Boolean(
     classification

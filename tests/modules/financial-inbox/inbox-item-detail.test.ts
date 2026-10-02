@@ -207,7 +207,9 @@ test("Inbox item detail composes canonical transaction truth while keeping a pro
 
   assert.equal(detail?.transaction.merchant.name, "Amazon");
   assert.equal(detail?.transaction.kind, "EXPENSE");
-  assert.equal(detail?.currentClassification.state, "CONFIRMED");
+  assert.equal(detail?.currentClassification.state, "UNCERTAIN");
+  assert.equal(detail?.currentClassification.category?.id !== undefined, true);
+  assert.equal(detail?.status, "OPEN");
   assert.deepEqual(detail?.suggestion?.category, { id: "category-shopping", name: "Shopping", systemKey: "expense:shopping" });
   assert.equal(detail?.suggestion?.confidence, "HIGH");
   assert.equal(detail?.suggestion?.score, 0.92);

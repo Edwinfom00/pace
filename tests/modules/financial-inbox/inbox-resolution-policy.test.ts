@@ -41,6 +41,7 @@ function policyInput(overrides: Partial<InboxResolutionPolicyInput> = {}): Inbox
       status: "POSTED",
       categoryId: null,
       reversalOfTransactionId: null,
+      updatedAt: createdAt,
     },
     classification: {
       id: "classification-1",
@@ -50,6 +51,7 @@ function policyInput(overrides: Partial<InboxResolutionPolicyInput> = {}): Inbox
       suggestedCategoryId: "category-transport",
       appliedCategoryId: null,
       status: "NEEDS_REVIEW",
+      createdAt,
     },
     suggestedCategory: {
       id: "category-transport",
@@ -92,11 +94,41 @@ test("a missing or stale suggestion never prevents a safe manual category choice
   assert.equal(staleSuggestion.reasons.ACCEPT_CATEGORY_SUGGESTION, "SUGGESTION_NOT_CURRENT");
 });
 
-test("a category already present in current ledger truth resolves the category concern", () => {
+test("an import default category set before the review began never counts as a decision", () => {
+  const capabilities = getInboxResolutionCapabilities(policyInput({
+    effectiveTransaction: {
+      ...policyInput().effectiveTransaction,
+      categoryId: "category-other-expense",
+      updatedAt: new Date(createdAt.getTime() - 1_000),
+    },
+  }));
+
+  assert.equal(capabilities.canChooseCategory, true);
+  assert.equal(capabilities.canDismiss, true);
+  assert.deepEqual(capabilities.unresolvedReasons, ["UNKNOWN_CATEGORY"]);
+  assert.equal(capabilities.isResolved, false);
+});
+
+test("a category without a pending review is ledger truth for the category concern", () => {
   const capabilities = getInboxResolutionCapabilities(policyInput({
     effectiveTransaction: {
       ...policyInput().effectiveTransaction,
       categoryId: "category-food",
+    },
+    classification: null,
+    suggestedCategory: null,
+  }));
+
+  assert.deepEqual(capabilities.unresolvedReasons, []);
+  assert.equal(capabilities.reasons.CHOOSE_CATEGORY, "CATEGORY_ALREADY_CONFIRMED");
+});
+
+test("a category edited after the review began resolves the category concern", () => {
+  const capabilities = getInboxResolutionCapabilities(policyInput({
+    effectiveTransaction: {
+      ...policyInput().effectiveTransaction,
+      categoryId: "category-food",
+      updatedAt: new Date(createdAt.getTime() + 1_000),
     },
   }));
 
@@ -251,4 +283,32 @@ test("viewers receive read-only capabilities and foreign recurring records are n
     canConfirm: false,
     canIgnore: false,
   });
+});
+
+test("an open possible transfer can be marked as reviewed or dismissed by an editor only", () => {
+  const transferItem = {
+    ...policyInput().item,
+    id: "inbox-transfer",
+    reason: "POSSIBLE_TRANSFER" as const,
+    actions: ["REVIEW_TRANSFER", "DISMISS"] as FinancialInboxItemRecord["actions"],
+  };
+  const editor = getInboxResolutionCapabilities(policyInput({ item: transferItem }));
+  const viewer = getInboxResolutionCapabilities(policyInput({ item: transferItem, workspaceRole: "VIEWER" }));
+  const resolved = getInboxResolutionCapabilities(policyInput({ item: { ...transferItem, status: "RESOLVED" } }));
+
+  assert.equal(editor.canReviewTransfer, true);
+  assert.equal(editor.canDismiss, true);
+  assert.deepEqual(editor.allowedActions, ["REVIEW_TRANSFER", "DISMISS"]);
+  assert.equal(viewer.canReviewTransfer, false);
+  assert.equal(viewer.reasons.REVIEW_TRANSFER, "READ_ONLY_ROLE");
+  assert.equal(resolved.canReviewTransfer, false);
+  assert.equal(resolved.canDismiss, false);
+});
+
+test("transfer review is never offered for a category item", () => {
+  const capabilities = getInboxResolutionCapabilities(policyInput());
+
+  assert.equal(capabilities.canReviewTransfer, false);
+  assert.equal(capabilities.reasons.REVIEW_TRANSFER, "REASON_NOT_ACTIONABLE");
+  assert.equal(capabilities.canDismiss, true);
 });

@@ -777,7 +777,7 @@ export class FinancialInboxService {
       workspaceRole: workspace.membership.role,
     });
 
-    if (sourceTransaction.categoryId !== null || capabilities.reasons.CHOOSE_CATEGORY === "CATEGORY_ALREADY_CONFIRMED") {
+    if (capabilities.reasons.CHOOSE_CATEGORY === "CATEGORY_ALREADY_CONFIRMED") {
       await this.reconcileClassificationFromConfirmedCategory(
         actor,
         command.workspaceId,

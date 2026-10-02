@@ -3,7 +3,6 @@
 import { type ReactNode, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FiMoreHorizontal } from "react-icons/fi";
 import {
   HiCheckCircle,
   HiOutlineCheck,
@@ -20,12 +19,6 @@ import {
 import { TransactionIcon } from "@/components/pace/transaction-visuals/transaction-icon";
 import { FilterLoadingSurface } from "@/components/pace/shared/filter-loading-surface";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import type { DashboardLabels } from "@/i18n/dashboard-messages";
 import { cn } from "@/lib/utils";
 import { formatOverviewMoney } from "@/modules/overview/domain/overview-formatters";
@@ -41,6 +34,7 @@ import {
   type InboxOverviewSort,
 } from "../../inbox-overview";
 import { InboxPaceRail } from "../components/inbox-pace-rail";
+import { InboxRowActions } from "../components/inbox-row-actions";
 import { InboxSortFilter } from "../components/inbox-sort-filter";
 import { inboxReasonText } from "../inbox-reason-labels";
 import { useInboxPages } from "../use-inbox-pages";
@@ -52,6 +46,7 @@ type RowContext = {
   readonly now: string;
   readonly inboxHref: string;
   readonly workspaceSlug: string;
+  readonly workspaceId: string;
 };
 
 export function InboxOverviewView({
@@ -99,6 +94,7 @@ export function InboxOverviewView({
     now,
     inboxHref: currentInboxHref,
     workspaceSlug,
+    workspaceId,
   };
   const firstItem = items[0];
 
@@ -490,10 +486,12 @@ function InboxRow({
               {labels["inbox.review"]}
             </Link>
           )}
-          <RowActions
+          <InboxRowActions
             destination={destination}
             item={item}
             labels={labels}
+            locale={context.locale}
+            workspaceId={context.workspaceId}
             workspaceSlug={context.workspaceSlug}
           />
         </div>
@@ -542,48 +540,6 @@ function CategoryPill({
         {category ?? labels["inbox.uncategorized"]}
       </span>
     </span>
-  );
-}
-
-function RowActions({
-  item,
-  destination,
-  labels,
-  workspaceSlug,
-}: {
-  readonly item: InboxOverviewItem;
-  readonly destination: string;
-  readonly labels: DashboardLabels;
-  readonly workspaceSlug: string;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          aria-label={`${labels["inbox.rowActions"]}: ${item.transaction.merchant.name}`}
-          className="grid size-8 place-items-center rounded-[7px] text-[#53627b] transition-colors hover:bg-[#f3f6fa] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563eb]"
-          type="button">
-          <FiMoreHorizontal aria-hidden className="size-4" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="w-48 rounded-[9px] border border-[#e4e9f1] bg-white p-1 shadow-[0_5px_14px_rgb(16_24_40/10%)]">
-        <DropdownMenuItem
-          asChild
-          className="rounded-[6px] px-2.5 py-2 text-[13px] text-[#34415a]">
-          <Link href={destination}>{labels["inbox.rowActions.open"]}</Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          asChild
-          className="rounded-[6px] px-2.5 py-2 text-[13px] text-[#34415a]">
-          <Link
-            href={`/w/${workspaceSlug}/transactions/${item.transaction.id}`}>
-            {labels["inbox.rowActions.viewTransaction"]}
-          </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

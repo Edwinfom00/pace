@@ -42,6 +42,15 @@ export type InboxDetailLabels = {
   readonly viewAll: string;
   readonly matchScore: string;
   readonly dateAt: string;
+  readonly resolve: {
+    readonly heading: string;
+    readonly description: string;
+    readonly reviewTransfer: { readonly button: string; readonly title: string; readonly description: string; readonly pending: string };
+    readonly dismiss: { readonly button: string; readonly title: string; readonly description: string; readonly pending: string };
+    readonly failed: string;
+    readonly conflict: string;
+    readonly notAvailable: string;
+  };
   readonly status: { readonly open: string; readonly resolved: string; readonly dismissed: string };
   readonly transactionInformation: string;
   readonly currentClassification: string;
@@ -106,6 +115,25 @@ export function getInboxDetailLabels(labels: DashboardLabels): InboxDetailLabels
     viewAll: labels["inbox.detail.viewAll"],
     matchScore: labels["inbox.detail.matchScore"],
     dateAt: labels["inbox.detail.dateAt"],
+    resolve: {
+      heading: labels["inbox.resolve.heading"],
+      description: labels["inbox.resolve.description"],
+      reviewTransfer: {
+        button: labels["inbox.resolve.reviewTransfer.button"],
+        title: labels["inbox.resolve.reviewTransfer.title"],
+        description: labels["inbox.resolve.reviewTransfer.description"],
+        pending: labels["inbox.resolve.reviewTransfer.pending"],
+      },
+      dismiss: {
+        button: labels["inbox.resolve.dismiss.button"],
+        title: labels["inbox.resolve.dismiss.title"],
+        description: labels["inbox.resolve.dismiss.description"],
+        pending: labels["inbox.resolve.dismiss.pending"],
+      },
+      failed: labels["inbox.resolve.failed"],
+      conflict: labels["inbox.resolve.conflict"],
+      notAvailable: labels["inbox.resolve.notAvailable"],
+    },
     status: {
       open: labels["inbox.detail.status.open"],
       resolved: labels["inbox.status.resolved"],

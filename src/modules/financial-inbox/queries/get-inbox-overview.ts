@@ -129,6 +129,7 @@ function toInboxOverviewItem(
     updatedAt: row.item.updatedAt.toISOString(),
     transactionUpdatedAt: row.transaction.transaction.updatedAt.toISOString(),
     transaction: mapTransactionListItem(row.transaction, unknownMerchantName),
+    currentCategoryId: row.transaction.transaction.categoryId,
     classification: classification
       ? {
           id: classification.id,

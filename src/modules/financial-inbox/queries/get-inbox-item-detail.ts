@@ -61,6 +61,8 @@ export function buildInboxItemDetail(
     recurring: record.recurring,
     workspaceRole,
   });
+  const categoryReviewOpen = classification?.status === "NEEDS_REVIEW"
+    && capabilities.unresolvedReasons.some((reason) => reason === "UNKNOWN_CATEGORY" || reason === "CLASSIFICATION_REVIEW");
   const status = record.item.status === "DISMISSED"
     ? "DISMISSED"
     : capabilities.isResolved
@@ -83,18 +85,12 @@ export function buildInboxItemDetail(
       technicalId: record.effectiveTransaction.transaction.id,
       effectiveTransactionId: record.effectiveTransaction.transaction.id,
     },
-    currentClassification: effectiveCategory
-      ? {
-          state: "CONFIRMED",
-          category: {
-            id: effectiveCategory.id,
-            name: effectiveCategory.name,
-            systemKey: effectiveCategory.systemKey,
-          },
-        }
-      : classification?.status === "NEEDS_REVIEW"
-        ? { state: "UNCERTAIN", category: null }
-        : { state: "UNCATEGORIZED", category: null },
+    currentClassification: {
+      state: categoryReviewOpen ? "UNCERTAIN" : effectiveCategory ? "CONFIRMED" : "UNCATEGORIZED",
+      category: effectiveCategory
+        ? { id: effectiveCategory.id, name: effectiveCategory.name, systemKey: effectiveCategory.systemKey }
+        : null,
+    },
     suggestion: suggestedCategory && classification
       ? {
           category: {
