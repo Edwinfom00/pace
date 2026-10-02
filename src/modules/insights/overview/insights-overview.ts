@@ -319,7 +319,7 @@ function monthBars(
   });
 }
 
-function spendingTrend(
+export function spendingTrend(
   transactions: readonly MoneyTransaction[],
   windows: InsightsWindows,
   timeZone: string,
@@ -482,7 +482,10 @@ function topChanges(
         previousMinor: previous.toString(),
         deltaMinor: delta.toString(),
         direction: delta > 0n ? "up" : "down",
-        percentage: previous > 0n ? ((absolute * 100n + previous / 2n) / previous).toString() : null,
+        percentage:
+          previous > 0n
+            ? ((absolute * 100n + previous / 2n) / previous).toString()
+            : null,
       };
       return [{ change, absolute }];
     })
@@ -518,7 +521,7 @@ function exclusions(
   return { transferCount, pendingCount, otherCurrencyCount };
 }
 
-function serializeWindow(
+export function serializeWindow(
   period: Period,
   timeZone: string,
   isPartial: boolean,
@@ -535,11 +538,11 @@ function serializeWindow(
   };
 }
 
-function shareBps(value: bigint, total: bigint): number {
+export function shareBps(value: bigint, total: bigint): number {
   return total > 0n ? Number((value * 10_000n) / total) : 0;
 }
 
-function compareBigintDescending(left: bigint, right: bigint): number {
+export function compareBigintDescending(left: bigint, right: bigint): number {
   return left > right ? -1 : left < right ? 1 : 0;
 }
 
@@ -547,7 +550,7 @@ function inPeriod(value: Date, period: Period): boolean {
   return value >= period.start && value < period.end;
 }
 
-function addLocalDays(date: LocalDate, days: number): LocalDate {
+export function addLocalDays(date: LocalDate, days: number): LocalDate {
   const shifted = new Date(
     Date.UTC(date.year, date.month - 1, date.day + days),
   );

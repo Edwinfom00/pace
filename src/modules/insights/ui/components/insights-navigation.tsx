@@ -107,17 +107,21 @@ export function useInsightsNavigation() {
 
 export function InsightsLoadingSurface({
   children,
+  detail,
+  label,
   labels,
 }: {
   readonly children: ReactNode;
+  readonly detail?: string;
+  readonly label?: string;
   readonly labels: DashboardLabels;
 }) {
   const { isLoading } = useInsightsNavigation();
   return (
     <FilterLoadingSurface
-      detail={labels["insights.loadingDetail"]}
+      detail={detail ?? labels["insights.loadingDetail"]}
       isLoading={isLoading}
-      label={labels["insights.loading"]}>
+      label={label ?? labels["insights.loading"]}>
       {children}
     </FilterLoadingSurface>
   );

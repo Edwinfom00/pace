@@ -30,7 +30,10 @@ export function InsightsSpendingTrendChart({
   overview,
 }: {
   readonly labels: DashboardLabels;
-  readonly overview: InsightsOverview;
+  readonly overview: Pick<
+    InsightsOverview,
+    "currency" | "locale" | "previous" | "spendingTrend"
+  >;
 }) {
   const isMobile = useIsMobile();
   const { currency, locale } = overview;
