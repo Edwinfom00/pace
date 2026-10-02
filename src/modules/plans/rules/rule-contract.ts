@@ -157,3 +157,15 @@ export type UpdateRuleCommand = z.input<typeof updateRuleCommand>;
 export type SetRuleEnabledCommand = z.input<typeof setRuleEnabledCommand>;
 export type ArchiveRuleCommand = z.input<typeof archiveRuleCommand>;
 export type TestRuleCommand = z.input<typeof testRuleCommand>;
+
+export const RULE_MANAGEMENT_REQUEST_ACTIONS = ["ENABLE", "DISABLE", "ARCHIVE"] as const;
+
+export const manageRuleRequest = z
+  .object({
+    action: z.enum(RULE_MANAGEMENT_REQUEST_ACTIONS),
+    expectedUpdatedAt: version,
+    idempotencyKey,
+  })
+  .strict();
+
+export type ManageRuleRequest = z.input<typeof manageRuleRequest>;

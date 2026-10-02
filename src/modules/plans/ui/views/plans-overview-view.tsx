@@ -6,8 +6,11 @@ import {
   FiTarget,
   FiTrendingDown,
   FiTrendingUp,
+  FiZap,
 } from "react-icons/fi";
 import Link from "next/link";
+
+import type { DashboardLanguage } from "@/i18n/dashboard-messages";
 
 import { formatOverviewMoney } from "@/modules/overview/domain/overview-formatters";
 import { OverviewAskPace } from "@/modules/overview/ui/components/overview-ask-pace";
@@ -19,6 +22,7 @@ import { PlansCreateBudgetControl } from "../components/plans-create-budget-cont
 import { PlansCreateSavingsGoalControl } from "../components/plans-create-savings-goal-control";
 import { PlansTabs } from "../components/plans-tabs";
 import type { PlansUiLabels } from "../plans-ui-labels";
+import { getRulesUiLabels } from "../rules-ui-labels";
 
 function percent(value: bigint) {
   return `${(Number(value) / 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
@@ -429,6 +433,34 @@ function ForecastPreview({
   );
 }
 
+function RulesPreview({
+  href,
+  labels,
+  language,
+}: {
+  readonly href: string;
+  readonly labels: PlansUiLabels;
+  readonly language: DashboardLanguage;
+}) {
+  const rules = getRulesUiLabels(language);
+  return (
+    <Link
+      className="group flex items-center justify-between gap-4 rounded-[12px] border border-[#e5e9f0] bg-white p-4 transition-colors hover:bg-[#f7faff] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#2563eb]"
+      href={href}>
+      <div className="flex min-w-0 items-center gap-3">
+        <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-[#f1ecff] text-[#7c4ddb]">
+          <FiZap className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[14px] font-semibold text-[#1a2944]">{rules.title}</h2>
+          <p className="mt-0.5 text-[12px] leading-4 text-[#60708b]">{rules.subtitle}</p>
+        </div>
+      </div>
+      <span className="shrink-0 text-[12px] font-semibold text-[#1769e8]">{labels.rules} →</span>
+    </Link>
+  );
+}
+
 export function PlansOverviewView({
   overview,
   labels,
@@ -533,23 +565,16 @@ export function PlansOverviewView({
                     href={`/w/${workspaceSlug}/plans/forecast`}
                     labels={labels}
                   />
-                  <section className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-5">
-                    <h2 className="text-[14px] font-semibold text-[#1a2944]">
-                      {labels.rules}
-                    </h2>
-                    <p className="mt-1 text-[13px] text-[#71809a]">
-                      {labels.unavailable}
-                    </p>
-                  </section>
+                  <RulesPreview
+                    href={`/w/${workspaceSlug}/plans/rules`}
+                    labels={labels}
+                    language={language}
+                  />
                 </div>
-              }
-              unavailableContent={
-                <p className="rounded-[12px] border border-dashed border-[#dce3ed] bg-[#fbfcfe] px-5 py-10 text-center text-[13px] text-[#71809a]">
-                  {labels.unavailable}
-                </p>
               }
               labels={labels}
               forecastHref={`/w/${workspaceSlug}/plans/forecast`}
+              rulesHref={`/w/${workspaceSlug}/plans/rules`}
             />
           </div>
           <div className="min-w-0 xl:sticky xl:top-5" id="ask-pace">
