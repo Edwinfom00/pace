@@ -2,7 +2,12 @@
 
 import { LineChart, type LineSeriesOption } from "echarts/charts";
 import { GridComponent, type GridComponentOption } from "echarts/components";
-import { init, use as registerChartModules, type ComposeOption, type EChartsType } from "echarts/core";
+import {
+  init,
+  use as registerChartModules,
+  type ComposeOption,
+  type EChartsType,
+} from "echarts/core";
 import { SVGRenderer } from "echarts/renderers";
 import {
   useEffect,
@@ -108,7 +113,8 @@ export function PaceLineChart<TDatum>({
           className={cn(
             "grid place-items-center rounded-[10px] border border-dashed border-[#dfe6ef] bg-[#fbfcfe] px-4 text-center text-[13px] text-[#71809a]",
             plotClassName,
-          )}>
+          )}
+        >
           {emptyState}
         </div>
       )}
@@ -132,7 +138,10 @@ function ChartPlot<TDatum>({
   valueFormatter = String,
   xLabel,
   yTickFormatter,
-}: Omit<PaceLineChartProps<TDatum>, "legend" | "loading" | "emptyState" | "className">) {
+}: Omit<
+  PaceLineChartProps<TDatum>,
+  "legend" | "loading" | "emptyState" | "className"
+>) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<EChartsType | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -145,7 +154,8 @@ function ChartPlot<TDatum>({
     selectedIndex != null && selectedIndex >= 0 && selectedIndex < count
       ? selectedIndex
       : null;
-  const activeIndex = hoverIndex != null && hoverIndex < count ? hoverIndex : pinned;
+  const activeIndex =
+    hoverIndex != null && hoverIndex < count ? hoverIndex : pinned;
   const plotWidth = Math.max(0, size.width - GRID.left - GRID.right);
   const xForIndex = (index: number) =>
     GRID.left + (count > 1 ? (index / (count - 1)) * plotWidth : plotWidth / 2);
@@ -176,32 +186,33 @@ function ChartPlot<TDatum>({
     const bandColor = band?.color ?? PACE_CHART_COLORS.band;
     const bandSeries: LineSeriesOption[] = band
       ? [
-        {
-          id: "band-lower",
-          type: "line",
-          data: data.map((datum, index) => band.lower(datum, index)),
-          stack: "band",
-          stackStrategy: "all",
-          lineStyle: { opacity: 0 },
-          symbol: "none",
-          silent: true,
-          smooth,
-        },
-        {
-          id: "band-range",
-          type: "line",
-          data: data.map(
-            (datum, index) => band.upper(datum, index) - band.lower(datum, index),
-          ),
-          stack: "band",
-          stackStrategy: "all",
-          lineStyle: { opacity: 0 },
-          areaStyle: { color: bandColor, opacity: 0.85 },
-          symbol: "none",
-          silent: true,
-          smooth,
-        },
-      ]
+          {
+            id: "band-lower",
+            type: "line",
+            data: data.map((datum, index) => band.lower(datum, index)),
+            stack: "band",
+            stackStrategy: "all",
+            lineStyle: { opacity: 0 },
+            symbol: "none",
+            silent: true,
+            smooth,
+          },
+          {
+            id: "band-range",
+            type: "line",
+            data: data.map(
+              (datum, index) =>
+                band.upper(datum, index) - band.lower(datum, index),
+            ),
+            stack: "band",
+            stackStrategy: "all",
+            lineStyle: { opacity: 0 },
+            areaStyle: { color: bandColor, opacity: 0.85 },
+            symbol: "none",
+            silent: true,
+            smooth,
+          },
+        ]
       : [];
     const lineSeries: LineSeriesOption[] = series.map((item) => {
       const color = item.color ?? PACE_CHART_COLORS.primary;
@@ -220,18 +231,18 @@ function ChartPlot<TDatum>({
         },
         areaStyle: item.area
           ? {
-            color: {
-              type: "linear",
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: `${color}2e` },
-                { offset: 1, color: `${color}00` },
-              ],
-            },
-          }
+              color: {
+                type: "linear",
+                x: 0,
+                y: 0,
+                x2: 0,
+                y2: 1,
+                colorStops: [
+                  { offset: 0, color: `${color}2e` },
+                  { offset: 1, color: `${color}00` },
+                ],
+              },
+            }
           : undefined,
         data: data.map((datum, index) => {
           const isActive = index === activeIndex;
@@ -277,7 +288,9 @@ function ChartPlot<TDatum>({
         axisLabel: {
           color: PACE_CHART_COLORS.tick,
           fontSize: 11,
-          formatter: yTickFormatter ? (value: number) => yTickFormatter(value) : undefined,
+          formatter: yTickFormatter
+            ? (value: number) => yTickFormatter(value)
+            : undefined,
         },
         splitLine: { lineStyle: { color: PACE_CHART_COLORS.grid } },
       },
@@ -302,7 +315,9 @@ function ChartPlot<TDatum>({
 
   const indexFromPointer = (event: MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = plotWidth ? (event.clientX - rect.left - GRID.left) / plotWidth : 0;
+    const ratio = plotWidth
+      ? (event.clientX - rect.left - GRID.left) / plotWidth
+      : 0;
     return Math.min(count - 1, Math.max(0, Math.round(ratio * (count - 1))));
   };
 
@@ -323,7 +338,10 @@ function ChartPlot<TDatum>({
       event.preventDefault();
       setKeyboardActive(true);
       setHoverIndex(next);
-    } else if ((event.key === "Enter" || event.key === " ") && activeIndex != null) {
+    } else if (
+      (event.key === "Enter" || event.key === " ") &&
+      activeIndex != null
+    ) {
       event.preventDefault();
       onPointSelect?.(activeIndex);
     } else if (event.key === "Escape") {
@@ -336,7 +354,9 @@ function ChartPlot<TDatum>({
   const tooltipOnLeft = crosshairX > size.width * 0.62;
   const primary = series[0];
   const activeValue =
-    activeDatum !== undefined && primary ? primary.value(activeDatum, activeIndex!) : null;
+    activeDatum !== undefined && primary
+      ? primary.value(activeDatum, activeIndex!)
+      : null;
 
   return (
     <div
@@ -357,7 +377,8 @@ function ChartPlot<TDatum>({
       onPointerLeave={() => setHoverIndex(null)}
       onPointerMove={(event) => setHoverIndex(indexFromPointer(event))}
       role="group"
-      tabIndex={0}>
+      tabIndex={0}
+    >
       <div aria-hidden className="absolute inset-0" ref={surfaceRef} />
       {activeDatum !== undefined && size.width ? (
         <div aria-hidden className="pointer-events-none absolute inset-0">
@@ -378,7 +399,8 @@ function ChartPlot<TDatum>({
                 transform: tooltipOnLeft
                   ? "translateX(calc(-100% - 12px))"
                   : "translateX(12px)",
-              }}>
+              }}
+            >
               {renderTooltip(activeDatum, activeIndex!)}
             </div>
           ) : null}
@@ -389,36 +411,43 @@ function ChartPlot<TDatum>({
           ? `${xLabel(activeDatum, activeIndex!)}: ${activeValue == null ? "—" : valueFormatter(activeValue)}`
           : ""}
       </p>
-      <table className="sr-only">
-        <caption>{ariaLabel}</caption>
-        <thead>
-          <tr>
-            <th scope="col" />
-            {series.map((item) => (
-              <th key={item.key} scope="col">
-                {item.label}
-              </th>
-            ))}
-            {band ? <th scope="col">{band.label}</th> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((datum, index) => (
-            <tr key={index}>
-              <th scope="row">{xLabel(datum, index)}</th>
-              {series.map((item) => {
-                const value = item.value(datum, index);
-                return <td key={item.key}>{value == null ? "—" : valueFormatter(value)}</td>;
-              })}
-              {band ? (
-                <td>
-                  {valueFormatter(band.lower(datum, index))} – {valueFormatter(band.upper(datum, index))}
-                </td>
-              ) : null}
+      <div className="sr-only">
+        <table>
+          <caption>{ariaLabel}</caption>
+          <thead>
+            <tr>
+              <th scope="col" />
+              {series.map((item) => (
+                <th key={item.key} scope="col">
+                  {item.label}
+                </th>
+              ))}
+              {band ? <th scope="col">{band.label}</th> : null}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {data.map((datum, index) => (
+              <tr key={index}>
+                <th scope="row">{xLabel(datum, index)}</th>
+                {series.map((item) => {
+                  const value = item.value(datum, index);
+                  return (
+                    <td key={item.key}>
+                      {value == null ? "—" : valueFormatter(value)}
+                    </td>
+                  );
+                })}
+                {band ? (
+                  <td>
+                    {valueFormatter(band.lower(datum, index))} –{" "}
+                    {valueFormatter(band.upper(datum, index))}
+                  </td>
+                ) : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
