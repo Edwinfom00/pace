@@ -534,16 +534,25 @@ export function weeklySpending(
   timeZone: string,
   currency: string,
 ): Array<{ firstDate: string; lastDate: string; spendingMinor: bigint }> {
+  return weeklyBuckets(entries, period, timeZone).map((week) => ({
+    firstDate: week.firstDate,
+    lastDate: week.lastDate,
+    spendingMinor: calculateTotals(week.entries, { currency }).spending.minor,
+  }));
+}
+
+export function weeklyBuckets<T extends Pick<MoneyTransaction, "occurredAt">>(
+  entries: readonly T[],
+  period: Period,
+  timeZone: string,
+): Array<{ firstDate: string; lastDate: string; entries: T[] }> {
   const first = localDateForInstant(period.start, timeZone);
   const dayCount = countCalendarDays(period.start, period.end, timeZone);
   if (dayCount <= 0) return [];
   const firstUtc = Date.UTC(first.year, first.month - 1, first.day);
   const offset = (new Date(firstUtc).getUTCDay() + 6) % 7;
   const weekCount = Math.floor((dayCount - 1 + offset) / 7) + 1;
-  const buckets: MoneyTransaction[][] = Array.from(
-    { length: weekCount },
-    () => [],
-  );
+  const buckets: T[][] = Array.from({ length: weekCount }, () => []);
   for (const transaction of entries) {
     if (!inPeriod(transaction.occurredAt, period)) continue;
     const local = localDateForInstant(transaction.occurredAt, timeZone);
@@ -560,7 +569,7 @@ export function weeklySpending(
     lastDate: localDateKey(
       addLocalDays(first, Math.min(dayCount - 1, week * 7 + 6 - offset)),
     ),
-    spendingMinor: calculateTotals(bucket, { currency }).spending.minor,
+    entries: bucket,
   }));
 }
 

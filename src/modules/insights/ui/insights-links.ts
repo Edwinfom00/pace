@@ -29,3 +29,11 @@ export function insightsCategoryHref(
 ): string {
   return `/w/${workspaceSlug}/insights/categories/${encodeURIComponent(categoryId)}?${insightsQuery(state)}`;
 }
+
+export function insightsAccountHref(
+  workspaceSlug: string,
+  accountId: string,
+  state: InsightsQueryState,
+): string {
+  return `/w/${workspaceSlug}/insights/accounts/${encodeURIComponent(accountId)}?${insightsQuery(state)}`;
+}

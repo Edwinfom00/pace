@@ -17,6 +17,7 @@ export function getInsightsOverview(input: GetInsightsOverviewInput): Promise<In
     listTransactions: (workspaceId) => ledger.listTransactions(workspaceId),
     listCategories: (workspaceId) => ledger.listCategories(workspaceId),
     listMerchants: (workspaceId) => ledger.listMerchants(workspaceId),
+    listAccounts: (workspaceId) => ledger.listAccounts(workspaceId),
     previewInsights: (actor, workspaceId, preview) => insights.previewPeriodInsights(actor, workspaceId, preview),
   });
 }

@@ -33,6 +33,7 @@ export type AccountDetailUiLabels = {
   readonly recentTransactions: string;
   readonly recentTransactionsEmpty: string;
   readonly viewAllTransactions: string;
+  readonly analyze: string;
   readonly transfer: string;
   readonly transferFrom: string;
   readonly transferTo: string;
@@ -179,6 +180,7 @@ export function getAccountDetailUiLabels(labels: DashboardLabels): AccountDetail
     recentTransactions: labels["accounts.detail.recentTransactions"],
     recentTransactionsEmpty: labels["accounts.detail.recentTransactionsEmpty"],
     viewAllTransactions: labels["accounts.detail.viewAllTransactions"],
+    analyze: labels["accounts.detail.analyze"],
     transfer: labels["accounts.detail.transfer"],
     transferFrom: labels["accounts.detail.transferFrom"],
     transferTo: labels["accounts.detail.transferTo"],

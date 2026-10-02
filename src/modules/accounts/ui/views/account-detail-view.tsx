@@ -8,6 +8,7 @@ import {
   FiArrowUpRight,
   FiArrowRight,
   FiArrowLeft,
+  FiBarChart2,
   FiRepeat,
 } from "react-icons/fi";
 import { HiOutlineArchiveBox } from "react-icons/hi2";
@@ -111,6 +112,13 @@ export function AccountDetailView({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            className="inline-flex h-9 items-center gap-1.5 rounded-[8px] border border-[#dfe5ee] bg-white px-3 text-[13px] font-medium text-[#43516a] transition-colors hover:border-[#b8d0ff] hover:bg-[#f8faff] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563eb]"
+            href={`/w/${workspaceSlug}/insights/accounts/${encodeURIComponent(account.id)}`}
+          >
+            <FiBarChart2 aria-hidden="true" className="size-3.5 text-[#2f6fed]" />
+            {labels.analyze}
+          </Link>
           <AccountManagementActions
             account={account}
             capabilities={detail.capabilities}

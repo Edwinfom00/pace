@@ -1,9 +1,11 @@
 import type { DashboardLabels } from "@/i18n/dashboard-messages";
 
+import type { InsightsAccountSummary } from "../../account/account-analysis.types";
 import type {
   InsightsDeterministicInsights,
   InsightsOverview,
 } from "../../overview/insights-overview.types";
+import { InsightsAccounts } from "../components/insights-accounts";
 import { InsightsCategoryBreakdown } from "../components/insights-category-breakdown";
 import { InsightsEmptyState } from "../components/insights-empty-state";
 import { InsightsIncomeSpendingChart } from "../components/insights-income-spending-chart";
@@ -25,12 +27,14 @@ import {
 } from "../insights-format";
 
 export function InsightsOverviewView({
+  accounts,
   currentPeriodKey,
   insights,
   labels,
   overview,
   workspaceSlug,
 }: {
+  readonly accounts: readonly InsightsAccountSummary[];
   readonly currentPeriodKey: string;
   readonly insights: InsightsDeterministicInsights;
   readonly labels: DashboardLabels;
@@ -88,7 +92,15 @@ export function InsightsOverviewView({
                       workspaceSlug={workspaceSlug}
                     />
                   </div>
-                  <InsightsTopChanges labels={labels} overview={overview} />
+                  <div className="grid gap-4 sm:gap-5 lg:grid-cols-2 lg:items-start">
+                    <InsightsTopChanges labels={labels} overview={overview} />
+                    <InsightsAccounts
+                      accounts={accounts}
+                      labels={labels}
+                      overview={overview}
+                      workspaceSlug={workspaceSlug}
+                    />
+                  </div>
                 </div>
               ) : (
                 <InsightsEmptyState

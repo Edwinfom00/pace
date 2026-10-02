@@ -333,6 +333,7 @@ function readers(overrides: Partial<InsightsOverviewReaders> = {}): InsightsOver
       updatedAt: midSeptember,
     }],
     listMerchants: async () => [],
+    listAccounts: async () => [],
     previewInsights: async () => [],
     ...overrides,
   };

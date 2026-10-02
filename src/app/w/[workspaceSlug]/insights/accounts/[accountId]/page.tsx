@@ -5,34 +5,34 @@ import { getDashboardLabels } from "@/i18n/dashboard-messages";
 import { getPersistedDashboardLanguage } from "@/i18n/dashboard-server";
 import { calendarMonthPeriod } from "@/money/period";
 import { loginPathForReturnTo } from "@/modules/auth/post-auth-resolver";
+import { getAccountAnalysis } from "@/modules/insights/account/account-analysis-server";
+import { parseInsightsRange } from "@/modules/insights/overview/insights-overview.types";
+import { AccountAnalysisView } from "@/modules/insights/ui/views/account-analysis-view";
 import { overviewPeriodKey } from "@/modules/overview/domain/overview-financial-summary";
-import { getInsightsOverview } from "@/modules/insights/overview/insights-overview-server";
-import {
-  parseInsightsCurrency,
-  parseInsightsRange,
-} from "@/modules/insights/overview/insights-overview.types";
-import { InsightsOverviewView } from "@/modules/insights/ui/views/insights-overview-view";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
-type WorkspaceInsightsPageProps = {
-  params: Promise<{ workspaceSlug: string }>;
+type InsightsAccountPageProps = {
+  params: Promise<{ workspaceSlug: string; accountId: string }>;
   searchParams: Promise<{
     period?: string | string[];
     range?: string | string[];
-    currency?: string | string[];
   }>;
 };
 
-export default async function WorkspaceInsightsPage({
+export default async function InsightsAccountPage({
   params,
   searchParams,
-}: WorkspaceInsightsPageProps) {
-  const { workspaceSlug } = await params;
+}: InsightsAccountPageProps) {
+  const { workspaceSlug, accountId } = await params;
   const query = await searchParams;
   const actor = await getAuthenticatedActor();
 
   if (!actor) {
-    redirect(loginPathForReturnTo(`/w/${workspaceSlug}/insights`));
+    redirect(
+      loginPathForReturnTo(
+        `/w/${workspaceSlug}/insights/accounts/${encodeURIComponent(accountId)}`,
+      ),
+    );
   }
 
   const workspace =
@@ -49,30 +49,34 @@ export default async function WorkspaceInsightsPage({
   const { currency, locale, timezone } = workspace.preferences;
   const language = await getPersistedDashboardLanguage(actor.userId);
   const labels = getDashboardLabels(language);
-  const { overview, insights, accounts } = await getInsightsOverview({
+  const analysis = await getAccountAnalysis({
     actor,
     workspaceId: workspace.workspace.id,
-    workspaceSlug: workspace.workspace.slug,
+    accountId,
     workspaceCurrency: currency,
     locale,
     timeZone: timezone,
     labels,
     range: parseInsightsRange(query.range),
     periodKey: Array.isArray(query.period) ? query.period[0] : query.period,
-    requestedCurrency: parseInsightsCurrency(query.currency),
     now,
   });
 
+  if (!analysis) {
+    notFound();
+  }
+
   return (
-    <InsightsOverviewView
-      accounts={accounts}
+    <AccountAnalysisView
+      analysis={analysis}
       currentPeriodKey={overviewPeriodKey(
         calendarMonthPeriod(now, timezone),
         timezone,
       )}
-      insights={insights}
       labels={labels}
-      overview={overview}
+      language={language}
+      timeZone={timezone}
+      workspaceId={workspace.workspace.id}
       workspaceSlug={workspace.workspace.slug}
     />
   );
