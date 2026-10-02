@@ -4,8 +4,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 export function InsightsSkeleton() {
   return (
     <main aria-busy="true" className="min-w-0 px-5 py-7 sm:px-7 sm:py-8 lg:px-10 lg:py-9">
-      <div className="mx-auto grid w-full max-w-[1420px] gap-5 xl:grid-cols-[minmax(0,1fr)_clamp(330px,26vw,370px)] xl:items-start">
+      <div className="mx-auto grid w-full max-w-355 gap-5 xl:grid-cols-[minmax(0,1fr)_clamp(330px,26vw,370px)] xl:items-start">
         <div className="min-w-0 space-y-4 sm:space-y-5">
+          <div className="flex gap-1"><Skeleton className="h-9 w-24 rounded-full" /><Skeleton className="h-9 w-20 rounded-full" /></div>
           <div className="flex items-center justify-between">
             <Skeleton className="h-9 w-40" />
             <div className="flex gap-1.5"><Skeleton className="size-8" /><Skeleton className="size-8" /></div>

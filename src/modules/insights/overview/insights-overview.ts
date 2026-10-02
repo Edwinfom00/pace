@@ -225,7 +225,7 @@ export function buildInsightsOverview(
   };
 }
 
-function currencyOptions(
+export function currencyOptions(
   transactions: readonly MoneyTransaction[],
   workspaceCurrency: string,
   current: Period,
@@ -499,7 +499,7 @@ function topChanges(
     .map(({ change }) => change);
 }
 
-function exclusions(
+export function exclusions(
   transactions: readonly MoneyTransaction[],
   current: Period,
   currency: string,

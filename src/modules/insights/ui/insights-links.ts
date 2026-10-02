@@ -1,4 +1,5 @@
 import type { InsightsRange } from "../overview/insights-overview.types";
+import { TRENDS_RANGES } from "../trends/insights-trends.types";
 
 export interface InsightsQueryState {
   readonly periodKey: string;
@@ -36,4 +37,41 @@ export function insightsAccountHref(
   state: InsightsQueryState,
 ): string {
   return `/w/${workspaceSlug}/insights/accounts/${encodeURIComponent(accountId)}?${insightsQuery(state)}`;
+}
+
+export function insightsTrendsHref(
+  workspaceSlug: string,
+  state: InsightsQueryState,
+): string {
+  return `/w/${workspaceSlug}/insights/trends?${insightsQuery(state)}`;
+}
+
+export type InsightsSection = "overview" | "trends";
+
+const SECTION_QUERY_KEYS = ["period", "range", "currency"] as const;
+
+export function insightsSectionHref(
+  workspaceSlug: string,
+  section: InsightsSection,
+  search: string,
+): string {
+  const current = new URLSearchParams(search);
+  const params = new URLSearchParams();
+  for (const key of SECTION_QUERY_KEYS) {
+    const value = current.get(key);
+    if (!value) continue;
+    if (
+      key === "range" &&
+      section === "trends" &&
+      !(TRENDS_RANGES as readonly string[]).includes(value)
+    )
+      continue;
+    params.set(key, value);
+  }
+  const query = params.toString();
+  const path =
+    section === "trends"
+      ? `/w/${workspaceSlug}/insights/trends`
+      : `/w/${workspaceSlug}/insights`;
+  return query ? `${path}?${query}` : path;
 }

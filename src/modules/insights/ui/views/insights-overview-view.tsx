@@ -15,6 +15,7 @@ import {
   InsightsNavigationProvider,
 } from "../components/insights-navigation";
 import { InsightsRightRail } from "../components/insights-right-rail";
+import { InsightsSectionTabs } from "../components/insights-section-tabs";
 import { InsightsSpendingTrendChart } from "../components/insights-spending-trend-chart";
 import {
   InsightsFilters,
@@ -47,6 +48,11 @@ export function InsightsOverviewView({
         <h1 className="sr-only">{labels["insights.page.title"]}</h1>
         <div className="mx-auto grid w-full max-w-355 gap-5 xl:grid-cols-[minmax(0,1fr)_clamp(330px,26vw,370px)] xl:items-start">
           <div className="min-w-0 space-y-4 sm:space-y-5">
+            <InsightsSectionTabs
+              active="overview"
+              labels={labels}
+              workspaceSlug={workspaceSlug}
+            />
             <div className="space-y-1">
               <InsightsPeriodControls
                 currentPeriodKey={currentPeriodKey}

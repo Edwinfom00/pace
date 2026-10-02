@@ -16,16 +16,14 @@ import { useInsightsNavigation } from "./insights-navigation";
 export function nextInsightsRange(
   current: InsightsRange,
   key: string,
+  ranges: readonly InsightsRange[] = INSIGHTS_RANGES,
 ): InsightsRange | null {
-  const index = INSIGHTS_RANGES.indexOf(current);
-  if (key === "ArrowRight")
-    return INSIGHTS_RANGES[(index + 1) % INSIGHTS_RANGES.length]!;
+  const index = ranges.indexOf(current);
+  if (key === "ArrowRight") return ranges[(index + 1) % ranges.length]!;
   if (key === "ArrowLeft")
-    return INSIGHTS_RANGES[
-      (index - 1 + INSIGHTS_RANGES.length) % INSIGHTS_RANGES.length
-    ]!;
-  if (key === "Home") return INSIGHTS_RANGES[0];
-  if (key === "End") return INSIGHTS_RANGES.at(-1)!;
+    return ranges[(index - 1 + ranges.length) % ranges.length]!;
+  if (key === "Home") return ranges[0]!;
+  if (key === "End") return ranges.at(-1)!;
   return null;
 }
 
@@ -57,27 +55,31 @@ export function InsightsPeriodControls({
 export function InsightsFilters({
   currencies,
   currency,
+  defaultRange = "1m",
   labels,
   range,
+  ranges = INSIGHTS_RANGES,
   workspaceCurrency,
 }: {
   readonly currencies: readonly InsightsCurrencyOption[];
   readonly currency: string;
+  readonly defaultRange?: InsightsRange;
   readonly labels: DashboardLabels;
   readonly range: InsightsRange;
+  readonly ranges?: readonly InsightsRange[];
   readonly workspaceCurrency: string;
 }) {
   const { isLoading, navigate, pending } = useInsightsNavigation();
   const activeRange = (pending?.range ??
-    (pending && "range" in pending ? "1m" : range)) as InsightsRange;
+    (pending && "range" in pending ? defaultRange : range)) as InsightsRange;
   const activeCurrency =
     pending?.currency ??
     (pending && "currency" in pending ? workspaceCurrency : currency);
   const selectRange = (next: InsightsRange) =>
-    navigate({ range: next === "1m" ? null : next });
+    navigate({ range: next === defaultRange ? null : next });
 
   const onRangeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const next = nextInsightsRange(activeRange, event.key);
+    const next = nextInsightsRange(activeRange, event.key, ranges);
     if (!next) return;
     event.preventDefault();
     selectRange(next);
@@ -93,7 +95,7 @@ export function InsightsFilters({
         className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 pb-0.5 scrollbar-none"
         onKeyDown={onRangeKeyDown}
         role="radiogroup">
-        {INSIGHTS_RANGES.map((option) => {
+        {ranges.map((option) => {
           const selected = option === activeRange;
           return (
             <button
