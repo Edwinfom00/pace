@@ -72,20 +72,21 @@ export function LoginForm({ errors, language, returnTo }: LoginFormProps) {
     setIsSubmitting(true);
 
     try {
-      toast.loading("Loading...", { id: "login", duration: 1000 });
+      toast.loading("Loading...", { id: "login" });
       const result = await authClient.signIn.email({ email, password });
 
       if (result.error) {
         setSubmitError(result.error.message || t("auth.form.signIn.error"));
-        toast.error(result.error.message || t("auth.form.signIn.error"));
+        toast.error(result.error.message || t("auth.form.signIn.error"), { id: "login" });
         return;
       }
 
+      toast.dismiss("login");
       router.replace(authRouteHref("/login", language, returnTo));
       router.refresh();
     } catch {
       setSubmitError(t("auth.form.signIn.error"));
-      toast.error(t("auth.form.signIn.error"));
+      toast.error(t("auth.form.signIn.error"), { id: "login" });
     } finally {
       setIsSubmitting(false);
     }

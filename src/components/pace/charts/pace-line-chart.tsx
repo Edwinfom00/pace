@@ -8,7 +8,7 @@ import {
   type ComposeOption,
   type EChartsType,
 } from "echarts/core";
-import { SVGRenderer } from "echarts/renderers";
+import { CanvasRenderer } from "echarts/renderers";
 import {
   useEffect,
   useMemo,
@@ -23,7 +23,7 @@ import {
 import { PaceChartSkeleton } from "@/components/pace/charts/pace-chart-skeleton";
 import { cn } from "@/lib/utils";
 
-registerChartModules([LineChart, GridComponent, SVGRenderer]);
+registerChartModules([LineChart, GridComponent, CanvasRenderer]);
 
 type PaceChartOption = ComposeOption<LineSeriesOption | GridComponentOption>;
 
@@ -163,7 +163,7 @@ function ChartPlot<TDatum>({
   useEffect(() => {
     const element = surfaceRef.current;
     if (!element) return;
-    const chart = init(element, undefined, { renderer: "svg" });
+    const chart = init(element, undefined, { renderer: "canvas" });
     chartRef.current = chart;
     const observer = new ResizeObserver(([entry]) => {
       chart.resize();
@@ -221,7 +221,7 @@ function ChartPlot<TDatum>({
         type: "line",
         name: item.label,
         smooth,
-        showAllSymbol: true,
+        showAllSymbol: false,
         silent: true,
         z: 3,
         lineStyle: {

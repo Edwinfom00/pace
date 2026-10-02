@@ -23,7 +23,6 @@ import {
   type ForecastLabels,
 } from "@/modules/forecast/ui/forecast-format";
 import {
-  formatCompactOverviewAmount,
   formatOverviewDate,
   formatOverviewMoney,
   minorToChartValue,
@@ -63,7 +62,6 @@ export function ForecastBalanceChart({
         label: labels.legendProjected,
         value: (point) =>
           minorToChartValue(point.projectedClosingBalance.nominalMinor, code),
-        showPoint: (point) => point.events.length > 0,
       },
     ],
     [code, labels.legendProjected],
@@ -84,7 +82,11 @@ export function ForecastBalanceChart({
   );
   const showXTick = useCallback((index: number) => ticks.has(index), [ticks]);
   const yTickFormatter = useCallback(
-    (value: number) => formatCompactOverviewAmount(value, locale),
+    (value: number) =>
+      new Intl.NumberFormat(locale, {
+        notation: "compact",
+        maximumFractionDigits: 1,
+      }).format(value),
     [locale],
   );
   const valueFormatter = useCallback(
@@ -127,6 +129,7 @@ export function ForecastBalanceChart({
       selectedIndex={selected}
       series={series}
       showXTick={showXTick}
+      smooth
       valueFormatter={valueFormatter}
       xLabel={xLabel}
       yTickFormatter={yTickFormatter}
