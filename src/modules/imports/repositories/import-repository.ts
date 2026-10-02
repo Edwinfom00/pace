@@ -37,6 +37,7 @@ export interface PrepareImportSessionInput {
   mapping: ImportMapping;
   stagedRows: NormalizedImportRow[];
   preview: ImportPreview;
+  parsedRows?: ParsedImportRow[];
 }
 
 export interface SaveImportColumnMappingInput {
@@ -138,6 +139,7 @@ export class DatabaseImportRepository implements ImportRepository {
         mapping: input.mapping,
         stagedRows: input.stagedRows,
         preview: input.preview,
+        ...(input.parsedRows ? { parsedRows: input.parsedRows } : {}),
         status: "READY_FOR_PREVIEW",
         failureCode: null,
         failureMessage: null,

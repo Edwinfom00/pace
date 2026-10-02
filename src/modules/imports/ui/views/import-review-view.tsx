@@ -4,18 +4,19 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
 } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "cn";
 import {
   ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
   Check,
-  ChevronDown,
   CircleAlert,
   CircleCheck,
   Copy,
@@ -27,15 +28,36 @@ import {
   RotateCcw,
   ShieldCheck,
   TriangleAlert,
-  Wallet,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import type { CurrencyCode } from "@/money/currency";
+import type { CreateAccountFormDraft } from "@/modules/ledger/ui/components/create-account-form";
+import {
+  mapCreateAccountFailure,
+  parseCreatedAccountDTO,
+  validateCreateAccountForm,
+  type CreateAccountFormErrors,
+} from "@/modules/ledger/ui/components/create-account-flow";
+import type { OnboardingLanguage } from "@/modules/onboarding/metadata";
+import type { TransactionAccountOption } from "@/modules/transactions/domain/transaction-account-options";
 
+import type { ImportField } from "../../domain";
 import type { ImportReviewView as ImportReviewData } from "../../import-service";
+import type { ImportFileAccount } from "../../review";
+import {
+  ImportAccountsPanel,
+  importAccountTargetKey,
+  ImportCreateAccountDialog,
+  ImportFixRowsPanel,
+  SkippedSummary,
+  suggestionDraft,
+  type ImportAccountTarget,
+} from "../components/import-review-panels";
 import {
   approveImport,
   canStartImport,
+  createImportAccount,
   executeImport,
   fetchImportProgress,
   IMPORT_EXECUTION_STEPS,
@@ -44,6 +66,7 @@ import {
   importMappingHref,
   importProgressPercent,
   importResultHrefs,
+  importReviewRequest,
   isImportProgressStalled,
   isTerminalImportStatus,
   updateImportReview,
@@ -51,6 +74,7 @@ import {
   type ImportStepStatus,
 } from "../import-execution-flow";
 import type {
+  ImportAccountLabels,
   ImportExecutionErrorCode,
   ImportExecutionLabels,
 } from "../import-execution-labels";
@@ -76,17 +100,26 @@ const secondaryLink = cn(
 
 export function ImportReviewView({
   labels,
+  accountLabels,
+  language,
   locale,
   workspaceId,
   workspaceSlug,
+  defaultCurrency,
+  accountOptions,
   initialReview,
 }: {
   readonly labels: ImportExecutionLabels;
+  readonly accountLabels: ImportAccountLabels;
+  readonly language: OnboardingLanguage;
   readonly locale: string;
   readonly workspaceId: string;
   readonly workspaceSlug: string;
+  readonly defaultCurrency: CurrencyCode;
+  readonly accountOptions: readonly TransactionAccountOption[];
   readonly initialReview: ImportReviewData;
 }) {
+  const router = useRouter();
   const [review, setReview] = useState(initialReview);
   const [mode, setMode] = useState<ImportScreenMode>(() =>
     initialReview.state === "EXECUTING"
@@ -100,14 +133,24 @@ export function ImportReviewView({
     progress: initialReview.progress,
     result: initialReview.result,
   });
-  const [errorCode, setErrorCode] = useState<ImportExecutionErrorCode | null>(
-    null,
-  );
-  const [updating, setUpdating] = useState(false);
+  const [errorCode, setErrorCode] = useState<ImportExecutionErrorCode | null>(null);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
   const [starting, setStarting] = useState(false);
+  const [createdAccounts, setCreatedAccounts] = useState<readonly TransactionAccountOption[]>([]);
+  const [createTarget, setCreateTarget] = useState<ImportAccountTarget | null>(null);
+  const [createDraft, setCreateDraft] = useState<CreateAccountFormDraft>(() => suggestionDraft(null, defaultCurrency));
+  const [createErrors, setCreateErrors] = useState<CreateAccountFormErrors>({});
+  const [createFormError, setCreateFormError] = useState<string | null>(null);
+  const [creatingAccount, setCreatingAccount] = useState(false);
   const inFlightRef = useRef(false);
   const reviewAbortRef = useRef<AbortController | null>(null);
   const request = { workspaceId, importSessionId: review.session.id };
+  const updating = pendingKey !== null;
+  const accounts = useMemo(() => {
+    const known = new Set(accountOptions.map((account) => account.id));
+    return [...accountOptions, ...createdAccounts.filter((account) => !known.has(account.id))];
+  }, [accountOptions, createdAccounts]);
 
   const settle = useCallback((next: ImportExecutionSnapshot) => {
     setSnapshot(next);
@@ -121,21 +164,12 @@ export function ImportReviewView({
     const controller = new AbortController();
     const timer = window.setInterval(async () => {
       try {
-        const polled = await fetchImportProgress({
-          workspaceId,
-          importSessionId: review.session.id,
-          signal: controller.signal,
-        });
+        const polled = await fetchImportProgress({ workspaceId, importSessionId: review.session.id, signal: controller.signal });
         if (controller.signal.aborted || !polled.ok) return;
         settle(polled.value);
         if (inFlightRef.current) return;
-        if (isImportProgressStalled(polled.value))
-          setErrorCode("IMPORT_STALLED");
-        else if (
-          polled.value.status !== "IMPORTING" &&
-          !isTerminalImportStatus(polled.value.status)
-        )
-          setErrorCode("NETWORK");
+        if (isImportProgressStalled(polled.value)) setErrorCode("IMPORT_STALLED");
+        else if (polled.value.status !== "IMPORTING" && !isTerminalImportStatus(polled.value.status)) setErrorCode("NETWORK");
       } catch {
         return;
       }
@@ -152,8 +186,7 @@ export function ImportReviewView({
   async function start() {
     if (inFlightRef.current || updating) return;
     inFlightRef.current = true;
-    const origin: ImportScreenMode =
-      snapshot.status === "PARTIALLY_COMPLETED" ? "result" : "review";
+    const origin: ImportScreenMode = snapshot.status === "PARTIALLY_COMPLETED" ? "result" : "review";
     setStarting(true);
     setErrorCode(null);
     setMode("executing");
@@ -181,47 +214,93 @@ export function ImportReviewView({
     }
   }
 
-  async function changeDestination(
-    accountId: string,
-    transferAccountId: string | null,
-  ) {
+  async function mutateReview(
+    key: string,
+    change: Parameters<typeof importReviewRequest>[1],
+    success?: string,
+  ): Promise<boolean> {
+    const body = importReviewRequest(review, change);
+    if (!body) return false;
     reviewAbortRef.current?.abort();
     const controller = new AbortController();
     reviewAbortRef.current = controller;
-    setUpdating(true);
+    setPendingKey(key);
     setErrorCode(null);
     try {
-      const updated = await updateImportReview({
-        ...request,
-        accountId,
-        transferAccountId,
-        signal: controller.signal,
-      });
-      if (controller.signal.aborted) return;
-      if (updated.ok) {
-        setReview(updated.value);
-        setSnapshot((current) => ({
-          ...current,
-          status: updated.value.session.status,
-        }));
-      } else {
+      const updated = await updateImportReview({ ...request, request: body, signal: controller.signal });
+      if (controller.signal.aborted) return false;
+      if (!updated.ok) {
         setErrorCode(updated.code);
+        return false;
       }
+      setReview(updated.value);
+      setSnapshot((current) => ({ ...current, status: updated.value.session.status }));
+      if (success) setAnnouncement(success);
+      return true;
     } catch {
-      return;
+      return false;
     } finally {
       if (reviewAbortRef.current === controller) {
         reviewAbortRef.current = null;
-        setUpdating(false);
+        setPendingKey(null);
       }
     }
   }
 
-  if (
-    review.state === "STALE" ||
-    review.state === "MAPPING_REQUIRED" ||
-    errorCode === "IMPORT_SESSION_STALE"
-  ) {
+  function assign(target: ImportAccountTarget, accountId: string) {
+    const key = importAccountTargetKey(target);
+    if (!("key" in target)) {
+      return mutateReview(key, target.kind === "DEFAULT" ? { accountId } : { transferAccountId: accountId });
+    }
+    return mutateReview(
+      key,
+      target.kind === "SOURCE"
+        ? { accountAssignments: { [target.key]: accountId } }
+        : { transferAccountAssignments: { [target.key]: accountId } },
+    );
+  }
+
+  function openCreate(target: ImportAccountTarget, suggestion: ImportFileAccount["suggestion"] | null) {
+    setCreateTarget(target);
+    setCreateDraft(suggestionDraft(suggestion, defaultCurrency));
+    setCreateErrors({});
+    setCreateFormError(null);
+  }
+
+  async function submitCreateAccount() {
+    if (!createTarget || creatingAccount) return;
+    const clientErrors = validateCreateAccountForm(workspaceId, createDraft);
+    if (Object.keys(clientErrors).length) {
+      setCreateErrors(clientErrors);
+      return;
+    }
+    setCreatingAccount(true);
+    setCreateFormError(null);
+    try {
+      const created = await createImportAccount({ workspaceId, draft: createDraft });
+      if (!created.ok) {
+        const failure = mapCreateAccountFailure(created.code);
+        if (failure.field) setCreateErrors({ [failure.field]: true });
+        else setCreateFormError(failure.code === "WORKSPACE_FORBIDDEN" ? accountLabels.accountCreateErrorWorkspaceForbidden : accountLabels.accountCreateErrorGeneric);
+        return;
+      }
+      const account = parseCreatedAccountDTO(created.payload);
+      if (!account) {
+        setCreateFormError(accountLabels.accountCreateErrorGeneric);
+        return;
+      }
+      setCreatedAccounts((current) => [...current, { id: account.id, name: account.name, currency: account.currency, type: account.type }]);
+      const target = createTarget;
+      setCreateTarget(null);
+      await assign(target, account.id);
+      setAnnouncement(formatImportLabel(labels.accountCreated, { name: account.name }));
+      router.refresh();
+    } finally {
+      setCreatingAccount(false);
+    }
+  }
+
+  if (review.state === "STALE" || review.state === "MAPPING_REQUIRED" || errorCode === "IMPORT_SESSION_STALE") {
     return <ImportReviewStale labels={labels} workspaceSlug={workspaceSlug} />;
   }
 
@@ -255,357 +334,239 @@ export function ImportReviewView({
   }
 
   return (
-    <ImportReviewScreen
-      busy={starting}
-      errorCode={errorCode}
-      labels={labels}
-      locale={locale}
-      onAccountChange={(accountId) =>
-        changeDestination(
-          accountId,
-          review.transferAccountId === accountId
-            ? null
-            : review.transferAccountId,
-        )
-      }
-      onStart={start}
-      onTransferAccountChange={(transferAccountId) =>
-        review.accountId &&
-        changeDestination(review.accountId, transferAccountId)
-      }
-      review={review}
-      updating={updating}
-      workspaceSlug={workspaceSlug}
-    />
+    <>
+      <ImportReviewScreen
+        accountLabels={accountLabels}
+        accounts={accounts}
+        announcement={announcement}
+        busy={starting}
+        errorCode={errorCode}
+        labels={labels}
+        locale={locale}
+        onAssign={assign}
+        onCorrect={(row, field, value) =>
+          mutateReview(`row:${row}`, { corrections: [{ sourceRowNumber: row, field, value }] }, formatImportLabel(labels.fixApplied, { row: String(row) }))
+        }
+        onCreateAccount={openCreate}
+        onRestoreSkipped={() => mutateReview("skipped", { restoreRows: review.skippedRowNumbers })}
+        onSkip={(row) => mutateReview(`row:${row}`, { skipRows: [row] })}
+        onStart={start}
+        pendingKey={pendingKey}
+        review={review}
+        workspaceSlug={workspaceSlug}
+      />
+      <ImportCreateAccountDialog
+        draft={createDraft}
+        errors={createErrors}
+        formError={createFormError}
+        labels={accountLabels}
+        language={language}
+        onDraftChange={(draft) => {
+          setCreateDraft(draft);
+          setCreateErrors({});
+          setCreateFormError(null);
+        }}
+        onOpenChange={(open) => !open && setCreateTarget(null)}
+        onSubmit={submitCreateAccount}
+        open={createTarget !== null}
+        submitting={creatingAccount}
+      />
+    </>
   );
 }
 
 export function ImportReviewScreen({
   labels,
+  accountLabels,
   locale,
   review,
+  accounts,
   workspaceSlug,
   errorCode,
   busy,
-  updating,
-  onAccountChange,
-  onTransferAccountChange,
+  pendingKey = null,
+  announcement = "",
+  onAssign,
+  onCreateAccount,
+  onCorrect,
+  onSkip,
+  onRestoreSkipped,
   onStart,
 }: {
   readonly labels: ImportExecutionLabels;
+  readonly accountLabels: ImportAccountLabels;
   readonly locale: string;
   readonly review: ImportReviewData;
+  readonly accounts: readonly TransactionAccountOption[];
   readonly workspaceSlug: string;
   readonly errorCode: ImportExecutionErrorCode | null;
   readonly busy: boolean;
-  readonly updating: boolean;
-  readonly onAccountChange?: (accountId: string) => void;
-  readonly onTransferAccountChange?: (accountId: string | null) => void;
+  readonly pendingKey?: string | null;
+  readonly announcement?: string;
+  readonly onAssign?: (target: ImportAccountTarget, accountId: string) => void;
+  readonly onCreateAccount?: (target: ImportAccountTarget, suggestion: ImportFileAccount["suggestion"] | null) => void;
+  readonly onCorrect?: (row: number, field: ImportField, value: string) => void;
+  readonly onSkip?: (row: number) => void;
+  readonly onRestoreSkipped?: () => void;
   readonly onStart?: () => void;
 }) {
   const ids = useId();
   const number = new Intl.NumberFormat(locale);
   const plural = new Intl.PluralRules(locale);
   const summary = review.summary;
+  const updating = pendingKey !== null;
   const ready = canStartImport(review) && !updating;
   const disabled = !ready || busy;
   const errorId = `${ids}-error`;
   const toImport = summary?.toImportRowCount ?? 0;
-  const FileIcon =
-    review.session.fileType === "CSV" ? FileText : FileSpreadsheet;
+  const FileIcon = review.session.fileType === "CSV" ? FileText : FileSpreadsheet;
   const rows = summary
-    ? formatImportLabel(
-        plural.select(summary.parsedRowCount) === "one"
-          ? labels.rowsOne
-          : labels.rowsOther,
-        {
-          count: number.format(summary.parsedRowCount),
-        },
-      )
+    ? formatImportLabel(plural.select(summary.parsedRowCount) === "one" ? labels.rowsOne : labels.rowsOther, {
+      count: number.format(summary.parsedRowCount),
+    })
     : null;
-  const stats: readonly {
-    id: string;
-    label: string;
-    hint: string;
-    value: number;
-    icon: IconComponent;
-    tone: string;
-    emphasis?: boolean;
-  }[] = summary
+  const stats: readonly { id: string; label: string; hint: string; value: number; icon: IconComponent; tone: string; emphasis?: boolean }[] = summary
     ? [
-        {
-          id: "import",
-          label: labels.toImport,
-          hint: labels.toImportHint,
-          value: summary.toImportRowCount,
-          icon: ArrowDownToLine,
-          tone: "bg-[#eef3ff] text-[#2563eb]",
-          emphasis: true,
-        },
-        {
-          id: "inbox",
-          label: labels.toInbox,
-          hint: labels.toInboxHint,
-          value: summary.inboxRowCount,
-          icon: Inbox,
-          tone: "bg-[#f3efff] text-[#7c3aed]",
-        },
-        {
-          id: "duplicates",
-          label: labels.duplicates,
-          hint: labels.duplicatesHint,
-          value: summary.exactDuplicateRowCount,
-          icon: Copy,
-          tone: "bg-[#f1f4f8] text-[#53627b]",
-        },
-        {
-          id: "blocking",
-          label: labels.blocking,
-          hint: labels.blockingHint,
-          value: summary.blockingErrorRowCount,
-          icon: summary.blockingErrorRowCount ? CircleAlert : CircleCheck,
-          tone: summary.blockingErrorRowCount
-            ? "bg-[#fdecec] text-[#dc2626]"
-            : "bg-[#e8f6ee] text-[#16a34a]",
-        },
-      ]
+      { id: "import", label: labels.toImport, hint: labels.toImportHint, value: summary.toImportRowCount, icon: ArrowDownToLine, tone: "bg-[#eef3ff] text-[#2563eb]", emphasis: true },
+      { id: "inbox", label: labels.toInbox, hint: labels.toInboxHint, value: summary.inboxRowCount, icon: Inbox, tone: "bg-[#f3efff] text-[#7c3aed]" },
+      { id: "duplicates", label: labels.duplicates, hint: labels.duplicatesHint, value: summary.exactDuplicateRowCount, icon: Copy, tone: "bg-[#f1f4f8] text-[#53627b]" },
+      {
+        id: "blocking",
+        label: labels.blocking,
+        hint: labels.blockingHint,
+        value: summary.blockingErrorRowCount,
+        icon: summary.blockingErrorRowCount ? CircleAlert : CircleCheck,
+        tone: summary.blockingErrorRowCount ? "bg-[#fdecec] text-[#dc2626]" : "bg-[#e8f6ee] text-[#16a34a]",
+      },
+    ]
     : [];
+  const blocking = summary?.blockingErrorRowCount ?? 0;
 
   return (
     <main className="mx-auto w-full max-w-360 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <header className="flex flex-col gap-4 pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-[27px] font-semibold tracking-[-0.04em] text-[#101a35] sm:text-[30px]">
-            {labels.title}
-          </h1>
-          <p className="mt-1 text-[13px] text-[#71809a]">
-            {labels.description}
-          </p>
+          <h1 className="text-[27px] font-semibold tracking-[-0.04em] text-[#101a35] sm:text-[30px]">{labels.title}</h1>
+          <p className="mt-1 text-[13px] text-[#71809a]">{labels.description}</p>
         </div>
         <div className="flex min-w-0 items-center gap-2.5 self-start rounded-md border border-[#e5eaf1] bg-white px-3 py-2 sm:max-w-80">
-          <span
-            aria-hidden
-            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#e8f6ee] text-[#16a34a]">
+          <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#e8f6ee] text-[#16a34a]">
             <FileIcon className="size-4" />
           </span>
           <div className="min-w-0">
-            <p
-              className="truncate text-[13px] font-semibold text-[#14213c]"
-              title={review.session.fileName}>
-              {review.session.fileName}
-            </p>
+            <p className="truncate text-[13px] font-semibold text-[#14213c]" title={review.session.fileName}>{review.session.fileName}</p>
             {rows ? <p className="text-[12px] text-[#71809a]">{rows}</p> : null}
           </div>
         </div>
       </header>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(260px,340px)]">
-        <div className="min-w-0 space-y-5">
-          <section aria-busy={updating} aria-labelledby={`${ids}-summary`}>
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <h2
-                className="text-[15px] font-semibold text-[#14213c]"
-                id={`${ids}-summary`}>
-                {labels.summaryTitle}
-              </h2>
-              {summary?.dateRange ? (
-                <p className="text-[12px] text-[#71809a] tabular-nums">
-                  {formatImportLabel(labels.dateRange, {
-                    start: formatReviewDate(summary.dateRange.start, locale),
-                    end: formatReviewDate(summary.dateRange.end, locale),
-                  })}
-                </p>
-              ) : null}
-            </div>
-            <ul
+      <section aria-busy={updating} aria-labelledby={`${ids}-summary`}>
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h2 className="text-[15px] font-semibold text-[#14213c]" id={`${ids}-summary`}>{labels.summaryTitle}</h2>
+          {summary?.dateRange ? (
+            <p className="text-[12px] text-[#71809a] tabular-nums">
+              {formatImportLabel(labels.dateRange, {
+                start: formatReviewDate(summary.dateRange.start, locale),
+                end: formatReviewDate(summary.dateRange.end, locale),
+              })}
+            </p>
+          ) : null}
+        </div>
+        <ul className={cn("mt-3 grid grid-cols-2 gap-3 transition-opacity xl:grid-cols-4", updating && "opacity-70")}>
+          {stats.map((stat) => (
+            <li
               className={cn(
-                "mt-3 grid grid-cols-2 gap-3 transition-opacity xl:grid-cols-4",
-                updating && "opacity-60",
-              )}>
-              {stats.map((stat) => (
-                <li
-                  className={cn(
-                    "flex min-w-0 flex-col rounded-md border bg-white p-4",
-                    stat.emphasis ? "border-[#cfdcf7]" : "border-[#e5eaf1]",
-                    stat.id === "blocking" &&
-                      stat.value > 0 &&
-                      "border-[#f5c2c2]",
-                  )}
-                  data-stat={stat.id}
-                  key={stat.id}>
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "flex size-9 items-center justify-center rounded-md",
-                      stat.tone,
-                    )}>
-                    <stat.icon className="size-4" />
-                  </span>
-                  <p className="mt-3 text-[24px] font-semibold tracking-[-0.03em] text-[#101a35] tabular-nums">
-                    {number.format(stat.value)}
-                  </p>
-                  <p className="text-[13px] font-medium text-[#14213c]">
-                    {stat.label}
-                  </p>
-                  <p className="mt-0.5 text-[12px] leading-4 text-[#71809a]">
-                    {stat.hint}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </section>
+                "flex min-w-0 flex-col rounded-md border bg-white p-4",
+                stat.emphasis ? "border-[#cfdcf7]" : "border-[#e5eaf1]",
+                stat.id === "blocking" && stat.value > 0 && "border-[#f5c2c2]",
+              )}
+              data-stat={stat.id}
+              key={stat.id}
+            >
+              <span aria-hidden className={cn("flex size-9 items-center justify-center rounded-md", stat.tone)}>
+                <stat.icon className="size-4" />
+              </span>
+              <p className="mt-3 text-[24px] font-semibold tracking-[-0.03em] text-[#101a35] tabular-nums">{number.format(stat.value)}</p>
+              <p className="text-[13px] font-medium text-[#14213c]">{stat.label}</p>
+              <p className="mt-0.5 text-[12px] leading-4 text-[#71809a]">{stat.hint}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
 
-          {summary && summary.blockingErrorRowCount > 0 ? (
-            <section
-              aria-labelledby={`${ids}-blocking`}
-              className="rounded-md border border-[#f5c2c2] bg-[#fffafa] p-4 sm:p-5">
-              <div className="flex items-start gap-2.5">
-                <TriangleAlert
-                  aria-hidden
-                  className="mt-0.5 size-4 shrink-0 text-[#dc2626]"
-                />
-                <div className="min-w-0">
-                  <h2
-                    className="text-[14px] font-semibold text-[#14213c]"
-                    id={`${ids}-blocking`}>
-                    {labels.blockingTitle}
-                  </h2>
-                  <p className="mt-0.5 text-[12px] leading-5 text-[#71809a]">
-                    {labels.blockingDescription}
-                  </p>
-                </div>
-              </div>
-              <ul className="mt-3 divide-y divide-[#f6e1e1] rounded-md border border-[#f6e1e1] bg-white">
-                {review.blockingIssues.map((issue) => (
-                  <li
-                    className="flex flex-col gap-0.5 px-3.5 py-2.5 sm:flex-row sm:items-center sm:gap-3"
-                    key={issue.sourceRowNumber}>
-                    <span className="shrink-0 text-[12px] font-semibold text-[#14213c] tabular-nums sm:w-20">
-                      {formatImportLabel(labels.blockingRow, {
-                        row: number.format(issue.sourceRowNumber),
-                      })}
-                    </span>
-                    <span className="text-[12px] text-[#b42318]">
-                      {labels.issues[issue.code]}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                {summary.blockingErrorRowCount >
-                review.blockingIssues.length ? (
-                  <span className="text-[12px] text-[#71809a]">
-                    {formatImportLabel(labels.blockingMore, {
-                      count: number.format(
-                        summary.blockingErrorRowCount -
-                          review.blockingIssues.length,
-                      ),
-                    })}
-                  </span>
-                ) : (
-                  <span />
-                )}
-                <Link
-                  className={secondaryLink}
-                  href={importMappingHref(workspaceSlug, review.session.id)}>
-                  {labels.fixMapping}
-                </Link>
-              </div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
+        <div className="min-w-0 space-y-5">
+          {blocking > 0 ? (
+            <ImportFixRowsPanel
+              accountBlockedCount={review.accountBlockedRowCount}
+              blockingCount={blocking}
+              disabled={busy}
+              issues={review.blockingIssues}
+              labels={labels}
+              locale={locale}
+              onCorrect={onCorrect}
+              onRestoreSkipped={onRestoreSkipped}
+              onSkip={onSkip}
+              pendingKey={pendingKey}
+              skippedRowNumbers={review.skippedRowNumbers}
+            />
+          ) : review.skippedRowNumbers.length ? (
+            <div className="overflow-hidden rounded-md border border-[#e5eaf1] bg-white">
+              <SkippedSummary count={review.skippedRowNumbers.length} disabled={busy || updating} labels={labels} locale={locale} onRestore={onRestoreSkipped} />
+            </div>
+          ) : null}
+
+          {summary && toImport === 0 && blocking === 0 ? (
+            <section className="rounded-md border border-[#e5eaf1] bg-white px-5 py-8 text-center" role="status">
+              <h2 className="text-[15px] font-semibold text-[#14213c]">{labels.nothingTitle}</h2>
+              <p className="mx-auto mt-1 max-w-md text-[13px] leading-5 text-[#71809a]">{labels.nothingDescription}</p>
             </section>
           ) : null}
 
-          {summary && toImport === 0 && summary.blockingErrorRowCount === 0 ? (
-            <section
-              className="rounded-md border border-[#e5eaf1] bg-white px-5 py-8 text-center"
-              role="status">
-              <h2 className="text-[15px] font-semibold text-[#14213c]">
-                {labels.nothingTitle}
-              </h2>
-              <p className="mx-auto mt-1 max-w-md text-[13px] leading-5 text-[#71809a]">
-                {labels.nothingDescription}
-              </p>
-            </section>
+          {blocking === 0 ? (
+            <div className="flex items-start gap-2.5 rounded-md border border-[#dbe6fb] bg-[#f5f8ff] px-4 py-3.5">
+              <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-[#2563eb]" />
+              <div>
+                <p className="text-[12px] font-semibold text-[#1d3a8a]">{labels.safeTitle}</p>
+                <p className="mt-0.5 text-[12px] leading-5 text-[#53627b]">{labels.safeDescription}</p>
+              </div>
+            </div>
           ) : null}
         </div>
 
-        <div className="space-y-3">
-          <section
-            aria-labelledby={`${ids}-destination`}
-            className="rounded-md border border-[#e5eaf1] bg-white p-4 sm:p-5">
-            <div className="flex items-center justify-between gap-2">
-              <h2
-                className="flex items-center gap-2 text-[14px] font-semibold text-[#14213c]"
-                id={`${ids}-destination`}>
-                <Wallet aria-hidden className="size-4 text-[#0e8fb5]" />
-                {labels.accountTitle}
-              </h2>
-              {updating ? (
-                <span
-                  className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#2563eb]"
-                  role="status">
-                  <LoaderCircle
-                    aria-hidden
-                    className="size-3.5 animate-spin motion-reduce:animate-none"
-                  />
-                  {labels.updatingReview}
-                </span>
-              ) : null}
+        <div className="space-y-3 lg:sticky lg:top-6 lg:self-start">
+          <ImportAccountsPanel
+            accountLabels={accountLabels}
+            accounts={accounts}
+            disabled={busy || updating}
+            labels={labels}
+            locale={locale}
+            onAssign={onAssign}
+            onCreate={onCreateAccount}
+            pendingKey={pendingKey}
+            review={review}
+          />
+          {blocking > 0 ? (
+            <div className="flex items-start gap-2.5 rounded-md border border-[#dbe6fb] bg-[#f5f8ff] px-4 py-3.5">
+              <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-[#2563eb]" />
+              <div>
+                <p className="text-[12px] font-semibold text-[#1d3a8a]">{labels.safeTitle}</p>
+                <p className="mt-0.5 text-[12px] leading-5 text-[#53627b]">{labels.safeDescription}</p>
+              </div>
             </div>
-            <AccountSelect
-              accounts={review.accounts}
-              disabled={busy || updating}
-              hint={labels.accountHint}
-              id={`${ids}-account`}
-              label={labels.accountLabel}
-              onChange={(value) => value && onAccountChange?.(value)}
-              value={review.accountId}
-            />
-            {review.transferAccountRequired ? (
-              <AccountSelect
-                accounts={review.accounts.filter(
-                  (account) => account.id !== review.accountId,
-                )}
-                disabled={busy || updating}
-                hint={labels.transferAccountHint}
-                id={`${ids}-transfer`}
-                label={labels.transferAccountLabel}
-                onChange={(value) => onTransferAccountChange?.(value)}
-                placeholder={labels.transferAccountNone}
-                value={review.transferAccountId}
-              />
-            ) : null}
-          </section>
-          <div className="flex items-start gap-2.5 rounded-md border border-[#dbe6fb] bg-[#f5f8ff] px-4 py-3.5">
-            <ShieldCheck
-              aria-hidden
-              className="mt-0.5 size-4 shrink-0 text-[#2563eb]"
-            />
-            <div>
-              <p className="text-[12px] font-semibold text-[#1d3a8a]">
-                {labels.safeTitle}
-              </p>
-              <p className="mt-0.5 text-[12px] leading-5 text-[#53627b]">
-                {labels.safeDescription}
-              </p>
-            </div>
-          </div>
+          ) : null}
         </div>
       </div>
 
       {errorCode ? (
-        <p
-          className="mt-5 flex items-start gap-2 text-[12px] font-medium text-[#c2412d]"
-          id={errorId}
-          role="alert">
+        <p className="mt-5 flex items-start gap-2 text-[12px] font-medium text-[#c2412d]" id={errorId} role="alert">
           <CircleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           {labels.errors[errorCode]}
         </p>
       ) : null}
 
       <div className="mt-6 flex flex-col-reverse gap-3 border-t border-[#e5eaf1] pt-5 sm:flex-row sm:items-center sm:justify-between">
-        <Link
-          className={secondaryLink}
-          href={importMappingHref(workspaceSlug, review.session.id)}>
+        <Link className={secondaryLink} href={importMappingHref(workspaceSlug, review.session.id)}>
           <ArrowLeft aria-hidden className="size-4" />
           {labels.back}
         </Link>
@@ -618,76 +579,16 @@ export function ImportReviewScreen({
             disabled && "opacity-60 hover:bg-[#2563eb]",
           )}
           onClick={disabled ? undefined : onStart}
-          type="button">
-          {formatImportLabel(
-            plural.select(toImport) === "one"
-              ? labels.importActionOne
-              : labels.importActionOther,
-            {
-              count: number.format(toImport),
-            },
-          )}
+          type="button"
+        >
+          {formatImportLabel(plural.select(toImport) === "one" ? labels.importActionOne : labels.importActionOther, {
+            count: number.format(toImport),
+          })}
           <ArrowRight aria-hidden className="size-4" />
         </Button>
       </div>
+      <p aria-live="polite" className="sr-only" role="status">{announcement}</p>
     </main>
-  );
-}
-
-function AccountSelect({
-  id,
-  label,
-  hint,
-  accounts,
-  value,
-  disabled,
-  placeholder,
-  onChange,
-}: {
-  readonly id: string;
-  readonly label: string;
-  readonly hint: string;
-  readonly accounts: ImportReviewData["accounts"];
-  readonly value: string | null;
-  readonly disabled: boolean;
-  readonly placeholder?: string;
-  readonly onChange: (value: string | null) => void;
-}) {
-  return (
-    <div className="mt-4">
-      <label
-        className="block text-[12px] font-medium text-[#43516a]"
-        htmlFor={id}>
-        {label}
-      </label>
-      <div className="relative mt-1.5">
-        <select
-          aria-describedby={`${id}-hint`}
-          className="h-11 w-full appearance-none truncate rounded-md border border-[#dfe5ee] bg-white pr-8 pl-3 text-[13px] font-medium text-[#14213c] transition-colors hover:border-[#c7d2e1] focus-visible:border-[#2563eb] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563eb]/30 disabled:opacity-60 md:h-10"
-          disabled={disabled}
-          id={id}
-          onChange={(event) => onChange(event.currentTarget.value || null)}
-          value={value ?? ""}>
-          {placeholder ? <option value="">{placeholder}</option> : null}
-          {accounts.map((account) => (
-            <option
-              key={account.id}
-              value={
-                account.id
-              }>{`${account.name} · ${account.currency}`}</option>
-          ))}
-        </select>
-        <ChevronDown
-          aria-hidden
-          className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-[#71809a]"
-        />
-      </div>
-      <p
-        className="mt-1.5 text-[11px] leading-4 text-[#8a97ab]"
-        id={`${id}-hint`}>
-        {hint}
-      </p>
-    </div>
   );
 }
 

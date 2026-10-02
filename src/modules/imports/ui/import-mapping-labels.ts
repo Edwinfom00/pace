@@ -107,6 +107,7 @@ const en: ImportMappingLabels = {
     credit: "Credit",
     currency: "Currency",
     accountReference: "Account",
+    transferAccount: "Transfer destination",
     transactionType: "Type",
   },
   fieldHints: {
@@ -119,6 +120,7 @@ const en: ImportMappingLabels = {
     credit: "Money coming in",
     currency: "Currency code, such as XAF",
     accountReference: "Which account it belongs to",
+    transferAccount: "Where a transfer sends the money",
     transactionType: "Expense, income or transfer",
   },
   requiredGroups: { date: "Date", amount: "Amount", description: "Description" },
@@ -191,6 +193,7 @@ const fr: ImportMappingLabels = {
     credit: "Crédit",
     currency: "Devise",
     accountReference: "Compte",
+    transferAccount: "Compte de destination",
     transactionType: "Type",
   },
   fieldHints: {
@@ -203,6 +206,7 @@ const fr: ImportMappingLabels = {
     credit: "Argent qui entre",
     currency: "Code devise, par exemple XAF",
     accountReference: "Compte concerné",
+    transferAccount: "Où un virement envoie l'argent",
     transactionType: "Dépense, revenu ou virement",
   },
   requiredGroups: { date: "Date", amount: "Montant", description: "Description" },
@@ -275,6 +279,7 @@ const de: ImportMappingLabels = {
     credit: "Haben",
     currency: "Währung",
     accountReference: "Konto",
+    transferAccount: "Zielkonto",
     transactionType: "Typ",
   },
   fieldHints: {
@@ -287,6 +292,7 @@ const de: ImportMappingLabels = {
     credit: "Eingehendes Geld",
     currency: "Währungscode, z. B. XAF",
     accountReference: "Zu welchem Konto sie gehört",
+    transferAccount: "Wohin eine Überweisung das Geld schickt",
     transactionType: "Ausgabe, Einnahme oder Überweisung",
   },
   requiredGroups: { date: "Datum", amount: "Betrag", description: "Beschreibung" },

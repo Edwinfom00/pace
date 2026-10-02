@@ -24,6 +24,7 @@ export const IMPORT_FIELDS = [
   "credit",
   "currency",
   "accountReference",
+  "transferAccount",
   "transactionType",
 ] as const;
 export type ImportField = (typeof IMPORT_FIELDS)[number];
@@ -57,6 +58,9 @@ export interface ImportMapping {
   fallbackCurrency: string | null;
   defaultExpenseCategoryId: string;
   defaultIncomeCategoryId: string;
+  accountAssignments?: Record<string, string>;
+  transferAccountAssignments?: Record<string, string>;
+  skippedRowNumbers?: number[];
 }
 
 export interface ImportColumnMapping {
@@ -94,6 +98,9 @@ export interface NormalizedImportRow {
   description: string | null;
   merchantName: string | null;
   accountReference: string | null;
+  transferAccountReference?: string | null;
+  accountId?: string;
+  transferAccountId?: string | null;
   kind: ImportTransactionKind;
   amountMinor: string;
   currency: string;

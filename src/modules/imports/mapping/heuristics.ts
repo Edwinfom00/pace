@@ -19,6 +19,10 @@ const HEADER_ALIASES: Readonly<Record<ImportField, readonly string[]>> = {
     "account", "account number", "account name", "account reference", "konto", "iban", "reference account",
     "compte", "numero de compte", "cuenta",
   ],
+  transferAccount: [
+    "compte destination", "destination account", "to account", "target account", "account to", "destination",
+    "zielkonto", "gegenkonto", "empfangerkonto", "cuenta destino", "compte cible", "vers compte",
+  ],
   transactionType: ["type", "transaction type", "type operation", "art", "transactiontype", "operation type"],
 };
 

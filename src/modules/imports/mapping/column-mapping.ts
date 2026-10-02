@@ -12,7 +12,7 @@ export const IMPORT_REQUIRED_GROUPS = [
 
 export type ImportRequiredGroupId = (typeof IMPORT_REQUIRED_GROUPS)[number]["id"];
 
-export const IMPORT_OPTIONAL_FIELDS = ["transactionType", "accountReference", "currency"] as const satisfies readonly ImportField[];
+export const IMPORT_OPTIONAL_FIELDS = ["transactionType", "accountReference", "transferAccount", "currency"] as const satisfies readonly ImportField[];
 
 export const IMPORT_COLUMN_IGNORED = "IGNORE";
 export type ImportColumnTarget = ImportField | typeof IMPORT_COLUMN_IGNORED | null;

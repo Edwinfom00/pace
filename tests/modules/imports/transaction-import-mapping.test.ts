@@ -123,7 +123,7 @@ test("detected columns: M7 confident matches are pre-mapped with real samples; t
     ["Montant", "amount", ["500000", "-10000"]],
     ["Type", "transactionType", ["Revenu", "Dépense"]],
     ["Compte", "accountReference", ["Main Account", "Mobile Money MTN"]],
-    ["Compte destination", null, ["Épargne"]],
+    ["Compte destination", "transferAccount", ["Épargne"]],
     ["Catégorie", null, ["Salaire", "Factures & Services"]],
     ["Référence", null, ["SAL-OCT-001", "MTN-NET-1001"]],
     ["Note", null, ["Salaire octobre", "Forfait internet"]],
@@ -219,6 +219,7 @@ test("manual remap: choosing a taken field moves it, statuses update, and the co
     amount: "Montant",
     transactionType: "Type",
     accountReference: "Compte",
+    transferAccount: "Compte destination",
     description: "Note",
   });
   assert.deepEqual(initialColumnAssignments(reloaded.columns, reloaded.saved), state.assignments);

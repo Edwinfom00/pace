@@ -67,6 +67,7 @@ export class InMemoryImportRepository implements ImportRepository {
       mapping: input.mapping,
       stagedRows: input.stagedRows,
       preview: input.preview,
+      parsedRows: input.parsedRows ?? current.parsedRows,
       status: "READY_FOR_PREVIEW",
       failureCode: null,
       failureMessage: null,

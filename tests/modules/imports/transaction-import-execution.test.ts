@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
 import { createElement } from "react";
@@ -7,10 +9,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AuthorizationError, DomainConflictError, NotFoundError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
 import { isSidebarPathActive } from "@/components/pace/layout/sidebar-navigation";
-import { DASHBOARD_LANGUAGES } from "@/i18n/dashboard-messages";
+import { DASHBOARD_LANGUAGES, getDashboardLabels } from "@/i18n/dashboard-messages";
+import { toCurrencyCode } from "@/money/currency";
 import { FinancialInboxService } from "@/modules/financial-inbox/financial-inbox-service";
 import type { ImportField } from "@/modules/imports/domain";
 import { ImportService } from "@/modules/imports/import-service";
+import { parseLocalizedNumber } from "@/modules/imports/normalization";
 import { IMPORT_BLOCKING_ISSUE_CODES, inferImportDateFormat } from "@/modules/imports/review";
 import {
   canStartImport,
@@ -24,6 +28,7 @@ import {
   IMPORT_EXECUTION_ERROR_CODES,
   type ImportExecutionLabels,
 } from "@/modules/imports/ui/import-execution-labels";
+import { importAccountLabels } from "@/modules/imports/ui/import-execution-labels";
 import { importPreviewHref } from "@/modules/imports/ui/import-mapping-flow";
 import {
   ImportExecutionScreen,
@@ -32,6 +37,7 @@ import {
 } from "@/modules/imports/ui/views/import-review-view";
 import { LedgerService } from "@/modules/ledger/ledger-service";
 import { calculateIncomeAndSpendingTotals } from "@/modules/ledger/totals";
+import { getTransactionUiLabels } from "@/modules/transactions/ui/transaction-ui-labels";
 
 import { InMemoryFinancialInboxRepository } from "../../support/in-memory-financial-inbox-repository";
 import { InMemoryImportRepository } from "../../support/in-memory-import-repository";
@@ -46,7 +52,7 @@ const workspaceTwo = "workspace-two";
 const en = getImportExecutionLabels("en");
 const BASIC_COLUMNS: Partial<Record<ImportField, string>> = { transactionDate: "Date", description: "Description", amount: "Amount" };
 
-async function createFixture() {
+async function createFixture({ currency = "USD", locale = "en-US" }: { currency?: string; locale?: string } = {}) {
   const importsRecords = new InMemoryImportRepository();
   const ledgerRecords = new InMemoryLedgerRepository();
   const workspaces = new InMemoryWorkspaceRepository();
@@ -54,7 +60,7 @@ async function createFixture() {
   for (const workspaceId of [workspaceOne, workspaceTwo]) {
     await workspaces.createWorkspaceWithOwner({
       workspace: { id: workspaceId, name: workspaceId, slug: workspaceId, type: "PERSONAL", createdByUserId: owner.userId, createdAt: new Date(), updatedAt: new Date() },
-      preferences: { currency: "USD", locale: "en-US", timezone: "UTC", weekStartsOn: 1 },
+      preferences: { currency, locale, timezone: "UTC", weekStartsOn: 1 },
       owner: { workspaceId, userId: owner.userId, role: "OWNER", invitedByUserId: null, joinedAt: new Date() },
       initialAccount: { id: `${workspaceId}-main`, workspaceId, name: "Main account", type: "CHECKING", currency: "USD", createdByUserId: owner.userId },
     });
@@ -62,9 +68,9 @@ async function createFixture() {
   workspaces.addMembership({ workspaceId: workspaceOne, userId: member.userId, role: "MEMBER", invitedByUserId: null, joinedAt: new Date() });
   workspaces.addMembership({ workspaceId: workspaceOne, userId: viewer.userId, role: "VIEWER", invitedByUserId: null, joinedAt: new Date() });
   const ledger = new LedgerService(ledgerRecords, workspaces);
-  const main = await ledger.createAccount(owner, workspaceOne, { name: "Main", type: "CHECKING", currency: "USD" });
-  const savings = await ledger.createAccount(owner, workspaceOne, { name: "Savings", type: "CHECKING", currency: "USD" });
-  const otherWorkspaceAccount = await ledger.createAccount(owner, workspaceTwo, { name: "Other", type: "CHECKING", currency: "USD" });
+  const main = await ledger.createAccount(owner, workspaceOne, { name: "Main", type: "CHECKING", currency });
+  const savings = await ledger.createAccount(owner, workspaceOne, { name: "Savings", type: "CHECKING", currency });
+  const otherWorkspaceAccount = await ledger.createAccount(owner, workspaceTwo, { name: "Other", type: "CHECKING", currency });
   const inbox = new FinancialInboxService(inboxRecords, ledgerRecords, workspaces);
   const failingAmounts = new Set<string>();
   const createTransaction = ledger.createTransaction.bind(ledger);
@@ -108,6 +114,7 @@ test("successful import: staged rows become canonical POSTED transactions throug
     inboxRowCount: 0,
     exactDuplicateRowCount: 0,
     blockingErrorRowCount: 0,
+    skippedRowCount: 0,
     currency: "USD",
     dateRange: { start: "2026-09-01", end: "2026-09-03" },
   });
@@ -271,7 +278,8 @@ test("canonical effects: balances, reporting totals and transfers move only thro
   const review = await fixture.stage(csv, { ...BASIC_COLUMNS, transactionType: "Type" });
   assert.equal(review.transferAccountRequired, true);
   assert.equal(review.summary?.blockingErrorRowCount, 1);
-  assert.deepEqual(review.blockingIssues, [{ sourceRowNumber: 4, code: "TRANSFER_ACCOUNT_REQUIRED" }]);
+  assert.deepEqual(review.blockingIssues, []);
+  assert.equal(review.accountBlockedRowCount, 1);
   assert.equal(canStartImport(review), false);
 
   const fixed = await fixture.imports.updateImportReview(owner, workspaceOne, review.session.id, { accountId: mainId, transferAccountId: fixture.savings.id });
@@ -351,25 +359,36 @@ test("i18n and mobile: copy is complete in EN/FR/DE and the review stacks for ph
 
   const fixture = await createFixture();
   const review = await fixture.stage(statement("2026-09-01,Groceries,-42.10\n2026-09-02,Salary,1500.00"));
-  const render = (labels: ImportExecutionLabels, locale: string) =>
-    renderToStaticMarkup(createElement(ImportReviewScreen, { labels, locale, review, workspaceSlug: "house", errorCode: null, busy: false, updating: false }));
+  const accounts = review.accounts.map(({ id, name, currency }) => ({ id, name, currency: toCurrencyCode(currency) }));
+  const render = (labels: ImportExecutionLabels, locale: string, language: "en" | "fr" | "de" = "en") =>
+    renderToStaticMarkup(createElement(ImportReviewScreen, {
+      labels,
+      accountLabels: importAccountLabels(getTransactionUiLabels(getDashboardLabels(language))),
+      locale,
+      review,
+      accounts,
+      workspaceSlug: "house",
+      errorCode: null,
+      busy: false,
+    }));
 
-  const french = render(getImportExecutionLabels("fr"), "fr-FR");
+  const french = render(getImportExecutionLabels("fr"), "fr-FR", "fr");
   assert.match(french, /Vérifier l&#x27;import/);
   assert.match(french, /Importer 2 transactions/);
   assert.match(french, /Doublons ignorés/);
   assert.match(french, /Importer dans/);
-  const german = render(getImportExecutionLabels("de"), "de-DE");
+  const german = render(getImportExecutionLabels("de"), "de-DE", "de");
   assert.match(german, /Import prüfen/);
   assert.match(german, /2 Transaktionen importieren/);
   assert.match(renderResult(getImportExecutionLabels("de"), { importedRowCount: 1, skippedExactDuplicateRowCount: 0, failedRowCount: 0, deferredPipelineCount: 0, completedAt: null }, false), /Inbox öffnen/);
 
   const markup = render(en, "en-US");
   assert.match(markup, /<ul class="mt-3 grid grid-cols-2 gap-3[^"]*xl:grid-cols-4/);
-  assert.match(markup, /class="grid gap-5 lg:grid-cols-\[minmax\(0,1fr\)_minmax\(260px,340px\)\]"/);
+  assert.match(markup, /class="mt-5 grid gap-5 lg:grid-cols-\[minmax\(0,1fr\)_minmax\(300px,380px\)\]"/);
   assert.match(markup, /flex flex-col-reverse gap-3 border-t[^"]*sm:flex-row/);
-  assert.match(markup, /<label [^>]*for="[^"]+-account"[^>]*>Import into<\/label>/);
-  assert.match(markup, /<select aria-describedby="[^"]+-account-hint" class="h-11[^"]*md:h-10"/);
+  assert.doesNotMatch(markup, /<select/);
+  assert.match(markup, /role="combobox"[^>]*aria-label="Import into: Main"|aria-label="Import into: Main"[^>]*role="combobox"/);
+  assert.match(markup, /class="flex h-11 w-full items-center/);
   assert.match(markup, /aria-disabled="false"[^>]*>Import 2 transactions/);
   assert.match(markup, /href="\/w\/house\/transactions\/import\/[^"]+"[^>]*>.*Back<\/a>/s);
   assert.doesNotMatch(markup, /Remember this format/);
@@ -378,3 +397,136 @@ test("i18n and mobile: copy is complete in EN/FR/DE and the review stacks for ph
 function renderResult(labels: ImportExecutionLabels, result: Parameters<typeof ImportResultScreen>[0]["result"], partial: boolean) {
   return renderToStaticMarkup(createElement(ImportResultScreen, { labels, locale: "en-US", workspaceSlug: "house", result, partial, errorCode: null, retrying: false }));
 }
+
+const FIXTURE_COLUMNS: Partial<Record<ImportField, string>> = {
+  transactionDate: "Date opération",
+  description: "Libellé",
+  amount: "Montant",
+  transactionType: "Type",
+  accountReference: "Compte",
+  transferAccount: "Compte destination",
+};
+
+test("amounts with stray letters are blocking errors instead of silently becoming a different number", () => {
+  assert.equal(parseLocalizedNumber("12OOO", "XAF", "AUTO"), null);
+  assert.equal(parseLocalizedNumber("abc", "XAF", "AUTO"), null);
+  assert.equal(parseLocalizedNumber("5 000 FCFA", "XAF", "AUTO")?.minor, 5000n);
+  assert.equal(parseLocalizedNumber("XAF 5000", "XAF", "AUTO")?.minor, 5000n);
+  assert.equal(parseLocalizedNumber("€12.50", "EUR", "AUTO")?.minor, 1250n);
+  assert.equal(parseLocalizedNumber("(45.00)", "USD", "AUTO")?.sign, -1);
+});
+
+test("resolve in place: file accounts are matched or created, bad cells corrected, rows skipped, and each row lands in its own account", async () => {
+  const fixture = await createFixture({ currency: "XAF", locale: "fr-CM" });
+  const orange = await fixture.ledger.createAccount(owner, workspaceOne, { name: "Orange Money", type: "MOBILE_MONEY", currency: "XAF" });
+  const bytes = new Uint8Array(readFileSync(join(__dirname, "../../fixtures/imports/pace_import_test_october_2026.xlsx")));
+  const uploaded = await fixture.imports.upload(owner, workspaceOne, {
+    name: "pace_import_test_october_2026.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    bytes,
+  });
+  const id = uploaded.session.id;
+  await fixture.imports.confirmColumnMapping(owner, workspaceOne, id, {
+    fileChecksum: uploaded.session.fileChecksum,
+    columns: FIXTURE_COLUMNS,
+    ignoredHeaders: ["Catégorie", "Référence", "Note"],
+  });
+
+  const review = await fixture.imports.getImportReview(owner, workspaceOne, id);
+  assert.equal(review.accountColumnMapped, true);
+  assert.deepEqual(
+    review.sourceAccounts.map(({ label, accountId, matchedByName, suggestion }) => ({ label, accountId, matchedByName, type: suggestion.type, currency: suggestion.currency })),
+    [
+      { label: "Main Account", accountId: null, matchedByName: false, type: "CHECKING", currency: "XAF" },
+      { label: "Mobile Money MTN", accountId: null, matchedByName: false, type: "MOBILE_MONEY", currency: "XAF" },
+      { label: "Orange Money", accountId: orange.id, matchedByName: true, type: "MOBILE_MONEY", currency: "XAF" },
+    ],
+  );
+  assert.deepEqual(review.destinationAccounts.map(({ label, rowCount, suggestion }) => ({ label, rowCount, type: suggestion.type })), [
+    { label: "Épargne", rowCount: 1, type: "SAVINGS" },
+  ]);
+  const issueFor = (view: typeof review, row: number) => view.blockingIssues.find((issue) => issue.sourceRowNumber === row);
+  assert.deepEqual(issueFor(review, 28), { sourceRowNumber: 28, code: "INVALID_DATE", field: "transactionDate", value: "32/10/2026", description: "Boulangerie Akwa", resolvedByAccount: false });
+  assert.deepEqual(issueFor(review, 29), { sourceRowNumber: 29, code: "INVALID_AMOUNT", field: "amount", value: "12OOO", description: "Supermarché Casino", resolvedByAccount: false });
+  assert.equal(issueFor(review, 2), undefined);
+  assert.equal(review.accountBlockedRowCount, 16);
+  assert.deepEqual(review.blockingIssues.map((issue) => issue.sourceRowNumber), [28, 29]);
+  assert.equal(canStartImport(review), false);
+
+  const markup = renderToStaticMarkup(createElement(ImportReviewScreen, {
+    labels: getImportExecutionLabels("fr"),
+    accountLabels: importAccountLabels(getTransactionUiLabels(getDashboardLabels("fr"))),
+    locale: "fr-CM",
+    review,
+    accounts: review.accounts.map(({ id: accountId, name, currency }) => ({ id: accountId, name, currency: toCurrencyCode(currency) })),
+    workspaceSlug: "house",
+    errorCode: null,
+    busy: false,
+    onCreateAccount: () => undefined,
+  }));
+  assert.match(markup, /Comptes dans votre fichier/);
+  assert.match(markup, /data-file-account="orange money" data-state="assigned"[\s\S]*?Associé par le nom/);
+  assert.match(markup, /data-file-account="main account" data-state="missing"[\s\S]*?Créer « Main Account »/);
+  assert.match(markup, /data-account-blocked="16"[\s\S]*?16 lignes attendent leur compte/);
+  assert.doesNotMatch(markup, /data-fix-row="2"/);
+  assert.match(markup, /Destinations des virements[\s\S]*?Créer « Épargne »/);
+  assert.match(markup, /data-fix-row="28"[\s\S]*?type="date" value=""[\s\S]*?Dans le fichier : 32\/10\/2026/);
+  assert.match(markup, /data-fix-row="29"[\s\S]*?inputMode="decimal"[\s\S]*?value="12000"/);
+  assert.doesNotMatch(markup, /<select/);
+
+  const main = await fixture.ledger.createAccount(owner, workspaceOne, { name: "Main Account", type: "CHECKING", currency: "XAF" });
+  const mtn = await fixture.ledger.createAccount(owner, workspaceOne, { name: "Mobile Money MTN", type: "MOBILE_MONEY", currency: "XAF" });
+  const epargne = await fixture.ledger.createAccount(owner, workspaceOne, { name: "Épargne", type: "SAVINGS", currency: "XAF" });
+  await fixture.imports.updateImportReview(owner, workspaceOne, id, {
+    accountId: review.accountId,
+    transferAccountId: null,
+    accountAssignments: { "main account": main.id, "mobile money mtn": mtn.id },
+  });
+  await fixture.imports.updateImportReview(owner, workspaceOne, id, {
+    accountId: review.accountId,
+    transferAccountId: null,
+    transferAccountAssignments: { epargne: epargne.id },
+  });
+  const corrected = await fixture.imports.updateImportReview(owner, workspaceOne, id, {
+    accountId: review.accountId,
+    transferAccountId: null,
+    corrections: [
+      { sourceRowNumber: 28, field: "transactionDate", value: "2026-10-22" },
+      { sourceRowNumber: 29, field: "amount", value: "-12000" },
+    ],
+  });
+  assert.equal(corrected.summary?.blockingErrorRowCount, 0);
+  assert.equal(corrected.sourceAccounts.every((account) => account.accountId), true);
+  assert.equal(corrected.destinationAccounts[0]?.accountId, epargne.id);
+  assert.equal(corrected.summary?.exactDuplicateRowCount, 1);
+  assert.equal(corrected.summary?.toImportRowCount, 29);
+
+  const skipped = await fixture.imports.updateImportReview(owner, workspaceOne, id, { accountId: review.accountId, transferAccountId: null, skipRows: [31] });
+  assert.deepEqual(skipped.skippedRowNumbers, [31]);
+  assert.equal(skipped.summary?.toImportRowCount, 28);
+  assert.equal(skipped.summary?.skippedRowCount, 1);
+  const restored = await fixture.imports.updateImportReview(owner, workspaceOne, id, { accountId: review.accountId, transferAccountId: null, restoreRows: [31] });
+  assert.equal(restored.summary?.toImportRowCount, 29);
+  await assert.rejects(
+    fixture.imports.updateImportReview(owner, workspaceOne, id, {
+      accountId: review.accountId,
+      transferAccountId: null,
+      corrections: [{ sourceRowNumber: 28, field: "currency", value: "EUR" }],
+    }),
+    (error: unknown) => error instanceof DomainConflictError && error.code === "INVALID_ROW_CORRECTION",
+  );
+
+  const completed = await fixture.run(id);
+  assert.equal(completed.status, "COMPLETED");
+  assert.equal(completed.result?.importedRowCount, 29);
+  const transactions = await fixture.ledgerRecords.listTransactions(workspaceOne);
+  const transfer = transactions.find((transaction) => transaction.kind === "TRANSFER");
+  assert.equal(transfer?.accountId, main.id);
+  assert.equal(transfer?.transferAccountId, epargne.id);
+  assert.equal((await fixture.ledgerRecords.getAccountBalance(workspaceOne, epargne.id))?.currentBalanceMinor, 50_000n);
+  assert.equal((await fixture.ledgerRecords.getAccountBalance(workspaceOne, mtn.id))?.currentBalanceMinor, -20_000n);
+  assert.equal(transactions.filter((transaction) => transaction.accountId === orange.id).length, 13);
+  const audit = await fixture.importsRecords.listAudit(workspaceOne, id);
+  const corrections = audit.find((entry) => entry.event === "ROWS_CORRECTED");
+  assert.deepEqual(corrections?.metadata, { corrections: [{ sourceRowNumber: 28, field: "transactionDate" }, { sourceRowNumber: 29, field: "amount" }] });
+});

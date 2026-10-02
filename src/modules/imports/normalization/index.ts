@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 
-import { getCurrencyExponent, toCurrencyCode } from "@/money/currency";
+import {
+  getCurrencyExponent,
+  isCurrencyCode,
+  toCurrencyCode,
+} from "@/money/currency";
 import { parseOccurredAt } from "@/modules/agent-actions/transaction-draft";
 import { normalizeMerchantName } from "@/modules/ledger/domain";
 
@@ -13,14 +17,35 @@ import type {
 } from "../domain";
 
 const MAX_MINOR = 9_223_372_036_854_775_807n;
-const TRANSFER_TERMS = /\b(transfer|internal transfer|virement|uberweisung|überweisung|traspaso)\b/i;
-const DEBIT_TERMS = /\b(debit|debit card|withdrawal|charge|outflow|soll|belastung|debito|débito)\b/i;
-const CREDIT_TERMS = /\b(credit|deposit|inflow|haben|gutschrift|credito|crédito)\b/i;
+const TRANSFER_TERMS =
+  /\b(transfer|internal transfer|virement|uberweisung|überweisung|traspaso)\b/i;
+const DEBIT_TERMS =
+  /\b(debit|debit card|withdrawal|charge|outflow|soll|belastung|debito|débito)\b/i;
+const CREDIT_TERMS =
+  /\b(credit|deposit|inflow|haben|gutschrift|credito|crédito)\b/i;
 
 export interface NormalizationContext {
   workspaceId: string;
   fallbackCurrency: string | null;
   timezone: string;
+  accountCurrencies?: Readonly<Record<string, string>>;
+}
+
+export function importAccountKey(label: string): string {
+  return label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function assignedAccount(
+  assignments: Readonly<Record<string, string>> | undefined,
+  reference: string | null,
+): string | null {
+  if (!assignments || !reference) return null;
+  return assignments[importAccountKey(reference)] ?? null;
 }
 
 export function normalizeImportRows(
@@ -39,22 +64,73 @@ export function normalizeImportRow(
   const issues: ImportIssue[] = [];
   const value = (field: keyof ImportMapping["columns"]) => {
     const header = mapping.columns[field];
-    return header ? row.values[header]?.trim() ?? "" : "";
+    return header ? (row.values[header]?.trim() ?? "") : "";
   };
 
   const dateText = value("transactionDate") || value("bookingDate");
-  const occurredAt = parseStatementDate(dateText, mapping.dateFormat, context.timezone, issues);
+  const occurredAt = parseStatementDate(
+    dateText,
+    mapping.dateFormat,
+    context.timezone,
+    issues,
+  );
   const bookingAt = value("bookingDate")
-    ? parseStatementDate(value("bookingDate"), mapping.dateFormat, context.timezone, [])
+    ? parseStatementDate(
+        value("bookingDate"),
+        mapping.dateFormat,
+        context.timezone,
+        [],
+      )
     : null;
-  const description = cleanText(value("description"), 1_000, "description", issues);
-  const merchantName = cleanText(value("merchant") || description || value("accountReference"), 160, "merchant", issues);
-  const accountReference = cleanText(value("accountReference"), 180, "account reference", issues);
-  const currency = resolveCurrency(value("currency"), mapping.fallbackCurrency ?? context.fallbackCurrency, issues);
-  if (currency && context.fallbackCurrency && currency !== context.fallbackCurrency) {
+  const description = cleanText(
+    value("description"),
+    1_000,
+    "description",
+    issues,
+  );
+  const merchantName = cleanText(
+    value("merchant") || description || value("accountReference"),
+    160,
+    "merchant",
+    issues,
+  );
+  const accountReference = cleanText(
+    value("accountReference"),
+    180,
+    "account reference",
+    issues,
+  );
+  const transferReference = cleanText(
+    value("transferAccount"),
+    180,
+    "transfer account",
+    issues,
+  );
+  const routedAccountId = assignedAccount(mapping.accountAssignments, accountReference);
+  if (accountReference && mapping.accountAssignments && !routedAccountId) {
+    issues.push({
+      code: "ACCOUNT_UNASSIGNED",
+      message: "Choose or create the Pace account for this file account.",
+      severity: "ERROR",
+      field: "accountReference",
+    });
+  }
+  const accountId = routedAccountId ?? mapping.accountId;
+  const accountCurrency = context.accountCurrencies?.[accountId] ?? context.fallbackCurrency;
+  const currency = resolveCurrency(
+    value("currency"),
+    context.accountCurrencies?.[accountId] ?? mapping.fallbackCurrency ?? context.fallbackCurrency,
+    issues,
+  );
+  if (
+    currency &&
+    accountCurrency &&
+    currency !== accountCurrency
+  ) {
     issues.push({
       code: "ACCOUNT_CURRENCY_MISMATCH",
-      message: "The row currency does not match the selected Pace account. Pace does not convert currencies during import.",
+      message:
+        "The row currency does not match the selected Pace account. Pace does not convert currencies during import.",
       severity: "ERROR",
       field: "currency",
     });
@@ -62,17 +138,37 @@ export function normalizeImportRow(
   const amount = parseAmountForRow(row, mapping, currency, issues);
   const typeText = value("transactionType");
   const kind = determineKind(amount, typeText, mapping, issues);
-  const transferCandidate = kind === "TRANSFER" || TRANSFER_TERMS.test(`${description ?? ""} ${merchantName ?? ""}`);
+  const transferCandidate =
+    kind === "TRANSFER" ||
+    TRANSFER_TERMS.test(`${description ?? ""} ${merchantName ?? ""}`);
 
-  if (kind === "TRANSFER" && !mapping.transferAccountId) {
+  const transferAccountId = kind === "TRANSFER"
+    ? assignedAccount(mapping.transferAccountAssignments, transferReference) ?? mapping.transferAccountId
+    : null;
+  if (kind === "TRANSFER" && !transferAccountId) {
     issues.push({
       code: "TRANSFER_ACCOUNT_REQUIRED",
-      message: "A destination Pace account is required for an identified transfer.",
+      message:
+        "A destination Pace account is required for an identified transfer.",
       severity: "ERROR",
       field: "transactionType",
     });
   }
-  if (kind === "TRANSFER" && mapping.transferAccountId === mapping.accountId) {
+  if (
+    kind === "TRANSFER" &&
+    transferAccountId &&
+    accountCurrency &&
+    context.accountCurrencies?.[transferAccountId] &&
+    context.accountCurrencies[transferAccountId] !== accountCurrency
+  ) {
+    issues.push({
+      code: "TRANSFER_CURRENCY_MISMATCH",
+      message: "Imported transfers require two accounts with the same currency.",
+      severity: "ERROR",
+      field: "transferAccount",
+    });
+  }
+  if (kind === "TRANSFER" && transferAccountId === accountId) {
     issues.push({
       code: "TRANSFER_SAME_ACCOUNT",
       message: "A transfer must use a different destination account.",
@@ -81,21 +177,27 @@ export function normalizeImportRow(
     });
   }
   if (!description && !merchantName) {
-    issues.push({ code: "MISSING_DESCRIPTION", message: "A description or merchant is required.", severity: "ERROR", field: "description" });
+    issues.push({
+      code: "MISSING_DESCRIPTION",
+      message: "A description or merchant is required.",
+      severity: "ERROR",
+      field: "description",
+    });
   }
 
   const amountMinor = amount ? amount.minor.toString() : "0";
-  const fingerprint = occurredAt && amount && currency
-    ? importTransactionFingerprint({
-        workspaceId: context.workspaceId,
-        accountId: mapping.accountId,
-        occurredAt,
-        amountMinor,
-        currency,
-        kind,
-        description: description ?? merchantName ?? "",
-      })
-    : `invalid:${row.rowNumber}`;
+  const fingerprint =
+    occurredAt && amount && currency
+      ? importTransactionFingerprint({
+          workspaceId: context.workspaceId,
+          accountId,
+          occurredAt,
+          amountMinor,
+          currency,
+          kind,
+          description: description ?? merchantName ?? "",
+        })
+      : `invalid:${row.rowNumber}`;
   const hasErrors = issues.some((issue) => issue.severity === "ERROR");
 
   return {
@@ -105,6 +207,9 @@ export function normalizeImportRow(
     description,
     merchantName,
     accountReference,
+    transferAccountReference: transferReference,
+    accountId,
+    transferAccountId,
     kind,
     amountMinor,
     currency: currency ?? "",
@@ -124,7 +229,12 @@ function parseStatementDate(
 ): string | null {
   const source = value.trim();
   if (!source) {
-    issues.push({ code: "MISSING_DATE", message: "A transaction date is required.", severity: "ERROR", field: "transactionDate" });
+    issues.push({
+      code: "MISSING_DATE",
+      message: "A transaction date is required.",
+      severity: "ERROR",
+      field: "transactionDate",
+    });
     return null;
   }
   const iso = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s|T|$)/.exec(source);
@@ -135,12 +245,26 @@ function parseStatementDate(
   const dateKey = `${String(parts.year).padStart(4, "0")}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
   const occurredAt = parseOccurredAt(dateKey, timezone, new Date());
   if (!occurredAt) {
-    issues.push({ code: "INVALID_DATE", message: "The transaction date is invalid.", severity: "ERROR", field: "transactionDate" });
+    issues.push({
+      code: "INVALID_DATE",
+      message: "The transaction date is invalid.",
+      severity: "ERROR",
+      field: "transactionDate",
+    });
     return null;
   }
   const check = new Date(`${dateKey}T12:00:00.000Z`);
-  if (check.getUTCFullYear() !== parts.year || check.getUTCMonth() + 1 !== parts.month || check.getUTCDate() !== parts.day) {
-    issues.push({ code: "INVALID_DATE", message: "The transaction date is invalid.", severity: "ERROR", field: "transactionDate" });
+  if (
+    check.getUTCFullYear() !== parts.year ||
+    check.getUTCMonth() + 1 !== parts.month ||
+    check.getUTCDate() !== parts.day
+  ) {
+    issues.push({
+      code: "INVALID_DATE",
+      message: "The transaction date is invalid.",
+      severity: "ERROR",
+      field: "transactionDate",
+    });
     return null;
   }
   return occurredAt;
@@ -153,7 +277,12 @@ function parseDayFirstOrMonthFirst(
 ): { year: number; month: number; day: number } | null {
   const match = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?:\s|$)/.exec(source);
   if (!match) {
-    issues.push({ code: "INVALID_DATE", message: "The transaction date format is not supported.", severity: "ERROR", field: "transactionDate" });
+    issues.push({
+      code: "INVALID_DATE",
+      message: "The transaction date format is not supported.",
+      severity: "ERROR",
+      field: "transactionDate",
+    });
     return null;
   }
   const first = Number(match[1]);
@@ -165,25 +294,42 @@ function parseDayFirstOrMonthFirst(
   if (!selected || selected === "YMD") {
     issues.push({
       code: "AMBIGUOUS_DATE",
-      message: "Choose a day/month or month/day date format for ambiguous dates.",
+      message:
+        "Choose a day/month or month/day date format for ambiguous dates.",
       severity: "ERROR",
       field: "transactionDate",
     });
     return null;
   }
-  return selected === "DMY" ? { year, month: second, day: first } : { year, month: first, day: second };
+  return selected === "DMY"
+    ? { year, month: second, day: first }
+    : { year, month: first, day: second };
 }
 
-function resolveCurrency(value: string, fallback: string | null, issues: ImportIssue[]): string | null {
+function resolveCurrency(
+  value: string,
+  fallback: string | null,
+  issues: ImportIssue[],
+): string | null {
   const candidate = (value || fallback || "").trim().toUpperCase();
   if (!candidate) {
-    issues.push({ code: "MISSING_CURRENCY", message: "No row currency or deterministic fallback is available.", severity: "ERROR", field: "currency" });
+    issues.push({
+      code: "MISSING_CURRENCY",
+      message: "No row currency or deterministic fallback is available.",
+      severity: "ERROR",
+      field: "currency",
+    });
     return null;
   }
   try {
     return toCurrencyCode(candidate);
   } catch {
-    issues.push({ code: "INVALID_CURRENCY", message: "The row currency must be a valid ISO-4217 code.", severity: "ERROR", field: "currency" });
+    issues.push({
+      code: "INVALID_CURRENCY",
+      message: "The row currency must be a valid ISO-4217 code.",
+      severity: "ERROR",
+      field: "currency",
+    });
     return null;
   }
 }
@@ -197,29 +343,57 @@ function parseAmountForRow(
   if (!currency) return null;
   const value = (field: "amount" | "debit" | "credit") => {
     const header = mapping.columns[field];
-    return header ? row.values[header]?.trim() ?? "" : "";
+    return header ? (row.values[header]?.trim() ?? "") : "";
   };
   if (mapping.amountMode === "SIGNED") {
-    const parsed = parseLocalizedNumber(value("amount"), currency, mapping.decimalSeparator);
+    const parsed = parseLocalizedNumber(
+      value("amount"),
+      currency,
+      mapping.decimalSeparator,
+    );
     if (!parsed) {
-      issues.push({ code: "INVALID_AMOUNT", message: "The signed amount could not be parsed.", severity: "ERROR", field: "amount" });
+      issues.push({
+        code: "INVALID_AMOUNT",
+        message: "The signed amount could not be parsed.",
+        severity: "ERROR",
+        field: "amount",
+      });
       return null;
     }
     return parsed;
   }
 
-  const debit = value("debit") ? parseLocalizedNumber(value("debit"), currency, mapping.decimalSeparator) : null;
-  const credit = value("credit") ? parseLocalizedNumber(value("credit"), currency, mapping.decimalSeparator) : null;
-  if (value("debit") && !debit || value("credit") && !credit) {
-    issues.push({ code: "INVALID_AMOUNT", message: "The debit or credit amount could not be parsed.", severity: "ERROR", field: "debit" });
+  const debit = value("debit")
+    ? parseLocalizedNumber(value("debit"), currency, mapping.decimalSeparator)
+    : null;
+  const credit = value("credit")
+    ? parseLocalizedNumber(value("credit"), currency, mapping.decimalSeparator)
+    : null;
+  if ((value("debit") && !debit) || (value("credit") && !credit)) {
+    issues.push({
+      code: "INVALID_AMOUNT",
+      message: "The debit or credit amount could not be parsed.",
+      severity: "ERROR",
+      field: "debit",
+    });
     return null;
   }
   if (debit && credit) {
-    issues.push({ code: "BOTH_DEBIT_AND_CREDIT", message: "A row cannot contain both a debit and a credit amount.", severity: "ERROR", field: "debit" });
+    issues.push({
+      code: "BOTH_DEBIT_AND_CREDIT",
+      message: "A row cannot contain both a debit and a credit amount.",
+      severity: "ERROR",
+      field: "debit",
+    });
     return null;
   }
   if (!debit && !credit) {
-    issues.push({ code: "MISSING_AMOUNT", message: "A debit or credit amount is required.", severity: "ERROR", field: "debit" });
+    issues.push({
+      code: "MISSING_AMOUNT",
+      message: "A debit or credit amount is required.",
+      severity: "ERROR",
+      field: "debit",
+    });
     return null;
   }
   const chosen = debit ?? credit;
@@ -237,13 +411,20 @@ function determineKind(
   if (DEBIT_TERMS.test(typeText)) return "EXPENSE";
   if (CREDIT_TERMS.test(typeText)) return "INCOME";
   if (!amount) return "EXPENSE";
-  if (mapping.amountMode === "DEBIT_CREDIT") return amount.sign < 0 ? "EXPENSE" : "INCOME";
+  if (mapping.amountMode === "DEBIT_CREDIT")
+    return amount.sign < 0 ? "EXPENSE" : "INCOME";
   if (!mapping.signedAmountDirection) {
-    issues.push({ code: "SIGNED_DIRECTION_REQUIRED", message: "Choose the signed amount convention before importing.", severity: "ERROR", field: "amount" });
+    issues.push({
+      code: "SIGNED_DIRECTION_REQUIRED",
+      message: "Choose the signed amount convention before importing.",
+      severity: "ERROR",
+      field: "amount",
+    });
     return "EXPENSE";
   }
-  const positiveIsIncome = mapping.signedAmountDirection === "POSITIVE_IS_INCOME";
-  return (amount.sign > 0) === positiveIsIncome ? "INCOME" : "EXPENSE";
+  const positiveIsIncome =
+    mapping.signedAmountDirection === "POSITIVE_IS_INCOME";
+  return amount.sign > 0 === positiveIsIncome ? "INCOME" : "EXPENSE";
 }
 
 export function parseLocalizedNumber(
@@ -254,15 +435,29 @@ export function parseLocalizedNumber(
   const normalized = source.normalize("NFKC").trim();
   if (!normalized) return null;
   const negative = /^\s*\(/.test(normalized) || /^\s*-/.test(normalized);
-  const compact = normalized
+  const withoutCurrency = normalized
+    .replace(/\p{Sc}/gu, "")
+    .replace(/^\s*([A-Za-z]{1,4})\b/, (match, code: string) =>
+      isCurrencyMarker(code) ? "" : match,
+    )
+    .replace(/\b([A-Za-z]{1,4})\s*$/, (match, code: string) =>
+      isCurrencyMarker(code) ? "" : match,
+    );
+  // Any other letter means the cell is not a number; stripping it would silently import a different amount.
+  if (/\p{L}/u.test(withoutCurrency)) return null;
+  const compact = withoutCurrency
     .replace(/[()]/g, "")
     .replace(/[+\-]/g, "")
-    .replace(/[\s\u00A0\u202F']/g, "")
-    .replace(/[^0-9.,]/g, "");
-  if (!compact || !/[0-9]/.test(compact)) return null;
+    .replace(/[\s\u00A0\u202F']/g, "");
+  if (!compact || !/^[0-9.,]+$/.test(compact) || !/[0-9]/.test(compact))
+    return null;
 
   const exponent = getCurrencyExponent(currency);
-  const separator = resolveDecimalSeparator(compact, decimalSeparator, exponent);
+  const separator = resolveDecimalSeparator(
+    compact,
+    decimalSeparator,
+    exponent,
+  );
   let whole = compact;
   let fraction = "";
   if (separator) {
@@ -272,15 +467,34 @@ export function parseLocalizedNumber(
     if (!fraction || /[.,]/.test(fraction)) return null;
   }
   whole = whole.replace(/[.,]/g, "");
-  if (!/^\d+$/.test(whole) || (fraction && !/^\d+$/.test(fraction))) return null;
-  if (fraction.length > exponent && /[1-9]/.test(fraction.slice(exponent))) return null;
-  const minor = BigInt(whole) * 10n ** BigInt(exponent) + BigInt((fraction + "0".repeat(exponent)).slice(0, exponent) || "0");
+  if (!/^\d+$/.test(whole) || (fraction && !/^\d+$/.test(fraction)))
+    return null;
+  if (fraction.length > exponent && /[1-9]/.test(fraction.slice(exponent)))
+    return null;
+  const minor =
+    BigInt(whole) * 10n ** BigInt(exponent) +
+    BigInt((fraction + "0".repeat(exponent)).slice(0, exponent) || "0");
   if (minor <= 0n || minor > MAX_MINOR) return null;
   return { minor, sign: negative ? -1 : 1 };
 }
 
-function resolveDecimalSeparator(value: string, preference: ImportMapping["decimalSeparator"], exponent: number): "." | "," | null {
-  if (preference !== "AUTO") return value.includes(preference) ? preference : null;
+function isCurrencyMarker(value: string): boolean {
+  const upper = value.toUpperCase();
+  return (
+    upper === "FCFA" ||
+    upper === "CFA" ||
+    upper === "F" ||
+    isCurrencyCode(upper)
+  );
+}
+
+function resolveDecimalSeparator(
+  value: string,
+  preference: ImportMapping["decimalSeparator"],
+  exponent: number,
+): "." | "," | null {
+  if (preference !== "AUTO")
+    return value.includes(preference) ? preference : null;
   const lastDot = value.lastIndexOf(".");
   const lastComma = value.lastIndexOf(",");
   if (lastDot >= 0 && lastComma >= 0) return lastDot > lastComma ? "." : ",";
@@ -290,11 +504,21 @@ function resolveDecimalSeparator(value: string, preference: ImportMapping["decim
   return fractionLength > 0 && fractionLength <= exponent ? separator : null;
 }
 
-function cleanText(value: string, maxLength: number, label: string, issues: ImportIssue[]): string | null {
+function cleanText(
+  value: string,
+  maxLength: number,
+  label: string,
+  issues: ImportIssue[],
+): string | null {
   const cleaned = value.normalize("NFKC").trim().replaceAll(/\s+/g, " ");
   if (!cleaned) return null;
   if (cleaned.length > maxLength) {
-    issues.push({ code: "TEXT_TOO_LONG", message: `The ${label} is too long.`, severity: "ERROR", field: "row" });
+    issues.push({
+      code: "TEXT_TOO_LONG",
+      message: `The ${label} is too long.`,
+      severity: "ERROR",
+      field: "row",
+    });
     return null;
   }
   return cleaned;
@@ -311,15 +535,17 @@ export function importTransactionFingerprint(input: {
 }): string {
   const description = normalizeMerchantName(input.description);
   return createHash("sha256")
-    .update([
-      "pace-import-v1",
-      input.workspaceId,
-      input.accountId,
-      input.occurredAt.slice(0, 10),
-      input.amountMinor,
-      input.currency,
-      input.kind,
-      description,
-    ].join("|"))
+    .update(
+      [
+        "pace-import-v1",
+        input.workspaceId,
+        input.accountId,
+        input.occurredAt.slice(0, 10),
+        input.amountMinor,
+        input.currency,
+        input.kind,
+        description,
+      ].join("|"),
+    )
     .digest("hex");
 }

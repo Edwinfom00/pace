@@ -14,6 +14,7 @@ import type { WorkspaceRepository } from "@/modules/workspaces/repositories/work
 import { applyImportDeduplication } from "./deduplication";
 import type {
   ImportColumnMapping,
+  ImportField,
   ImportFileType,
   ImportMapping,
   ImportMappingDraft,
@@ -22,6 +23,7 @@ import type {
   ImportSessionRecord,
   ImportSessionStatus,
   NormalizedImportRow,
+  ParsedImportRow,
 } from "./domain";
 import { detectImportMapping, validateMappingAgainstParsedFile } from "./mapping";
 import { buildDetectedColumns, buildPreviewRows, evaluateImportColumns, type ImportDetectedColumn } from "./mapping/column-mapping";
@@ -30,18 +32,25 @@ import { parseImportUpload, type ImportFileInput } from "./parsers";
 import { buildImportPreview } from "./preview";
 import type { ImportRepository } from "./repositories/import-repository";
 import {
+  accountBlockedRowCount,
   activeImportAccounts,
+  applyRowCorrections,
+  buildFileAccounts,
   defaultImportAccount,
   defaultImportCategory,
+  fileAccountLabels,
   importReviewIssues,
   isLikelyInboxHandoff,
   mappingFromConfirmedColumns,
   requiresTransferAccount,
+  resolveAccountAssignments,
   summarizeImportReview,
+  type ImportFileAccount,
+  type ImportFileAccountRole,
   type ImportReviewIssue,
   type ImportReviewSummary,
 } from "./review";
-import { importColumnMappingRequestSchema, importReviewRequestSchema } from "./validation";
+import { importColumnMappingRequestSchema, importReviewRequestSchema, type ImportReviewRequest } from "./validation";
 
 const RAW_DATA_RETENTION_MS = 24 * 60 * 60 * 1000;
 const IMPORT_LEASE_STALE_MS = 2 * 60 * 1000;
@@ -78,12 +87,18 @@ export interface ImportReviewView {
     fileType: ImportFileType;
     status: ImportSessionStatus;
   };
-  accounts: { id: string; name: string; currency: string }[];
+  accounts: { id: string; name: string; currency: string; type: LedgerAccountRecord["type"] }[];
   accountId: string | null;
   transferAccountId: string | null;
   transferAccountRequired: boolean;
+  accountColumnMapped: boolean;
+  unreferencedRowCount: number;
+  sourceAccounts: ImportFileAccount[];
+  destinationAccounts: ImportFileAccount[];
   summary: ImportReviewSummary | null;
   blockingIssues: ImportReviewIssue[];
+  accountBlockedRowCount: number;
+  skippedRowNumbers: number[];
   progress: ImportProgress | null;
   result: ImportResult | null;
 }
@@ -277,16 +292,19 @@ export class ImportService {
   ): Promise<ImportReviewView> {
     const context = await this.requireManageContext(actor, workspaceId);
     let session = await this.requireInitiatedSession(actor, workspaceId, importSessionId);
-    if (session.status === "MAPPING_REQUIRED") {
-      if (session.columnMapping?.fileChecksum !== session.fileChecksum) return this.toReviewView(session, [], "MAPPING_REQUIRED");
-      if (!this.hasLiveRawData(session)) return this.toReviewView(session, [], "STALE");
+    const stagedWithoutAccountRouting = session.status === "READY_FOR_PREVIEW"
+      && Boolean(session.columnMapping?.columns.accountReference)
+      && !session.mapping?.accountAssignments
+      && this.hasLiveRawData(session);
+    if (session.status === "MAPPING_REQUIRED" || stagedWithoutAccountRouting) {
+      if (session.columnMapping?.fileChecksum !== session.fileChecksum) return this.toReviewView(session, [], context, "MAPPING_REQUIRED");
+      if (!this.hasLiveRawData(session)) return this.toReviewView(session, [], context, "STALE");
       session = await this.stageConfirmedColumns(actor, context, session, {
         accountId: session.mapping?.accountId ?? null,
         transferAccountId: session.mapping?.transferAccountId ?? null,
-        explicit: false,
-      });
+      }, false);
     }
-    return this.toReviewView(session, await this.ledger.listAccounts(actor, workspaceId));
+    return this.toReviewView(session, await this.ledger.listAccounts(actor, workspaceId), context);
   }
 
   async updateImportReview(
@@ -311,8 +329,8 @@ export class ImportService {
     if (!isMappingEditable(session.status) || !session.columnMapping || !this.hasLiveRawData(session)) {
       throw new DomainConflictError("IMPORT_SESSION_STALE", "This import can no longer be reviewed. Upload the statement again.");
     }
-    const staged = await this.stageConfirmedColumns(actor, context, session, { ...request, explicit: true });
-    return this.toReviewView(staged, await this.ledger.listAccounts(actor, workspaceId));
+    const staged = await this.stageConfirmedColumns(actor, context, session, request, true);
+    return this.toReviewView(staged, await this.ledger.listAccounts(actor, workspaceId), context);
   }
 
   async getProgress(actor: AuthenticatedActor, workspaceId: string, importSessionId: string): Promise<ImportProgressView> {
@@ -325,56 +343,127 @@ export class ImportService {
     actor: AuthenticatedActor,
     context: WorkspaceMemberContext,
     session: ImportSessionRecord,
-    selection: { accountId: string | null; transferAccountId: string | null; explicit: boolean },
+    request: Omit<ImportReviewRequest, "accountId"> & { accountId: string | null },
+    explicit: boolean,
   ): Promise<ImportSessionRecord> {
+    const columns = session.columnMapping!.columns;
     const [accounts, categories] = await Promise.all([
       this.ledger.listAccounts(actor, session.workspaceId),
       this.ledger.listCategories(actor, session.workspaceId),
     ]);
-    const account = defaultImportAccount(accounts, selection.accountId, context.preferences.currency);
+    const account = defaultImportAccount(accounts, request.accountId, context.preferences.currency);
     if (!account) throw new DomainConflictError("IMPORT_ACCOUNT_UNAVAILABLE", "Add an account before importing transactions.");
-    if (selection.explicit && account.id !== selection.accountId) {
+    if (explicit && account.id !== request.accountId) {
       throw new DomainConflictError("IMPORT_ACCOUNT_UNAVAILABLE", "The selected import account is not available in this workspace.");
     }
     const expense = defaultImportCategory(categories, "EXPENSE");
     const income = defaultImportCategory(categories, "INCOME");
     if (!expense || !income) throw new ConflictError("Default import categories are missing in this workspace.");
-    const transferAccount = selection.transferAccountId
-      ? activeImportAccounts(accounts).find((candidate) => candidate.id === selection.transferAccountId) ?? null
+    const active = activeImportAccounts(accounts);
+    const activeIds = new Set(active.map((candidate) => candidate.id));
+    const transferAccount = request.transferAccountId
+      ? active.find((candidate) => candidate.id === request.transferAccountId) ?? null
       : null;
-    if (
-      selection.transferAccountId &&
-      (!transferAccount || transferAccount.id === account.id || transferAccount.currency !== account.currency)
-    ) {
+    if (request.transferAccountId && (!transferAccount || transferAccount.id === account.id)) {
       throw new DomainConflictError("IMPORT_TRANSFER_ACCOUNT_INVALID", "Choose a different account with the same currency for transfers.");
     }
+    const requestedAccountIds = [
+      ...Object.values(request.accountAssignments ?? {}),
+      ...Object.values(request.transferAccountAssignments ?? {}),
+    ];
+    if (requestedAccountIds.some((id) => !activeIds.has(id))) {
+      throw new DomainConflictError("IMPORT_ACCOUNT_UNAVAILABLE", "The selected import account is not available in this workspace.");
+    }
+
+    let parsedRows = session.parsedRows ?? [];
+    let corrected: { sourceRowNumber: number; field: ImportField }[] = [];
+    if (request.corrections?.length) {
+      const result = applyRowCorrections(parsedRows, columns, request.corrections);
+      if (!result) throw new DomainConflictError("INVALID_ROW_CORRECTION", "This correction no longer matches a mapped cell in the file.");
+      parsedRows = result.rows;
+      corrected = result.applied;
+    }
+    const knownRows = new Set(parsedRows.map((row) => row.rowNumber));
+    const skipped = new Set(session.mapping?.skippedRowNumbers ?? []);
+    for (const row of request.skipRows ?? []) if (knownRows.has(row)) skipped.add(row);
+    for (const row of request.restoreRows ?? []) skipped.delete(row);
+
     const mapping = mappingFromConfirmedColumns(session.columnMapping!, {
-      rows: session.parsedRows ?? [],
+      rows: parsedRows,
       locale: context.preferences.locale,
       accountId: account.id,
       transferAccountId: transferAccount?.id ?? null,
       defaultExpenseCategoryId: expense.id,
       defaultIncomeCategoryId: income.id,
+      accountAssignments: columns.accountReference
+        ? resolveAccountAssignments(
+          fileAccountLabels(parsedRows, columns.accountReference),
+          accounts,
+          session.mapping?.accountAssignments,
+          request.accountAssignments,
+        )
+        : undefined,
+      transferAccountAssignments: columns.transferAccount
+        ? resolveAccountAssignments(
+          fileAccountLabels(parsedRows, columns.transferAccount),
+          accounts,
+          session.mapping?.transferAccountAssignments,
+          request.transferAccountAssignments,
+        )
+        : undefined,
+      skippedRowNumbers: [...skipped].sort((left, right) => left - right),
     });
-    return this.stage(actor, context, session, validateMappingAgainstParsedFile(mapping, { headers: session.headers }));
+    const staged = await this.stage(
+      actor,
+      context,
+      { ...session, parsedRows },
+      validateMappingAgainstParsedFile(mapping, { headers: session.headers }),
+      corrected.length ? parsedRows : undefined,
+    );
+    if (corrected.length) {
+      await this.audit(staged, actor.userId, "ROWS_CORRECTED", staged.status, staged.status, { corrections: corrected });
+    }
+    return staged;
   }
 
   private toReviewView(
     session: ImportSessionRecord,
     accounts: readonly LedgerAccountRecord[],
+    context: WorkspaceMemberContext,
     forcedState?: ImportReviewState,
   ): ImportReviewView {
     const rows = session.stagedRows ?? [];
+    const parsedRows = session.parsedRows ?? [];
+    const columns = session.mapping?.columns ?? session.columnMapping?.columns ?? {};
     const account = accounts.find((candidate) => candidate.id === session.mapping?.accountId);
+    const skippedRowNumbers = session.mapping?.skippedRowNumbers ?? [];
+    const fileAccounts = (role: ImportFileAccountRole) => buildFileAccounts({
+      role,
+      labels: fileAccountLabels(parsedRows, role === "SOURCE" ? columns.accountReference : columns.transferAccount),
+      stagedRows: rows,
+      parsedRows,
+      columns,
+      assignments: role === "SOURCE" ? session.mapping?.accountAssignments : session.mapping?.transferAccountAssignments,
+      accounts,
+      fallbackCurrency: account?.currency ?? context.preferences.currency,
+    });
     return {
       state: forcedState ?? reviewState(session),
       session: { id: session.id, fileName: session.fileName, fileType: session.fileType, status: session.status },
-      accounts: activeImportAccounts(accounts).map(({ id, name, currency }) => ({ id, name, currency })),
+      accounts: activeImportAccounts(accounts).map(({ id, name, currency, type }) => ({ id, name, currency, type })),
       accountId: session.mapping?.accountId ?? null,
       transferAccountId: session.mapping?.transferAccountId ?? null,
       transferAccountRequired: requiresTransferAccount(rows),
-      summary: session.stagedRows ? summarizeImportReview(rows, account?.currency ?? session.mapping?.fallbackCurrency ?? null) : null,
-      blockingIssues: importReviewIssues(rows),
+      accountColumnMapped: Boolean(columns.accountReference),
+      unreferencedRowCount: rows.filter((row) => !row.accountReference).length,
+      sourceAccounts: session.stagedRows ? fileAccounts("SOURCE") : [],
+      destinationAccounts: session.stagedRows ? fileAccounts("DESTINATION") : [],
+      summary: session.stagedRows
+        ? summarizeImportReview(rows, account?.currency ?? session.mapping?.fallbackCurrency ?? null, skippedRowNumbers.length)
+        : null,
+      blockingIssues: importReviewIssues(rows, parsedRows, columns),
+      accountBlockedRowCount: accountBlockedRowCount(rows),
+      skippedRowNumbers,
       progress: session.progress,
       result: session.result,
     };
@@ -385,15 +474,22 @@ export class ImportService {
     context: WorkspaceMemberContext,
     session: ImportSessionRecord,
     mapping: ImportMapping,
+    correctedParsedRows?: ParsedImportRow[],
   ): Promise<ImportSessionRecord> {
     const workspaceId = session.workspaceId;
     const importSessionId = session.id;
-    const resolvedMapping = await this.validateMappingContext(actor, workspaceId, mapping);
-    const normalized = normalizeImportRows(session.parsedRows ?? [], resolvedMapping, {
-      workspaceId,
-      fallbackCurrency: resolvedMapping.fallbackCurrency,
-      timezone: context.preferences.timezone,
-    });
+    const { mapping: resolvedMapping, accountCurrencies } = await this.validateMappingContext(actor, workspaceId, mapping);
+    const skipped = new Set(resolvedMapping.skippedRowNumbers ?? []);
+    const normalized = normalizeImportRows(
+      (session.parsedRows ?? []).filter((row) => !skipped.has(row.rowNumber)),
+      resolvedMapping,
+      {
+        workspaceId,
+        fallbackCurrency: resolvedMapping.fallbackCurrency,
+        timezone: context.preferences.timezone,
+        accountCurrencies,
+      },
+    );
     const deduplicated = applyImportDeduplication(
       normalized,
       await this.ledgerRecords.listTransactions(workspaceId),
@@ -405,6 +501,7 @@ export class ImportService {
       mapping: resolvedMapping,
       stagedRows: deduplicated,
       preview,
+      ...(correctedParsedRows ? { parsedRows: correctedParsedRows } : {}),
     });
     if (!prepared) throw new ConflictError("This import changed before its preview could be prepared.");
     await this.audit(prepared, actor.userId, "PREVIEW_PREPARED", session.status, "READY_FOR_PREVIEW", {
@@ -412,6 +509,7 @@ export class ImportService {
       acceptedRowCount: preview.acceptedRowCount,
       invalidRowCount: preview.invalidRowCount,
       exactDuplicateRowCount: preview.exactDuplicateRowCount,
+      skippedRowCount: skipped.size,
     });
     return prepared;
   }
@@ -625,7 +723,7 @@ export class ImportService {
     try {
       const common = {
         status: "POSTED" as const,
-        accountId: session.mapping!.accountId,
+        accountId: row.accountId ?? session.mapping!.accountId,
         amountMinor: row.amountMinor,
         currency: row.currency,
         occurredAt: row.occurredAt,
@@ -642,7 +740,7 @@ export class ImportService {
         return await this.ledger.createTransaction(actor, workspaceId, {
           ...common,
           kind: "TRANSFER",
-          transferAccountId: session.mapping!.transferAccountId,
+          transferAccountId: row.transferAccountId ?? session.mapping!.transferAccountId,
         });
       }
       const merchant = row.merchantName
@@ -668,7 +766,7 @@ export class ImportService {
     actor: AuthenticatedActor,
     workspaceId: string,
     mapping: ImportMapping,
-  ): Promise<ImportMapping> {
+  ): Promise<{ mapping: ImportMapping; accountCurrencies: Record<string, string> }> {
     const [accounts, categories] = await Promise.all([
       this.ledger.listAccounts(actor, workspaceId),
       this.ledger.listCategories(actor, workspaceId),
@@ -680,12 +778,19 @@ export class ImportService {
     if (mapping.transferAccountId) {
       const destination = requireById(accounts, mapping.transferAccountId, "The transfer destination account is not in this workspace.");
       if (destination.id === account.id) throw new ConflictError("A transfer destination must be a different account.");
-      if (destination.currency !== account.currency) throw new ConflictError("Imported transfers require two accounts with the same currency.");
+      if (destination.archivedAt) throw new ConflictError("The transfer destination account is archived.");
+    }
+    for (const id of [...Object.values(mapping.accountAssignments ?? {}), ...Object.values(mapping.transferAccountAssignments ?? {})]) {
+      const assigned = requireById(accounts, id, "An assigned import account is not in this workspace.");
+      if (assigned.archivedAt) throw new ConflictError("An assigned import account is archived.");
     }
     if (mapping.fallbackCurrency && mapping.fallbackCurrency.toUpperCase() !== account.currency) {
       throw new ConflictError("The fallback currency must match the selected Pace account.");
     }
-    return { ...mapping, fallbackCurrency: account.currency };
+    return {
+      mapping: { ...mapping, fallbackCurrency: account.currency },
+      accountCurrencies: Object.fromEntries(activeImportAccounts(accounts).map((candidate) => [candidate.id, candidate.currency])),
+    };
   }
 
   private hasLiveRawData(session: ImportSessionRecord): boolean {

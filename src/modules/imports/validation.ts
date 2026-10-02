@@ -3,6 +3,7 @@ import { z } from "zod";
 import { IMPORT_FIELDS } from "./domain";
 
 const optionalColumnSchema = z.string().min(1).max(200).optional();
+const accountAssignmentsSchema = z.record(z.string().min(1).max(180), z.string().min(1).max(180));
 
 export const importMappingSchema = z
   .object({
@@ -24,6 +25,9 @@ export const importMappingSchema = z
     fallbackCurrency: z.string().length(3).nullable(),
     defaultExpenseCategoryId: z.string().min(1).max(180),
     defaultIncomeCategoryId: z.string().min(1).max(180),
+    accountAssignments: accountAssignmentsSchema.optional(),
+    transferAccountAssignments: accountAssignmentsSchema.optional(),
+    skippedRowNumbers: z.array(z.number().int().positive()).max(10_000).optional(),
   })
   .superRefine((mapping, context) => {
     if (!mapping.columns.transactionDate && !mapping.columns.bookingDate) {
@@ -83,5 +87,23 @@ export const importReviewRequestSchema = z
   .object({
     accountId: z.string().min(1).max(180),
     transferAccountId: z.string().min(1).max(180).nullable(),
+    accountAssignments: accountAssignmentsSchema.optional(),
+    transferAccountAssignments: accountAssignmentsSchema.optional(),
+    corrections: z
+      .array(
+        z
+          .object({
+            sourceRowNumber: z.number().int().positive(),
+            field: z.enum(IMPORT_FIELDS),
+            value: z.string().max(200),
+          })
+          .strict(),
+      )
+      .max(50)
+      .optional(),
+    skipRows: z.array(z.number().int().positive()).max(500).optional(),
+    restoreRows: z.array(z.number().int().positive()).max(500).optional(),
   })
   .strict();
+
+export type ImportReviewRequest = z.infer<typeof importReviewRequestSchema>;
