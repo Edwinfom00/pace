@@ -1,5 +1,10 @@
 import { localDateForInstant, localDateKey, periodForLocalDates, type Period } from "@/money/period";
-import type { LedgerAccountType, LedgerTransactionKind, LedgerTransactionStatus } from "@/modules/ledger/domain";
+import type {
+  LedgerAccountType,
+  LedgerTransactionKind,
+  LedgerTransactionRecord,
+  LedgerTransactionStatus,
+} from "@/modules/ledger/domain";
 import type { AccountActionPolicy } from "@/modules/ledger/account-action-policy";
 
 export const ACCOUNT_DETAIL_CHART_RANGES = ["7d", "30d", "3m", "1y"] as const;
@@ -69,6 +74,14 @@ export type AccountDetail = {
   readonly topCategories: readonly AccountDetailCategory[];
   readonly recentTransactions: readonly AccountDetailRecentTransaction[];
 };
+
+export function accountMovementMinor(
+  transaction: Pick<LedgerTransactionRecord, "kind" | "amountMinor" | "accountId">,
+  accountId: string,
+): bigint {
+  const isOutgoingTransfer = transaction.kind === "TRANSFER" && transaction.accountId === accountId;
+  return isOutgoingTransfer || transaction.kind === "EXPENSE" ? -transaction.amountMinor : transaction.amountMinor;
+}
 
 export function parseAccountDetailChartRange(value: string | string[] | undefined): AccountDetailChartRange {
   const candidate = Array.isArray(value) ? value[0] : value;

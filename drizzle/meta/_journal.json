@@ -281,6 +281,13 @@
       "when": 1790100000015,
       "tag": "0039_agent_transaction_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790100000016,
+      "tag": "0040_agent_account_actions",
+      "breakpoints": true
     }
   ]
 }

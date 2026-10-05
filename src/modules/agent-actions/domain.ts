@@ -1,4 +1,4 @@
-import type { LedgerTransactionKind } from "@/modules/ledger/domain";
+import type { LedgerAccountType, LedgerTransactionKind } from "@/modules/ledger/domain";
 import type { BudgetScope, BudgetStatus, SavingsGoalStatus } from "@/modules/plans/domain";
 
 export const AGENT_ACTION_STATUSES = [
@@ -20,12 +20,19 @@ export const AGENT_ACTION_TYPES = [
   "SAVINGS_GOAL_UPDATE",
   "TRANSACTION_UPDATE",
   "TRANSACTION_CORRECT",
+  "ACCOUNT_CREATE",
+  "ACCOUNT_MANAGE",
 ] as const;
 export type AgentActionType = (typeof AGENT_ACTION_TYPES)[number];
 
 export const TRANSACTION_CHANGE_ACTION_TYPES = ["TRANSACTION_UPDATE", "TRANSACTION_CORRECT"] as const;
 export type TransactionChangeActionType = (typeof TRANSACTION_CHANGE_ACTION_TYPES)[number];
-export type PlanActionType = Exclude<AgentActionType, "TRANSACTION_CREATE" | TransactionChangeActionType>;
+export const ACCOUNT_ACTION_TYPES = ["ACCOUNT_CREATE", "ACCOUNT_MANAGE"] as const;
+export type AccountActionType = (typeof ACCOUNT_ACTION_TYPES)[number];
+export type PlanActionType = Exclude<
+  AgentActionType,
+  "TRANSACTION_CREATE" | TransactionChangeActionType | AccountActionType
+>;
 
 export const TRANSACTION_DRAFT_KINDS = ["EXPENSE", "INCOME", "TRANSFER"] as const;
 export type TransactionDraftKind = (typeof TRANSACTION_DRAFT_KINDS)[number];
@@ -129,8 +136,39 @@ export interface TransactionChangeDraft {
   readonly missingFields: readonly TransactionChangeField[];
 }
 
+export const ACCOUNT_DRAFT_OPERATIONS = ["CREATE", "RENAME", "CHANGE_TYPE", "ARCHIVE", "RESTORE"] as const;
+export type AccountDraftOperation = (typeof ACCOUNT_DRAFT_OPERATIONS)[number];
+
+export const ACCOUNT_DRAFT_FIELDS = ["account", "name", "type", "currency"] as const;
+export type AccountDraftField = (typeof ACCOUNT_DRAFT_FIELDS)[number];
+
+export interface AccountDraftAccount {
+  readonly id: string;
+  readonly name: string;
+  readonly type: LedgerAccountType;
+  readonly currency: string;
+  readonly status: "ACTIVE" | "ARCHIVED";
+}
+
+export interface AccountDraft {
+  readonly accountOperation: AccountDraftOperation;
+  /** Null for CREATE, and while the member still has to choose between candidates. */
+  readonly accountId: string | null;
+  /** Optimistic-lock token of the targeted account when the draft was prepared. */
+  readonly expectedUpdatedAt: string | null;
+  readonly current: AccountDraftAccount | null;
+  /** The new account's name for CREATE, the requested name for RENAME. */
+  readonly name: string | null;
+  /** The new account's type for CREATE, the requested type for CHANGE_TYPE. */
+  readonly type: LedgerAccountType | null;
+  readonly currency: string | null;
+  readonly candidates: readonly AccountDraftAccount[];
+  readonly sourceText: string | null;
+  readonly missingFields: readonly AccountDraftField[];
+}
+
 export type PlanDraft = BudgetDraft | SavingsGoalDraft;
-export type AgentActionDraft = TransactionDraft | TransactionChangeDraft | PlanDraft;
+export type AgentActionDraft = TransactionDraft | TransactionChangeDraft | PlanDraft | AccountDraft;
 
 export const TRANSACTION_DRAFT_FIELDS = [
   "amount",
@@ -162,7 +200,21 @@ export interface TransactionChangeActionResult {
   readonly verifiedAt: string;
 }
 
-export type AgentActionResult = TransactionActionResult | TransactionChangeActionResult | PlanActionResult;
+export interface AccountActionResult {
+  readonly accountOperation: AccountDraftOperation;
+  readonly accountId: string;
+  readonly name: string;
+  readonly type: LedgerAccountType;
+  readonly currency: string;
+  readonly status: AccountDraftAccount["status"];
+  readonly verifiedAt: string;
+}
+
+export type AgentActionResult =
+  | TransactionActionResult
+  | TransactionChangeActionResult
+  | PlanActionResult
+  | AccountActionResult;
 
 export interface AgentActionRecord {
   readonly id: string;
@@ -198,6 +250,12 @@ export type PlanAgentActionRecord = AgentActionRecord & {
   readonly type: PlanActionType;
   readonly draft: PlanDraft;
   readonly result: PlanActionResult | null;
+};
+
+export type AccountAgentActionRecord = AgentActionRecord & {
+  readonly type: AccountActionType;
+  readonly draft: AccountDraft;
+  readonly result: AccountActionResult | null;
 };
 
 export interface AgentActionAuditRecord {
@@ -241,7 +299,16 @@ export function isTransactionChangeDraftReady(draft: TransactionChangeDraft): bo
   return draft.missingFields.length === 0 && Object.keys(draft.changes).length > 0;
 }
 
+export function isAccountDraftReady(draft: AccountDraft): boolean {
+  if (draft.missingFields.length > 0) return false;
+  if (draft.accountOperation === "CREATE") return Boolean(draft.name && draft.type && draft.currency);
+  if (!draft.accountId || !draft.expectedUpdatedAt) return false;
+  if (draft.accountOperation === "RENAME") return Boolean(draft.name);
+  return draft.accountOperation === "CHANGE_TYPE" ? Boolean(draft.type) : true;
+}
+
 export function isAgentActionDraftReady(draft: AgentActionDraft): boolean {
+  if ("accountOperation" in draft) return isAccountDraftReady(draft);
   if ("changeType" in draft) return isTransactionChangeDraftReady(draft);
   return "kind" in draft ? isTransactionDraftReady(draft) : isPlanDraftReady(draft);
 }
@@ -254,6 +321,10 @@ export function isTransactionChangeAction(action: AgentActionRecord): action is 
   return (
     (TRANSACTION_CHANGE_ACTION_TYPES as readonly string[]).includes(action.type) && "changeType" in action.draft
   );
+}
+
+export function isAccountAction(action: AgentActionRecord): action is AccountAgentActionRecord {
+  return (ACCOUNT_ACTION_TYPES as readonly string[]).includes(action.type) && "accountOperation" in action.draft;
 }
 
 export function isPlanAction(action: AgentActionRecord): action is PlanAgentActionRecord {

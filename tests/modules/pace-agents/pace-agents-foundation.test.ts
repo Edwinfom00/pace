@@ -107,6 +107,10 @@ async function createFixture() {
       summary: [{ currency: "XAF", currentBalanceMinor: "100000", accountCount: 1 }],
       accounts: [{ id: `${workspaceId}-main`, currency: "XAF", currentBalanceMinor: "100000" }],
     })),
+    getAccount: read("getAccount", (workspaceId) => ({ resolved: true, account: { id: `${workspaceId}-main` } })),
+    getAccountMovements: read("getAccountMovements", (workspaceId) => ({ resolved: true, account: { id: `${workspaceId}-main` } })),
+    compareAccountMovements: read("compareAccountMovements", () => ({ currencies: [] })),
+    checkAccountSpendability: read("checkAccountSpendability", () => ({ resolved: true, canDebit: true })),
     getRecurringPayments: read("getRecurringPayments", () => ({ payments: [{ id: "recurring-1", label: "Netflix" }] })),
     getInboxItems: read("getInboxItems", () => ({ unresolvedCount: 1, items: [{ id: "inbox-1", status: "OPEN" }] })),
     getInsightContext: read("getInsightContext", (workspaceId) => ({ workspaceId, insights: [] })),
@@ -163,7 +167,7 @@ test("registry declares the six sub-agents with typed capability metadata", () =
   }
   assert.deepEqual(
     metadata.flatMap((agent) => agent.capabilities).filter((capability) => capability.access === "commit").map((capability) => capability.tool),
-    ["submit_transaction_draft", "submit_plan_draft"],
+    ["submit_transaction_draft", "submit_account_draft", "submit_plan_draft"],
   );
 
   const prompt = renderSubAgentInstructions(paceSubAgentRegistry);
@@ -423,6 +427,12 @@ test("a sub-agent cannot reach data except through its own capabilities and thei
     get_transaction: { transactionId: crypto.randomUUID() },
     create_transaction_change_draft: { transactionId: crypto.randomUUID(), amountText: "4000", sourceText: "it was 4000" },
     submit_transaction_draft: { actionId: crypto.randomUUID() },
+    get_account: { accountName: "Bank" },
+    get_account_movements: { accountName: "Bank" },
+    check_account_spendability: { accountName: "Bank", amountText: "3500" },
+    create_account_draft: { name: "Canada", type: "SAVINGS", sourceText: "create a savings account called Canada" },
+    create_account_change_draft: { operation: "ARCHIVE", accountName: "Bank", sourceText: "archive Bank" },
+    submit_account_draft: { actionId: crypto.randomUUID() },
     create_plan_draft: { actionType: "BUDGET_CREATE", sourceText: "budget 80k" },
     edit_plan_draft: { actionId: crypto.randomUUID(), amountText: "90k" },
     submit_plan_draft: { actionId: crypto.randomUUID() },

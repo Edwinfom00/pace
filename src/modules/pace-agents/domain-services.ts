@@ -1,4 +1,10 @@
 import type { AuthenticatedActor } from "@/authorization/session";
+import type { AccountReference } from "@/modules/accounts/domain/account-reference";
+import type {
+  AgentAccountComparisonQuery,
+  AgentAccountMovementsQuery,
+  AgentAccountSpendabilityQuery,
+} from "@/modules/accounts/domain/agent-account-query";
 import type { AgentActionService } from "@/modules/agent-actions/agent-action-service";
 import type { AgentTransactionSearchQuery } from "@/modules/transactions/domain/agent-transaction-query";
 
@@ -28,6 +34,8 @@ type AgentActionMethod =
   | "createPlanDraft"
   | "editPlanDraft"
   | "executeApprovedPlan"
+  | "createAccountDraft"
+  | "executeApprovedAccount"
   | "requestApproval"
   | "approveAction"
   | "rejectAction"
@@ -49,6 +57,10 @@ export interface PaceDomainServices extends PaceAgentActionDomainServices {
   getTransactionDetail(scope: PaceServiceScope, transactionId: string): Promise<unknown>;
   getOverviewSummary(scope: PaceServiceScope, period: PaceReadPeriod): Promise<unknown>;
   getAccounts(scope: PaceServiceScope): Promise<unknown>;
+  getAccount(scope: PaceServiceScope, reference: AccountReference): Promise<unknown>;
+  getAccountMovements(scope: PaceServiceScope, query: AgentAccountMovementsQuery): Promise<unknown>;
+  compareAccountMovements(scope: PaceServiceScope, query: AgentAccountComparisonQuery): Promise<unknown>;
+  checkAccountSpendability(scope: PaceServiceScope, query: AgentAccountSpendabilityQuery): Promise<unknown>;
   getRecurringPayments(scope: PaceServiceScope, limit: number): Promise<unknown>;
   getInboxItems(scope: PaceServiceScope, limit: number): Promise<unknown>;
   getInsightContext(scope: PaceServiceScope, language: string | null): Promise<unknown>;
@@ -69,6 +81,9 @@ export function createAgentActionDomainServices(actions: AgentActionService): Pa
     createPlanDraft: (scope, input) => actions.createPlanDraft(scope.actor, scope.workspaceId, input),
     editPlanDraft: (scope, actionId, input) => actions.editPlanDraft(scope.actor, scope.workspaceId, actionId, input),
     executeApprovedPlan: (scope, actionId) => actions.executeApprovedPlan(scope.actor, scope.workspaceId, actionId),
+    createAccountDraft: (scope, input) => actions.createAccountDraft(scope.actor, scope.workspaceId, input),
+    executeApprovedAccount: (scope, actionId) =>
+      actions.executeApprovedAccount(scope.actor, scope.workspaceId, actionId),
     requestApproval: (scope, actionId) => actions.requestApproval(scope.actor, scope.workspaceId, actionId),
     approveAction: (scope, actionId) => actions.approveAction(scope.actor, scope.workspaceId, actionId),
     rejectAction: (scope, actionId) => actions.rejectAction(scope.actor, scope.workspaceId, actionId),

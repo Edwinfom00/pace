@@ -5,8 +5,10 @@ import { assertWorkspacePermission } from "@/authorization/workspace-permissions
 import type { AuthenticatedActor } from "@/authorization/session";
 import { correctTransactionSchema } from "@/modules/ledger/correct-transaction-contract";
 import type { LedgerAccountRecord, LedgerCategoryRecord, LedgerTransactionRecord } from "@/modules/ledger/domain";
+import { manageAccountSchema } from "@/modules/ledger/manage-account-contract";
 import { parseTransactionDetailsPatch } from "@/modules/ledger/update-transaction-details-contract";
 import { LedgerService } from "@/modules/ledger/ledger-service";
+import { createLedgerAccountSchema } from "@/modules/ledger/validation";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import type { WorkspaceMemberContext } from "@/modules/workspaces/domain";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
@@ -15,8 +17,19 @@ import type { PlansContext, PlansService } from "@/modules/plans/plan-service";
 import type { BudgetRecord, SavingsGoalRecord } from "@/modules/plans/domain";
 
 import {
+  accountManagementCommand,
+  buildAccountDraft,
+  presentDraftAccount,
+  type AccountDraftIntent,
+} from "./account-draft";
+import {
+  type AccountActionResult,
+  type AccountAgentActionRecord,
+  type AccountDraft,
   type AgentActionRecord,
   type AgentActionStatus,
+  isAccountAction,
+  isAccountDraftReady,
   isAgentActionDraftReady,
   isPlanAction,
   isTransactionAction,
@@ -50,6 +63,12 @@ export interface CreateTransactionDraftInput extends TransactionDraftIntent {
 }
 
 export interface CreateTransactionChangeDraftInput extends TransactionChangeIntent {
+  idempotencyKey: string;
+  eveSessionId?: string | null;
+  eveCallId?: string | null;
+}
+
+export interface CreateAccountDraftInput extends AccountDraftIntent {
   idempotencyKey: string;
   eveSessionId?: string | null;
   eveCallId?: string | null;
@@ -97,7 +116,15 @@ export interface PlanActionDetail {
   planContext: PlansContext;
 }
 
-export type AgentActionDetail = TransactionActionDetail | TransactionChangeActionDetail | PlanActionDetail;
+export interface AccountActionDetail {
+  action: AccountAgentActionRecord;
+}
+
+export type AgentActionDetail =
+  | TransactionActionDetail
+  | TransactionChangeActionDetail
+  | PlanActionDetail
+  | AccountActionDetail;
 
 interface TransactionClassifier {
   ingestTransaction(
@@ -234,6 +261,49 @@ export class AgentActionService {
     return created;
   }
 
+  /**
+   * Prepares an account creation or lifecycle change. Nothing is written to
+   * the account until the draft is approved; a change the canonical account
+   * policy would refuse is rejected here with that policy's own reason.
+   */
+  async createAccountDraft(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: CreateAccountDraftInput,
+  ): Promise<AccountAgentActionRecord> {
+    const existing = await this.actions.findActionByIdempotencyKey(workspaceId, input.idempotencyKey);
+    if (existing) {
+      const action = await this.requireActionInitiator(actor, workspaceId, existing.id);
+      if (!isAccountAction(action)) throw new ConflictError("Idempotency key belongs to another action type.");
+      return action;
+    }
+
+    const context = await this.requireLedgerContext(actor, workspaceId);
+    const draft = buildAccountDraft(input, {
+      currency: context.preferences.currency,
+      accounts: await this.ledger.listAccounts(actor, workspaceId),
+    });
+    const id = randomUUID();
+    if (isAccountDraftReady(draft)) await this.assertAccountDraftAllowed(actor, workspaceId, id, draft);
+
+    const created = await this.actions.createAction({
+      id,
+      workspaceId,
+      type: draft.accountOperation === "CREATE" ? "ACCOUNT_CREATE" : "ACCOUNT_MANAGE",
+      initiatedByUserId: actor.userId,
+      draft,
+      idempotencyKey: input.idempotencyKey,
+      eveSessionId: input.eveSessionId ?? null,
+      eveCallId: input.eveCallId ?? null,
+    });
+    await this.audit(created, actor.userId, "DRAFT_CREATED", null, "DRAFT", {
+      accountOperation: draft.accountOperation,
+      accountId: draft.accountId,
+    });
+    if (!isAccountAction(created)) throw new Error("Created action was not an account action.");
+    return created;
+  }
+
   async getPlanContext(actor: AuthenticatedActor, workspaceId: string): Promise<PlansContext> {
     return this.requirePlans().getContext(actor, workspaceId);
   }
@@ -296,6 +366,7 @@ export class AgentActionService {
     if (isTransactionChangeAction(action)) {
       return { action, transactionContext: await this.getTransactionContext(actor, workspaceId) };
     }
+    if (isAccountAction(action)) return { action };
     if (isPlanAction(action)) {
       return { action, planContext: await this.getPlanContext(actor, workspaceId) };
     }
@@ -738,6 +809,167 @@ export class AgentActionService {
       await this.failAction(actor, workspaceId, actionId, error);
       throw error;
     }
+  }
+
+  async executeApprovedAccount(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+  ): Promise<AccountActionResult> {
+    const action = await this.requireActionInitiator(actor, workspaceId, actionId);
+    if (!isAccountAction(action)) throw new ConflictError("This action does not change an account.");
+    if (action.status === "COMPLETED" && action.result) return action.result;
+    // Account creation has no idempotency key in the ledger, so only the one
+    // caller that moves the action out of APPROVED may create the account. An
+    // interrupted creation is never retried, because a retry could open a duplicate.
+    const isCreate = action.draft.accountOperation === "CREATE";
+    if (action.status === "EXECUTING" && isCreate) {
+      throw new ConflictError("This account is already being created. Check your accounts before trying again.");
+    }
+    if (action.status !== "APPROVED" && action.status !== "EXECUTING") {
+      throw new ConflictError("Only an approved action can be executed.");
+    }
+
+    if (action.status === "APPROVED") {
+      const transitioned = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["APPROVED"],
+        to: "EXECUTING",
+      });
+      if (transitioned) {
+        await this.audit(transitioned, actor.userId, "EXECUTION_STARTED", "APPROVED", "EXECUTING");
+      } else {
+        const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+        if (!isAccountAction(current)) throw new ConflictError("This action does not change an account.");
+        if (current.status === "COMPLETED" && current.result) return current.result;
+        if (isCreate || current.status !== "EXECUTING") {
+          throw new ConflictError("This action changed before it could be executed.");
+        }
+      }
+    }
+
+    try {
+      const draft = action.draft;
+      if (!isAccountDraftReady(draft)) {
+        throw new ConflictError("The approved action has an incomplete account draft.");
+      }
+      const persisted = isCreate
+        ? await this.ledger.createAccount(actor, workspaceId, {
+            name: draft.name,
+            type: draft.type,
+            currency: draft.currency,
+          })
+        : await this.ledger.manageAccount(
+            actor,
+            manageAccountSchema.parse(accountManagementCommand(workspaceId, actionId, draft)),
+          );
+      const stored = (await this.ledger.listAccounts(actor, workspaceId)).find(
+        (account) => account.id === persisted.id,
+      );
+      const verified = this.assertPersistedAccountMatches(draft, workspaceId, stored);
+      const result: AccountActionResult = {
+        accountOperation: draft.accountOperation,
+        accountId: verified.id,
+        name: verified.name,
+        type: verified.type,
+        currency: verified.currency,
+        status: presentDraftAccount(verified).status,
+        verifiedAt: new Date().toISOString(),
+      };
+      const completed = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["EXECUTING"],
+        to: "COMPLETED",
+        result,
+        failureCode: null,
+        failureMessage: null,
+      });
+      if (completed) {
+        await this.audit(completed, actor.userId, "PERSISTENCE_VERIFIED", "EXECUTING", "COMPLETED", {
+          accountId: verified.id,
+          accountOperation: draft.accountOperation,
+        });
+        return result;
+      }
+
+      const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+      if (isAccountAction(current) && current.status === "COMPLETED" && current.result) return current.result;
+      throw new ConflictError("This action changed while its account change was being verified.");
+    } catch (error) {
+      await this.failAction(actor, workspaceId, actionId, error);
+      throw error;
+    }
+  }
+
+  private async assertAccountDraftAllowed(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+    draft: AccountDraft,
+  ): Promise<void> {
+    if (draft.accountOperation === "CREATE") {
+      const parsed = createLedgerAccountSchema.safeParse({
+        name: draft.name,
+        type: draft.type,
+        currency: draft.currency,
+      });
+      if (!parsed.success) throw new ConflictError("The requested account is not valid.");
+      return;
+    }
+
+    const { current } = draft;
+    if (!draft.accountId || !current) throw new ConflictError("The account to change is missing.");
+    if (!manageAccountSchema.safeParse(accountManagementCommand(workspaceId, actionId, draft)).success) {
+      throw new ConflictError("The requested account change is not valid.");
+    }
+    const policy = await this.ledger.getAccountActionPolicy(actor, workspaceId, draft.accountId);
+    switch (draft.accountOperation) {
+      case "RENAME":
+        if (!policy.canRename) throw new ConflictError("This account cannot be renamed.");
+        if (draft.name === current.name) throw new ConflictError(`This account is already named "${current.name}".`);
+        return;
+      case "CHANGE_TYPE":
+        if (draft.type === current.type) throw new ConflictError("This account already has that type.");
+        if (!draft.type || !policy.allowedTypeChanges.includes(draft.type)) {
+          throw new ConflictError(
+            policy.reasons.changeType === "ACCOUNT_HAS_FINANCIAL_ACTIVITY"
+              ? "Account type is locked after the account has financial activity."
+              : "The requested account type would change the account's spendability semantics.",
+          );
+        }
+        return;
+      case "ARCHIVE":
+        if (!policy.canArchive) throw new ConflictError("This account is already archived.");
+        return;
+      case "RESTORE":
+        if (!policy.canRestore) throw new ConflictError("This account is not archived.");
+        return;
+    }
+  }
+
+  private assertPersistedAccountMatches(
+    draft: AccountDraft,
+    workspaceId: string,
+    account: LedgerAccountRecord | undefined,
+  ): LedgerAccountRecord {
+    const isCreate = draft.accountOperation === "CREATE";
+    const expectsName = isCreate || draft.accountOperation === "RENAME";
+    const expectsType = isCreate || draft.accountOperation === "CHANGE_TYPE";
+    if (
+      !account ||
+      account.workspaceId !== workspaceId ||
+      account.currency !== draft.currency ||
+      (!isCreate && account.id !== draft.accountId) ||
+      (expectsName && account.name !== draft.name) ||
+      (expectsType && account.type !== draft.type) ||
+      ((isCreate || draft.accountOperation === "RESTORE") && account.archivedAt !== null) ||
+      (draft.accountOperation === "ARCHIVE" && account.archivedAt === null)
+    ) {
+      throw new Error("Persisted account verification failed.");
+    }
+    return account;
   }
 
   private async requireLedgerContext(

@@ -8,6 +8,7 @@ import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/w
 
 import {
   accountDetailChartPeriod,
+  accountMovementMinor,
   type AccountDetail,
   type AccountDetailChartRange,
   type AccountDetailRecentTransaction,
@@ -160,9 +161,7 @@ function mapRecentTransaction(
   const transaction = row.transaction;
   const isOutgoingTransfer = transaction.kind === "TRANSFER" && transaction.accountId === accountId;
   const isIncomingTransfer = transaction.kind === "TRANSFER" && transaction.transferAccountId === accountId;
-  const movementMinor = isOutgoingTransfer || transaction.kind === "EXPENSE"
-    ? -transaction.amountMinor
-    : transaction.amountMinor;
+  const movementMinor = accountMovementMinor(transaction, accountId);
 
   return {
     id: transaction.id,

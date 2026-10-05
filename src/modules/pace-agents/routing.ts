@@ -2,7 +2,7 @@ import type { PaceRoute, PaceRoutePlan, PaceSubAgentDefinition, PaceSubAgentId }
 import type { PaceSubAgentRegistry } from "./registry";
 
 const WRITE_SIGNALS = [
-  "add", "record", "log", "create", "set", "change", "update", "edit", "pause", "archive", "rename",
+  "add", "record", "log", "create", "set", "change", "update", "edit", "pause", "archive", "unarchive", "restore", "rename",
   "transfer", "move", "correct", "fix", "was actually",
   "i spent", "i paid", "i bought", "i received", "i earned",
   "ajoute*", "enregistre*", "cree*", "creer", "modifie*", "change*", "definis", "mets",

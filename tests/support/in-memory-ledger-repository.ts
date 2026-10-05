@@ -18,6 +18,8 @@ import type {
 import { toCurrencyCode } from "@/money/currency";
 import { getAccountSpendability } from "@/modules/ledger/spendability-policy";
 import type {
+  AccountDetailMovementSummaryInput,
+  LedgerAccountDetailMovementSummary,
   CreateLedgerAccountRecord,
   CreateLedgerCategoryRecord,
   CreateLedgerMerchantRecord,
@@ -153,6 +155,28 @@ export class InMemoryLedgerRepository implements LedgerRepository {
   async getWorkspaceAccountBalances(workspaceId: string): Promise<readonly LedgerAccountBalance[]> {
     this.workspaceAccountBalancesReadCount += 1;
     return this.queryAccountBalances(workspaceId);
+  }
+
+  async getAccountDetailMovementSummary(
+    input: AccountDetailMovementSummaryInput,
+  ): Promise<LedgerAccountDetailMovementSummary> {
+    const summary = { inflowsMinor: 0n, outflowsMinor: 0n, netTransfersMinor: 0n, transactionCount: 0 };
+    const rows = this.transactionListRows(input.workspaceId, {
+      accountId: input.accountId,
+      status: "POSTED",
+      occurredFrom: input.periodStart,
+      occurredToExclusive: input.periodEnd,
+    });
+    for (const { transaction } of rows) {
+      const outgoing = transaction.kind === "EXPENSE"
+        || (transaction.kind === "TRANSFER" && transaction.accountId === input.accountId);
+      const movementMinor = outgoing ? -transaction.amountMinor : transaction.amountMinor;
+      if (movementMinor > 0n) summary.inflowsMinor += movementMinor;
+      else summary.outflowsMinor -= movementMinor;
+      if (transaction.kind === "TRANSFER") summary.netTransfersMinor += movementMinor;
+      summary.transactionCount += 1;
+    }
+    return { hasCurrencyMismatch: false, ...summary };
   }
 
   async findOpeningBalance(
