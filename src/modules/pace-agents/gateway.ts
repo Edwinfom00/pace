@@ -4,6 +4,7 @@ import type { PaceDomainServices } from "./domain-services";
 import type {
   PaceAgentError,
   PaceCapability,
+  PaceCapabilityTraceScope,
   PaceContextEnvelope,
   PaceRefusalCode,
   PaceSubAgentId,
@@ -69,20 +70,25 @@ export async function invokePaceCapability(
       callId: invocation.callId,
       idempotencyKey: `${invocation.envelope.session.runtime}:${invocation.envelope.session.id}:${invocation.callId}`,
     });
-    return traced(deps, invocation, {
-      cause: null,
-      result: {
-        agentId,
-        tool: capability.tool,
-        callId: invocation.callId,
-        access: capability.access,
-        status: "ok",
-        data,
-        digest: digestPaceData(data),
-        actionId: capability.actionRef?.(input as never, data) ?? null,
-        error: null,
+    return traced(
+      deps,
+      invocation,
+      {
+        cause: null,
+        result: {
+          agentId,
+          tool: capability.tool,
+          callId: invocation.callId,
+          access: capability.access,
+          status: "ok",
+          data,
+          digest: digestPaceData(data),
+          actionId: capability.actionRef?.(input as never, data) ?? null,
+          error: null,
+        },
       },
-    });
+      capability.traceScope?.(input as never, data) ?? null,
+    );
   } catch (cause) {
     return traced(deps, invocation, failure(agentId, capability, invocation, input, cause));
   }
@@ -282,6 +288,7 @@ async function traced(
   deps: PaceGatewayDependencies,
   invocation: PaceInvocation,
   outcome: PaceInvocationOutcome,
+  scope: PaceCapabilityTraceScope | null = null,
 ): Promise<PaceInvocationOutcome> {
   const { result } = outcome;
   const capability = deps.registry.findCapability(result.agentId, result.tool);
@@ -296,6 +303,7 @@ async function traced(
     digest: result.digest,
     actionId: result.actionId,
     errorCode: result.error?.code ?? null,
+    ...(scope && capability ? { scope: { ...scope, services: capability.domainServices } } : {}),
   });
   return outcome;
 }

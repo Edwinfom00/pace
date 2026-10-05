@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   PACE_ORCHESTRATOR_ID,
   type PaceCapabilityAccess,
+  type PaceCapabilityTraceScope,
   type PaceContextEnvelope,
   type PaceLifecycleStage,
   type PaceOrchestratorStatus,
@@ -24,6 +25,11 @@ interface PaceTraceBase {
   readonly sessionId: string;
 }
 
+/** What a read covered and which canonical services answered it. It never carries an amount. */
+export interface PaceTraceScope extends PaceCapabilityTraceScope {
+  readonly services: readonly string[];
+}
+
 export type PaceTraceDetail =
   | {
       readonly type: "route.planned";
@@ -43,6 +49,7 @@ export type PaceTraceDetail =
       readonly digest: string | null;
       readonly actionId: string | null;
       readonly errorCode: PaceRefusalCode | null;
+      readonly scope?: PaceTraceScope;
     }
   | {
       readonly type: "approval.requested" | "approval.granted" | "approval.rejected" | "approval.denied";

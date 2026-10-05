@@ -14,7 +14,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -34,17 +34,13 @@ import {
   REPORT_LANGUAGES,
   REPORT_OPTIONAL_SECTIONS,
   reportPages,
-  type FinancialReportDTO,
   type ReportLanguage,
   type ReportOptionalSection,
 } from "../domain/financial-report.types";
 import {
-  giveSvgImagesIntrinsicSize,
-  makeColorsCanvasSafe,
-  waitForImages,
-  withAccurateTextBaselines,
-} from "./html2canvas-compat";
-import { FinancialReportDocument } from "./financial-report-document";
+  useFinancialReportPdf,
+  type ReportExportStage,
+} from "./use-financial-report-pdf";
 
 type Props = {
   readonly workspaceSlug: string;
@@ -54,8 +50,7 @@ type Props = {
   readonly language: ReportLanguage;
 };
 
-type Stage = "idle" | "preparing" | "rendering" | "exporting";
-type ExportError = "request" | "render";
+type Stage = ReportExportStage;
 
 const STAGES = ["preparing", "rendering", "exporting"] as const;
 
@@ -72,8 +67,6 @@ const SECTION_ICONS: Record<ReportOptionalSection, LucideIcon> = {
   insights: Lightbulb,
 };
 
-class ReportRequestError extends Error {}
-
 export function FinancialReportExport({
   workspaceSlug,
   periodKey,
@@ -86,18 +79,14 @@ export function FinancialReportExport({
   const [sections, setSections] = useState<ReportOptionalSection[]>([
     ...REPORT_OPTIONAL_SECTIONS,
   ]);
-  const [stage, setStage] = useState<Stage>("idle");
-  const [error, setError] = useState<ExportError | null>(null);
-  const [savedFile, setSavedFile] = useState<string | null>(null);
-  const [report, setReport] = useState<FinancialReportDTO | null>(null);
-  const renderHost = useRef<HTMLDivElement>(null);
+  const { stage, error, savedFile, clearError, reset, renderHost, ...pdf } =
+    useFinancialReportPdf();
   const labels = getReportLabels(initialLanguage);
   const busy = stage !== "idle";
   const pageCount = reportPages(sections).length;
 
   function openDialog() {
-    setError(null);
-    setSavedFile(null);
+    reset();
     setOpen(true);
   }
 
@@ -106,7 +95,7 @@ export function FinancialReportExport({
   }
 
   function toggleSection(section: ReportOptionalSection) {
-    setError(null);
+    clearError();
     setSections((current) =>
       current.includes(section)
         ? current.filter((item) => item !== section)
@@ -116,70 +105,14 @@ export function FinancialReportExport({
     );
   }
 
-  async function generate() {
-    setError(null);
-    setSavedFile(null);
-    setStage("preparing");
-    try {
-      const response = await fetch("/api/reports/financial", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          workspaceSlug,
-          period: periodKey,
-          currency,
-          language,
-          sections: sections.join(","),
-        }),
-      }).catch((cause: unknown) => {
-        throw new ReportRequestError("Report request failed", { cause });
-      });
-      if (!response.ok) {
-        throw new ReportRequestError(
-          `Report request failed with ${response.status}`,
-        );
-      }
-      const document = (await response.json()) as FinancialReportDTO;
-      setReport(document);
-      setStage("rendering");
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      );
-      await window.document.fonts.ready;
-      const element = renderHost.current?.firstElementChild;
-      if (!(element instanceof HTMLElement))
-        throw new Error("Report was not rendered");
-      await waitForImages(element);
-      await giveSvgImagesIntrinsicSize(element);
-      setStage("exporting");
-      const { default: html2pdf } = await import("html2pdf.js");
-      await withAccurateTextBaselines(() =>
-        html2pdf()
-          .set({
-            margin: 0,
-            filename: document.meta.fileName,
-            image: { type: "jpeg", quality: 0.95 },
-            html2canvas: {
-              scale: 2,
-              useCORS: true,
-              backgroundColor: "#fff",
-              onclone: (_clone: Document, reference: HTMLElement) =>
-                makeColorsCanvasSafe(reference),
-            },
-            jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-          })
-          .from(element)
-          .save(),
-      );
-      setSavedFile(document.meta.fileName);
-    } catch (cause) {
-      console.error("[reports] Financial report export failed", cause);
-      setError(cause instanceof ReportRequestError ? "request" : "render");
-    } finally {
-      setReport(null);
-      setStage("idle");
-    }
+  function generate() {
+    return pdf.generate({
+      workspaceSlug,
+      period: periodKey,
+      currency,
+      language,
+      sections: sections.join(","),
+    });
   }
 
   return (
@@ -238,7 +171,7 @@ export function FinancialReportExport({
                 <LanguagePicker
                   labels={labels}
                   onChange={(next) => {
-                    setError(null);
+                    clearError();
                     setLanguage(next);
                   }}
                   value={language}
@@ -329,14 +262,7 @@ export function FinancialReportExport({
         </ResponsiveDialogContent>
       </ResponsiveDialog>
 
-      {report ? (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none fixed top-0 left-[-10000px]"
-          ref={renderHost}>
-          <FinancialReportDocument pdf report={report} />
-        </div>
-      ) : null}
+      {renderHost}
     </>
   );
 }

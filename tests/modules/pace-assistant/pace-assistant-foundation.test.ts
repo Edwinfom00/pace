@@ -34,6 +34,8 @@ const blocks: readonly PaceAssistantBlock[] = [
   { type: "goal-summary", goals: [{ id: "goal-1", name: "Emergency fund", saved: money, target: { minorUnits: "100000", currency: "XAF" }, progressBps: "2485", targetDate: date, status: "ACTIVE" }] },
   { type: "insight", insightType: "CATEGORY_SPIKE", severity: "MEDIUM", title: "Dining is higher", description: "Review recent restaurant purchases.", evidence: ["More than usual"] },
   { type: "comparison", title: "September vs August", metrics: [{ label: "Dining", current: money, previous: { minorUnits: "22000", currency: "XAF" }, percentageChange: 13, sentiment: "negative" }] },
+  { type: "chart", chartType: "bar", title: "Income vs spending", currency: "XAF", categories: ["Aug 26", "Sep 26"], series: [{ key: "income", label: "Income", values: ["30000", "45000"] }, { key: "spending", label: "Spending", values: ["22000", "24850"] }], note: "Sep 26 is still in progress." },
+  { type: "report-export", workspaceSlug: "home", period: "2026-09", periodFrom: "2026-09-01", periodTo: "2026-09-30", currency: "XAF", language: "fr", sections: "transactions,accounts,recurring,insights", fileName: "pace-home-financial-report-2026-09.pdf", pageCount: 9 },
   { type: "notice", tone: "warning", title: "Currency check", message: "An FX strategy is required." },
   { type: "action-proposal", actionId: "action-1", actionType: "CREATE_TRANSACTION", title: "Add expense?", summary: "A draft is ready.", fields: [{ label: "Amount", value: "500 XAF" }] },
   { type: "approval", actionId: "action-1", title: "Confirm expense", summary: "Review before approval.", fields: [{ label: "Amount", value: "500 XAF" }], status: "pending" },
@@ -41,7 +43,7 @@ const blocks: readonly PaceAssistantBlock[] = [
 ];
 
 test("structured response protocol validates every supported Pace block", () => {
-  assert.deepEqual(PACE_ASSISTANT_BLOCK_TYPES.length, 19);
+  assert.deepEqual(PACE_ASSISTANT_BLOCK_TYPES.length, 21);
   const parsed = paceAssistantResponseSchema.safeParse({ blocks });
   assert.equal(parsed.success, true);
   assert.equal(paceAssistantResponseSchema.safeParse({ blocks: [{ type: "metric", label: "Invalid", value: { minorUnits: "12.5", currency: "XAF" } }] }).success, false);

@@ -8,6 +8,16 @@ import type {
 import type { AgentActionService } from "@/modules/agent-actions/agent-action-service";
 import type { AgentInboxListQuery, AgentInboxReference } from "@/modules/financial-inbox/agent-inbox-query";
 import type {
+  AgentAccountInsightsQuery,
+  AgentCategoryInsightsQuery,
+  AgentInsightChartQuery,
+  AgentInsightsAnalyticsQuery,
+  AgentInsightsContext,
+  AgentRecurringInsightsQuery,
+  AgentReportQuery,
+  AgentTrendsQuery,
+} from "@/modules/insights/agent-insights-view";
+import type {
   AgentBudgetFilter,
   AgentForecastQuery,
   AgentGoalFilter,
@@ -93,6 +103,37 @@ export interface PaceDomainServices extends PaceAgentActionDomainServices {
   getRules(scope: PaceServiceScope, query: AgentRuleListQuery): Promise<unknown>;
   getRule(scope: PaceServiceScope, reference: RuleReference): Promise<unknown>;
   getInsightContext(scope: PaceServiceScope, language: string | null): Promise<unknown>;
+  getInsightsAnalytics(
+    scope: PaceServiceScope,
+    query: AgentInsightsAnalyticsQuery,
+    context: AgentInsightsContext,
+  ): Promise<unknown>;
+  getCategoryInsights(
+    scope: PaceServiceScope,
+    query: AgentCategoryInsightsQuery,
+    context: AgentInsightsContext,
+  ): Promise<unknown>;
+  getAccountInsights(
+    scope: PaceServiceScope,
+    query: AgentAccountInsightsQuery,
+    context: AgentInsightsContext,
+  ): Promise<unknown>;
+  getInsightsTrends(scope: PaceServiceScope, query: AgentTrendsQuery, context: AgentInsightsContext): Promise<unknown>;
+  getRecurringInsights(
+    scope: PaceServiceScope,
+    query: AgentRecurringInsightsQuery,
+    context: AgentInsightsContext,
+  ): Promise<unknown>;
+  createInsightChart(
+    scope: PaceServiceScope,
+    query: AgentInsightChartQuery,
+    context: AgentInsightsContext,
+  ): Promise<unknown>;
+  generateFinancialReport(
+    scope: PaceServiceScope,
+    query: AgentReportQuery,
+    context: AgentInsightsContext,
+  ): Promise<unknown>;
 }
 
 export function createAgentActionDomainServices(actions: AgentActionService): PaceAgentActionDomainServices {

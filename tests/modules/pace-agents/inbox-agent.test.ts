@@ -289,6 +289,13 @@ async function createFixture() {
     getRules: unused,
     getRule: unused,
     getInsightContext: unused,
+    getInsightsAnalytics: unused,
+    getCategoryInsights: unused,
+    getAccountInsights: unused,
+    getInsightsTrends: unused,
+    getRecurringInsights: unused,
+    createInsightChart: unused,
+    generateFinancialReport: unused,
   };
 
   const trace = createInMemoryPaceTraceSink();

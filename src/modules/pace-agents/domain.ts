@@ -63,6 +63,13 @@ export interface PaceCapability {
   readonly domainServices: readonly (keyof PaceDomainServices)[];
   readonly run: (input: never, call: PaceCapabilityCall) => Promise<unknown>;
   readonly actionRef?: (input: never, output: unknown) => string | null;
+  readonly traceScope?: (input: never, output: unknown) => PaceCapabilityTraceScope | null;
+}
+
+export interface PaceCapabilityTraceScope {
+  readonly period: { readonly from: string; readonly to: string } | null;
+  readonly currencies: readonly string[];
+  readonly report: { readonly language: string; readonly pageCount: number } | null;
 }
 
 export interface PaceIntentSignals {

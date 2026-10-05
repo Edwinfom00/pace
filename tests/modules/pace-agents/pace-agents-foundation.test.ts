@@ -125,6 +125,13 @@ async function createFixture() {
     getRules: read("getRules", () => ({ rules: [{ id: "rule-1", name: "Carrefour" }] })),
     getRule: read("getRule", () => ({ resolved: true, rule: { id: "rule-1", name: "Carrefour" } })),
     getInsightContext: read("getInsightContext", (workspaceId) => ({ workspaceId, insights: [] })),
+    getInsightsAnalytics: read("getInsightsAnalytics", () => ({ analytics: { kind: "analytics_result", spending: money("248500") } })),
+    getCategoryInsights: read("getCategoryInsights", () => ({ resolved: true, category: { id: "category-1", name: "Food" } })),
+    getAccountInsights: read("getAccountInsights", (workspaceId) => ({ resolved: true, account: { id: `${workspaceId}-main` } })),
+    getInsightsTrends: read("getInsightsTrends", () => ({ trend: { kind: "trend_result", months: [] } })),
+    getRecurringInsights: read("getRecurringInsights", () => ({ actual: { basis: "ACTUAL_TRANSACTIONS" }, projected: { basis: "PROJECTION" } })),
+    createInsightChart: read("createInsightChart", () => ({ kind: "chart_result", hasData: false, block: null })),
+    generateFinancialReport: read("generateFinancialReport", () => ({ kind: "report_export_result", pageCount: 9 })),
   };
 
   const trace = createInMemoryPaceTraceSink();
@@ -462,6 +469,9 @@ test("a sub-agent cannot reach data except through its own capabilities and thei
     create_goal_contribution_draft: { operation: "ADD", goalName: "Canada", amountText: "50,000", sourceText: "add 50,000 to Canada" },
     create_rule_draft: { operation: "DISABLE", ruleName: "Carrefour", sourceText: "disable my Carrefour rule" },
     submit_plan_draft: { actionId: crypto.randomUUID() },
+    get_category_analysis: { categoryName: "Food" },
+    get_account_analysis: { accountName: "Bank" },
+    create_insight_chart: { chart: "INCOME_VS_SPENDING" },
   };
   for (const agent of paceSubAgentRegistry.agents) {
     for (const capability of agent.capabilities) {

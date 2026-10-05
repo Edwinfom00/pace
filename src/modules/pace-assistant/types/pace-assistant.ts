@@ -96,6 +96,27 @@ const comparisonBlockSchema = z.object({
   title: z.string().trim().min(1).max(240),
   metrics: z.array(z.object({ label: z.string().trim().min(1).max(160), current: serializedMoneySchema, previous: serializedMoneySchema, percentageChange: z.number().finite().min(-10_000).max(10_000).nullable().optional(), sentiment: z.enum(["positive", "negative", "neutral"]) }).strict()).min(1).max(12),
 }).strict();
+const chartBlockSchema = z.object({
+  type: z.literal("chart"),
+  chartType: z.enum(["bar", "stacked-bar", "line", "donut"]),
+  title: z.string().trim().min(1).max(240),
+  currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/),
+  categories: z.array(z.string().trim().min(1).max(80)).min(1).max(12),
+  series: z.array(z.object({ key: z.string().trim().min(1).max(160), label: z.string().trim().min(1).max(160), values: z.array(decimalInteger).min(1).max(12) }).strict()).min(1).max(6),
+  note: z.string().trim().min(1).max(400).optional(),
+}).strict().refine((block) => block.series.every((series) => series.values.length === block.categories.length), { message: "Every series needs one value per category." });
+const reportExportBlockSchema = z.object({
+  type: z.literal("report-export"),
+  workspaceSlug: z.string().trim().min(1).max(160),
+  period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  periodFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  periodTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/),
+  language: z.enum(["en", "fr", "de"]),
+  sections: z.string().max(80),
+  fileName: z.string().trim().min(1).max(160),
+  pageCount: z.number().int().min(1).max(9),
+}).strict();
 const noticeBlockSchema = z.object({ type: z.literal("notice"), tone: z.enum(["info", "success", "warning", "error"]), title: z.string().trim().min(1).max(240).optional(), message: z.string().trim().min(1).max(1_200) }).strict();
 
 const actionFieldSchema = z.object({ label: z.string().trim().min(1).max(160), value: z.string().trim().min(1).max(500), sensitive: z.boolean().optional() }).strict();
@@ -106,7 +127,7 @@ const actionResultBlockSchema = z.object({ type: z.literal("action-result"), sta
 export const paceAssistantBlockSchema = z.discriminatedUnion("type", [
   textBlockSchema, headingBlockSchema, listBlockSchema, tableBlockSchema, metricBlockSchema, metricGridBlockSchema,
   transactionListBlockSchema, expenseListBlockSchema, incomeListBlockSchema, recurringListBlockSchema, billsListBlockSchema,
-  budgetSummaryBlockSchema, goalSummaryBlockSchema, insightBlockSchema, comparisonBlockSchema, noticeBlockSchema,
+  budgetSummaryBlockSchema, goalSummaryBlockSchema, insightBlockSchema, comparisonBlockSchema, chartBlockSchema, reportExportBlockSchema, noticeBlockSchema,
   actionProposalBlockSchema, approvalBlockSchema, actionResultBlockSchema,
 ]);
 
@@ -128,6 +149,6 @@ export type PaceAssistantMessage = {
 
 export const PACE_ASSISTANT_BLOCK_TYPES = [
   "text", "heading", "list", "table", "metric", "metric-grid", "transaction-list", "expense-list", "income-list",
-  "recurring-list", "bills-list", "budget-summary", "goal-summary", "insight", "comparison", "notice",
+  "recurring-list", "bills-list", "budget-summary", "goal-summary", "insight", "comparison", "chart", "report-export", "notice",
   "action-proposal", "approval", "action-result",
 ] as const;

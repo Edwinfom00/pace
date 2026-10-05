@@ -7,6 +7,7 @@ import type {
   PaceCapability,
   PaceCapabilityAccess,
   PaceCapabilityCall,
+  PaceCapabilityTraceScope,
   PaceLifecycleStage,
   PaceSubAgentDefinition,
 } from "./domain";
@@ -21,6 +22,7 @@ export function definePaceCapability<TSchema extends z.ZodType>(config: {
   readonly domainServices: readonly (keyof PaceDomainServices)[];
   readonly run: (input: z.output<TSchema>, call: PaceCapabilityCall) => Promise<unknown>;
   readonly actionRef?: (input: z.output<TSchema>, output: unknown) => string | null;
+  readonly traceScope?: (input: z.output<TSchema>, output: unknown) => PaceCapabilityTraceScope | null;
 }): PaceCapability {
   return { ...config, approval: config.access === "commit" ? "required" : "none" };
 }
