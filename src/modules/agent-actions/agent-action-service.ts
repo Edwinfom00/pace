@@ -26,8 +26,17 @@ import {
   presentAgentInboxItem,
   type AgentInboxStateReader,
 } from "@/modules/financial-inbox/queries/agent-inbox-reads";
+import {
+  presentAgentBudget,
+  presentAgentContributions,
+  presentAgentGoal,
+  resolveGoalReference,
+} from "@/modules/plans/agent-plans-view";
 import type { PlansContext, PlansService } from "@/modules/plans/plan-service";
 import type { BudgetRecord, SavingsGoalRecord } from "@/modules/plans/domain";
+import { safeBudgetRead } from "@/modules/plans/queries/agent-plans-reads";
+import type { RuleRecord } from "@/modules/plans/rules/domain";
+import type { RulesService } from "@/modules/plans/rules/rule-service";
 import { buildRecurringOverview } from "@/modules/recurring/domain/recurring-overview";
 import { withRecurringDisplayNames } from "@/modules/recurring/domain/recurring-reference";
 
@@ -52,6 +61,8 @@ import {
   isInboxAction,
   isInboxDraftReady,
   isPlanAction,
+  isPlanningAction,
+  isPlanningDraftReady,
   isRecurringAction,
   isRecurringDraftReady,
   isTransactionAction,
@@ -59,6 +70,14 @@ import {
   isTransactionChangeDraftReady,
   type PlanAgentActionRecord,
   type PlanActionResult,
+  type BudgetPlanningDraft,
+  type ContributionPlanningDraft,
+  type GoalPlanningDraft,
+  type PlanningActionResult,
+  type PlanningAgentActionRecord,
+  type PlanningDraft,
+  type RulePlanningDraft,
+  type RulePlanningDryRun,
   type RecurringActionResult,
   type RecurringAgentActionRecord,
   type RecurringDraft,
@@ -79,6 +98,30 @@ import {
   type InboxDraftIntent,
 } from "./inbox-draft";
 import { buildPlanDraft, type PlanDraftIntent } from "./plan-draft";
+import {
+  buildBudgetPlanningDraft,
+  buildContributionPlanningDraft,
+  buildGoalPlanningDraft,
+  buildRulePlanningDraft,
+  completeBudgetPlanningDraft,
+  completeRulePlanningDraft,
+  isBudgetPlanningDraft,
+  isContributionPlanningDraft,
+  isGoalPlanningDraft,
+  persistedBudgetMatches,
+  persistedContributionMatches,
+  persistedGoalMatches,
+  persistedRuleMatches,
+  planningActionType,
+  planningIdempotencyKey,
+  planningRuleDefinition,
+  presentBudgetResult,
+  presentContributionResult,
+  presentGoalResult,
+  presentRuleDryRun,
+  presentRuleResult,
+  type PlanningDraftIntent,
+} from "./planning-draft";
 import {
   buildRecurringDraft,
   nextOccurrenceInstant,
@@ -127,6 +170,12 @@ export interface CreateInboxDraftInput extends InboxDraftIntent {
   eveSessionId?: string | null;
   eveCallId?: string | null;
 }
+
+export type CreatePlanningDraftInput = PlanningDraftIntent & {
+  idempotencyKey: string;
+  eveSessionId?: string | null;
+  eveCallId?: string | null;
+};
 
 /**
  * A reason without a canonical settlement rule never becomes an action: the
@@ -195,13 +244,23 @@ export interface InboxActionDetail {
   action: InboxAgentActionRecord;
 }
 
+export interface PlanningActionDetail {
+  action: PlanningAgentActionRecord;
+}
+
 export type AgentActionDetail =
   | TransactionActionDetail
   | TransactionChangeActionDetail
   | PlanActionDetail
   | AccountActionDetail
   | RecurringActionDetail
-  | InboxActionDetail;
+  | InboxActionDetail
+  | PlanningActionDetail;
+
+export type PlanningRuleActions = Pick<
+  RulesService,
+  "listRules" | "getRule" | "createRule" | "updateRule" | "setRuleEnabled" | "archiveRule" | "dryRunRule"
+>;
 
 type RecurringActions = Pick<
   FinancialInboxService,
@@ -246,6 +305,7 @@ export class AgentActionService {
     private readonly plans?: PlansService,
     private readonly recurring?: RecurringActions,
     private readonly inbox?: InboxActions,
+    private readonly rules?: PlanningRuleActions,
   ) {}
 
   async getTransactionContext(
@@ -514,6 +574,146 @@ export class AgentActionService {
     return { prepared: true, action: created };
   }
 
+  /**
+   * Prepares a budget, savings-goal, contribution, or rule change. Nothing is
+   * written until the draft is approved; a change the canonical Plans or Rules
+   * policy would refuse is rejected here with that policy's own reason.
+   */
+  async createPlanningDraft(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: CreatePlanningDraftInput,
+  ): Promise<PlanningAgentActionRecord> {
+    const existing = await this.actions.findActionByIdempotencyKey(workspaceId, input.idempotencyKey);
+    if (existing) {
+      const action = await this.requireActionInitiator(actor, workspaceId, existing.id);
+      if (!isPlanningAction(action)) throw new ConflictError("Idempotency key belongs to another action type.");
+      return action;
+    }
+
+    const context = await this.requireLedgerContext(actor, workspaceId);
+    const draft = await this.buildPlanningDraft(actor, workspaceId, context, input);
+    const created = await this.actions.createAction({
+      id: randomUUID(),
+      workspaceId,
+      type: planningActionType(draft),
+      initiatedByUserId: actor.userId,
+      draft,
+      idempotencyKey: input.idempotencyKey,
+      eveSessionId: input.eveSessionId ?? null,
+      eveCallId: input.eveCallId ?? null,
+    });
+    await this.audit(created, actor.userId, "DRAFT_CREATED", null, "DRAFT", {
+      planningOperation: draft.planningOperation,
+      targetId: draft.targetId,
+    });
+    if (!isPlanningAction(created)) throw new Error("Created action was not a planning action.");
+    return created;
+  }
+
+  private async buildPlanningDraft(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    member: WorkspaceMemberContext,
+    intent: PlanningDraftIntent,
+  ): Promise<PlanningDraft> {
+    const plans = this.requirePlans();
+    const { currency, timezone } = member.preferences;
+    const now = new Date();
+    const readGoals = async () =>
+      (await plans.listSavingsGoalSummaries(actor, workspaceId, now)).map((summary) =>
+        presentAgentGoal(summary, timezone),
+      );
+
+    switch (intent.family) {
+      case "BUDGET": {
+        const [summaries, categories] = await Promise.all([
+          safeBudgetRead(() => plans.listBudgetSummaries(actor, workspaceId, now)),
+          this.ledger.listCategories(actor, workspaceId),
+        ]);
+        const context = {
+          currency,
+          timezone,
+          now,
+          categories,
+          budgets: summaries.map((summary) => presentAgentBudget(summary, categories, timezone)),
+        };
+        const draft = buildBudgetPlanningDraft(intent, context);
+        const { scope, amountMinor, startsOn } = draft.values;
+        const preview =
+          draft.planningOperation === "BUDGET_CREATE" && draft.missingFields.length === 0 && scope && amountMinor && startsOn
+            ? await safeBudgetRead(() =>
+                plans.previewBudgetSummary(
+                  actor,
+                  workspaceId,
+                  {
+                    scope,
+                    categoryId: draft.values.categoryId ?? null,
+                    subcategoryIds: draft.values.subcategoryIds ?? [],
+                    amountMinor: BigInt(amountMinor),
+                    startsOn: new Date(startsOn),
+                    endsOn: draft.values.endsOn ? new Date(draft.values.endsOn) : null,
+                  },
+                  now,
+                ),
+              )
+            : null;
+        return completeBudgetPlanningDraft(draft, context, preview);
+      }
+      case "GOAL":
+        return buildGoalPlanningDraft(intent, { currency, timezone, now, goals: await readGoals() });
+      case "CONTRIBUTION": {
+        const goals = await readGoals();
+        const target = resolveGoalReference(intent, goals);
+        const contributions =
+          target.status === "RESOLVED"
+            ? presentAgentContributions(
+                await plans.listSavingsGoalContributions(actor, workspaceId, target.item.id),
+                target.item.allowedActions.canContribute,
+                timezone,
+              )
+            : [];
+        return buildContributionPlanningDraft(intent, { timezone, now, goals, contributions });
+      }
+      case "RULE": {
+        const [rules, categories, accounts] = await Promise.all([
+          this.requireRules().listRules(actor, workspaceId, { includeArchived: true }),
+          this.ledger.listCategories(actor, workspaceId),
+          this.ledger.listAccounts(actor, workspaceId),
+        ]);
+        const context = { rules, categories, accounts };
+        const draft = buildRulePlanningDraft(intent, context);
+        return completeRulePlanningDraft(draft, context, await this.dryRunPlanningRule(actor, workspaceId, draft, rules));
+      }
+    }
+  }
+
+  /** Reads the canonical dry run for a rule that is about to start or change what it matches. It writes nothing. */
+  private async dryRunPlanningRule(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    draft: RulePlanningDraft,
+    rules: readonly RuleRecord[],
+  ): Promise<RulePlanningDryRun | null> {
+    if (
+      draft.missingFields.length > 0 ||
+      draft.planningOperation === "RULE_DISABLE" ||
+      draft.planningOperation === "RULE_ARCHIVE"
+    ) {
+      return null;
+    }
+    const rule = rules.find((candidate) => candidate.id === draft.targetId) ?? null;
+    const definition = planningRuleDefinition(draft, rule);
+    if (!definition) return null;
+    return presentRuleDryRun(
+      await this.requireRules().dryRunRule(actor, workspaceId, {
+        definition,
+        priority: draft.values.priority ?? rule?.priority,
+        ...(rule ? { ruleId: rule.id } : {}),
+      }),
+    );
+  }
+
   async getPlanContext(actor: AuthenticatedActor, workspaceId: string): Promise<PlansContext> {
     return this.requirePlans().getContext(actor, workspaceId);
   }
@@ -579,6 +779,7 @@ export class AgentActionService {
     if (isAccountAction(action)) return { action };
     if (isRecurringAction(action)) return { action };
     if (isInboxAction(action)) return { action };
+    if (isPlanningAction(action)) return { action };
     if (isPlanAction(action)) {
       return { action, planContext: await this.getPlanContext(actor, workspaceId) };
     }
@@ -1387,6 +1588,307 @@ export class AgentActionService {
     });
   }
 
+  /**
+   * Applies an approved budget, savings-goal, contribution, or rule draft
+   * through the canonical Plans and Rules services. Each write carries the
+   * version the draft was prepared against and the action's idempotency key,
+   * so a stale draft is refused and a retry replays the same change. None of
+   * these services posts a ledger transaction or changes an account balance.
+   */
+  async executeApprovedPlanning(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+  ): Promise<PlanningActionResult> {
+    const action = await this.requireActionInitiator(actor, workspaceId, actionId);
+    const wrongType = "This action does not change a budget, savings goal, or rule.";
+    if (!isPlanningAction(action)) throw new ConflictError(wrongType);
+    if (action.status === "COMPLETED" && action.result) return action.result;
+    if (action.status !== "APPROVED" && action.status !== "EXECUTING") {
+      throw new ConflictError("Only an approved action can be executed.");
+    }
+
+    if (action.status === "APPROVED") {
+      const transitioned = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["APPROVED"],
+        to: "EXECUTING",
+      });
+      if (transitioned) {
+        await this.audit(transitioned, actor.userId, "EXECUTION_STARTED", "APPROVED", "EXECUTING");
+      } else {
+        const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+        if (!isPlanningAction(current)) throw new ConflictError(wrongType);
+        if (current.status === "COMPLETED" && current.result) return current.result;
+        if (current.status !== "EXECUTING") {
+          throw new ConflictError("This action changed before it could be executed.");
+        }
+      }
+    }
+
+    try {
+      const draft = action.draft;
+      if (!isPlanningDraftReady(draft)) {
+        throw new ConflictError("The approved action has an incomplete planning draft.");
+      }
+      const result = await this.persistPlanningAction(actor, workspaceId, actionId, draft);
+      const completed = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["EXECUTING"],
+        to: "COMPLETED",
+        result,
+        failureCode: null,
+        failureMessage: null,
+      });
+      if (completed) {
+        await this.audit(completed, actor.userId, "PERSISTENCE_VERIFIED", "EXECUTING", "COMPLETED", {
+          planningOperation: draft.planningOperation,
+          entity: result.entity,
+          targetId:
+            result.entity === "BUDGET" ? result.budgetId : result.entity === "RULE" ? result.ruleId : result.goalId,
+          ...(result.entity === "CONTRIBUTION" ? { recordedContributionIds: result.recordedContributionIds } : {}),
+        });
+        return result;
+      }
+
+      const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+      if (isPlanningAction(current) && current.status === "COMPLETED" && current.result) return current.result;
+      throw new ConflictError("This action changed while its planning change was being verified.");
+    } catch (error) {
+      await this.failAction(actor, workspaceId, actionId, error);
+      throw error;
+    }
+  }
+
+  private persistPlanningAction(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+    draft: PlanningDraft,
+  ): Promise<PlanningActionResult> {
+    if (isBudgetPlanningDraft(draft)) return this.persistBudgetPlanning(actor, workspaceId, actionId, draft);
+    if (isGoalPlanningDraft(draft)) return this.persistGoalPlanning(actor, workspaceId, actionId, draft);
+    if (isContributionPlanningDraft(draft)) {
+      return this.persistContributionPlanning(actor, workspaceId, actionId, draft);
+    }
+    return this.persistRulePlanning(actor, workspaceId, actionId, draft);
+  }
+
+  private planningCommand(actionId: string, draft: PlanningDraft) {
+    if (!draft.targetId || !draft.expectedUpdatedAt) {
+      throw new ConflictError("The approved planning draft has no target.");
+    }
+    return {
+      targetId: draft.targetId,
+      command: {
+        expectedUpdatedAt: new Date(draft.expectedUpdatedAt),
+        idempotencyKey: planningIdempotencyKey(actionId),
+      },
+    };
+  }
+
+  private async persistBudgetPlanning(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+    draft: BudgetPlanningDraft,
+  ): Promise<PlanningActionResult> {
+    const plans = this.requirePlans();
+    const { values } = draft;
+    let persisted: BudgetRecord;
+    if (draft.planningOperation === "BUDGET_CREATE") {
+      if (!values.scope || !values.amountMinor || !values.startsOn) {
+        throw new ConflictError("The approved budget draft is incomplete.");
+      }
+      persisted = await plans.createBudget(actor, workspaceId, {
+        scope: values.scope,
+        categoryId: values.categoryId ?? null,
+        subcategoryIds: values.subcategoryIds ?? [],
+        amountMinor: BigInt(values.amountMinor),
+        startsOn: new Date(values.startsOn),
+        endsOn: values.endsOn ? new Date(values.endsOn) : null,
+        agentActionId: actionId,
+      });
+    } else {
+      const { targetId, command } = this.planningCommand(actionId, draft);
+      persisted =
+        draft.planningOperation === "BUDGET_ARCHIVE"
+          ? await plans.archiveBudget(actor, workspaceId, targetId, command)
+          : await plans.editBudget(actor, workspaceId, targetId, {
+              ...command,
+              ...(values.amountMinor === undefined ? {} : { amountMinor: BigInt(values.amountMinor) }),
+              ...(values.subcategoryIds === undefined ? {} : { subcategoryIds: values.subcategoryIds }),
+            });
+    }
+    const stored = (await plans.getContext(actor, workspaceId)).budgets.find((budget) => budget.id === persisted.id);
+    if (
+      !stored ||
+      !persistedBudgetMatches(draft, stored) ||
+      (draft.planningOperation === "BUDGET_CREATE" && stored.createdByAgentActionId !== actionId)
+    ) {
+      throw new Error("Persisted budget verification failed.");
+    }
+    return presentBudgetResult(draft, stored, new Date());
+  }
+
+  private async persistGoalPlanning(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+    draft: GoalPlanningDraft,
+  ): Promise<PlanningActionResult> {
+    const plans = this.requirePlans();
+    const { values } = draft;
+    let persisted: SavingsGoalRecord;
+    if (draft.planningOperation === "GOAL_CREATE") {
+      if (!values.name || !values.targetAmountMinor) {
+        throw new ConflictError("The approved savings-goal draft is incomplete.");
+      }
+      persisted = await plans.createSavingsGoal(actor, workspaceId, {
+        name: values.name,
+        targetAmountMinor: BigInt(values.targetAmountMinor),
+        targetDate: values.targetDate ? new Date(values.targetDate) : null,
+        ...(values.openingSavedMinor ? { currentSavedMinor: BigInt(values.openingSavedMinor) } : {}),
+        agentActionId: actionId,
+      });
+    } else {
+      const { targetId, command } = this.planningCommand(actionId, draft);
+      switch (draft.planningOperation) {
+        case "GOAL_ARCHIVE":
+          persisted = await plans.archiveSavingsGoal(actor, workspaceId, targetId, command);
+          break;
+        case "GOAL_COMPLETE":
+          persisted = await plans.completeSavingsGoal(actor, workspaceId, targetId, command);
+          break;
+        case "GOAL_EDIT":
+          persisted = await plans.editSavingsGoal(actor, workspaceId, targetId, {
+            ...command,
+            ...(values.name === undefined ? {} : { name: values.name }),
+            ...(values.targetAmountMinor === undefined ? {} : { targetAmountMinor: BigInt(values.targetAmountMinor) }),
+            ...(values.targetDate === undefined
+              ? {}
+              : { targetDate: values.targetDate ? new Date(values.targetDate) : null }),
+          });
+          break;
+      }
+    }
+    const stored = await plans.getSavingsGoalSummary(actor, workspaceId, persisted.id);
+    if (
+      !stored ||
+      !persistedGoalMatches(draft, stored) ||
+      (draft.planningOperation === "GOAL_CREATE" && stored.goal.createdByAgentActionId !== actionId)
+    ) {
+      throw new Error("Persisted savings-goal verification failed.");
+    }
+    return presentGoalResult(draft, stored, new Date());
+  }
+
+  private async persistContributionPlanning(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+    draft: ContributionPlanningDraft,
+  ): Promise<PlanningActionResult> {
+    const plans = this.requirePlans();
+    const { targetId, command } = this.planningCommand(actionId, draft);
+    if (!draft.effectiveAt || !draft.currency) {
+      throw new ConflictError("The approved contribution draft is incomplete.");
+    }
+    const entry = { ...command, effectiveAt: new Date(draft.effectiveAt), note: draft.note };
+    let recordedIds: string[];
+    if (draft.planningOperation === "CONTRIBUTION_ADD") {
+      if (!draft.amountMinor) throw new ConflictError("The approved contribution draft has no amount.");
+      const added = await plans.addSavingsGoalContribution(actor, workspaceId, targetId, {
+        ...entry,
+        amountMinor: BigInt(draft.amountMinor),
+        currency: draft.currency,
+      });
+      recordedIds = [added.id];
+    } else {
+      if (!draft.contributionId) throw new ConflictError("The approved contribution draft has no contribution.");
+      if (draft.planningOperation === "CONTRIBUTION_REVERSE") {
+        const reversal = await plans.reverseSavingsGoalContribution(actor, workspaceId, targetId, draft.contributionId, entry);
+        recordedIds = [reversal.id];
+      } else {
+        if (!draft.amountMinor) throw new ConflictError("The approved contribution draft has no amount.");
+        const correction = await plans.correctSavingsGoalContribution(actor, workspaceId, targetId, draft.contributionId, {
+          ...entry,
+          amountMinor: BigInt(draft.amountMinor),
+          currency: draft.currency,
+        });
+        recordedIds = [correction.reversal.id, correction.replacement.id];
+      }
+    }
+    const [stored, history] = await Promise.all([
+      plans.getSavingsGoalSummary(actor, workspaceId, targetId),
+      plans.listSavingsGoalContributions(actor, workspaceId, targetId),
+    ]);
+    if (!stored || !persistedContributionMatches(draft, stored, history, recordedIds)) {
+      throw new Error("Persisted contribution verification failed.");
+    }
+    return presentContributionResult(draft, stored, history, recordedIds, new Date());
+  }
+
+  private async persistRulePlanning(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+    draft: RulePlanningDraft,
+  ): Promise<PlanningActionResult> {
+    const rules = this.requireRules();
+    const { values } = draft;
+    let persisted: RuleRecord;
+    if (draft.planningOperation === "RULE_CREATE") {
+      const { name, priority, conditions, action } = values;
+      if (!name || priority === undefined || !conditions || !action) {
+        throw new ConflictError("The approved rule draft is incomplete.");
+      }
+      persisted = await rules.createRule(actor, workspaceId, {
+        name,
+        priority,
+        trigger: values.trigger ?? "TRANSACTION_CREATED",
+        conditions: [...conditions],
+        action,
+        idempotencyKey: planningIdempotencyKey(actionId),
+        agentActionId: actionId,
+      });
+    } else {
+      const { targetId, command } = this.planningCommand(actionId, draft);
+      switch (draft.planningOperation) {
+        case "RULE_EDIT":
+          persisted = await rules.updateRule(actor, workspaceId, targetId, {
+            ...command,
+            ...(values.name === undefined ? {} : { name: values.name }),
+            ...(values.priority === undefined ? {} : { priority: values.priority }),
+            ...(values.conditions === undefined ? {} : { conditions: [...values.conditions] }),
+            ...(values.action === undefined ? {} : { action: values.action }),
+          });
+          break;
+        case "RULE_ENABLE":
+        case "RULE_DISABLE":
+          persisted = await rules.setRuleEnabled(actor, workspaceId, targetId, {
+            ...command,
+            enabled: draft.planningOperation === "RULE_ENABLE",
+          });
+          break;
+        case "RULE_ARCHIVE":
+          persisted = await rules.archiveRule(actor, workspaceId, targetId, command);
+          break;
+      }
+    }
+    const stored = await rules.getRule(actor, workspaceId, persisted.id);
+    if (
+      !stored ||
+      !persistedRuleMatches(draft, stored) ||
+      (draft.planningOperation === "RULE_CREATE" && stored.createdByAgentActionId !== actionId)
+    ) {
+      throw new Error("Persisted rule verification failed.");
+    }
+    return presentRuleResult(draft, stored, new Date());
+  }
+
   private async assertAccountDraftAllowed(
     actor: AuthenticatedActor,
     workspaceId: string,
@@ -1786,6 +2288,11 @@ export class AgentActionService {
   private requireRecurring(): RecurringActions {
     if (!this.recurring) throw new Error("Recurring service is unavailable.");
     return this.recurring;
+  }
+
+  private requireRules(): PlanningRuleActions {
+    if (!this.rules) throw new Error("Rules service is unavailable.");
+    return this.rules;
   }
 
   private requireInbox(): InboxActions {

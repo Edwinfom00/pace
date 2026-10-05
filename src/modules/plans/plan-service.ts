@@ -947,6 +947,74 @@ export class PlansService {
       : null;
   }
 
+  async getBudgetCategorySpend(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    budgetId: string,
+    now = new Date(),
+  ): Promise<{
+    summary: BudgetSummary;
+    categories: BudgetCategorySpend[];
+  } | null> {
+    const context = await this.requireReadContext(actor, workspaceId);
+    const [budget, transactions, categories] = await Promise.all([
+      this.plans.findBudget(workspaceId, budgetId),
+      this.ledger.listTransactions(workspaceId, { statuses: ["POSTED"] }),
+      this.ledger.listCategories(workspaceId),
+    ]);
+    if (!budget) return null;
+    const summary = summarizeBudget(
+      budget,
+      transactions,
+      context.preferences.timezone,
+      now,
+      categories,
+    );
+    return {
+      summary,
+      categories: summarizeBudgetCategorySpend(summary, transactions, categories),
+    };
+  }
+
+  /** Read-only: summarizes a budget that does not exist yet and persists nothing. */
+  async previewBudgetSummary(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: CreateBudgetInput,
+    now = new Date(),
+  ): Promise<BudgetSummary> {
+    const context = await this.requireManageContext(actor, workspaceId);
+    await this.assertBudgetInput(workspaceId, input);
+    const [transactions, categories] = await Promise.all([
+      this.ledger.listTransactions(workspaceId, { statuses: ["POSTED"] }),
+      this.ledger.listCategories(workspaceId),
+    ]);
+    return summarizeBudget(
+      {
+        id: randomUUID(),
+        workspaceId,
+        scope: input.scope,
+        categoryId: input.categoryId,
+        subcategoryIds: input.subcategoryIds ?? [],
+        amountMinor: input.amountMinor,
+        currency: context.preferences.currency,
+        frequency: "MONTHLY",
+        status: "ACTIVE",
+        startsOn: new Date(input.startsOn),
+        endsOn: input.endsOn ? new Date(input.endsOn) : null,
+        createdByUserId: actor.userId,
+        updatedByUserId: actor.userId,
+        createdByAgentActionId: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      transactions,
+      context.preferences.timezone,
+      now,
+      categories,
+    );
+  }
+
   async listSavingsGoalSummaries(
     actor: AuthenticatedActor,
     workspaceId: string,
@@ -1106,17 +1174,7 @@ export function summarizeBudget(
     currency: budget.currency,
     statuses: ["POSTED"],
   });
-  const categoryIds = new Set<string>();
-  if (budget.scope === "CATEGORY" && budget.categoryId) {
-    if (budget.subcategoryIds.length)
-      budget.subcategoryIds.forEach((id) => categoryIds.add(id));
-    else {
-      categoryIds.add(budget.categoryId);
-      categories
-        .filter((category) => category.parentCategoryId === budget.categoryId)
-        .forEach((category) => categoryIds.add(category.id));
-    }
-  }
+  const categoryIds = budgetCategoryIds(budget, categories);
   const spend =
     budget.scope === "OVERALL"
       ? summary.totals.spending.minor
@@ -1154,6 +1212,47 @@ export function summarizeBudget(
       canResume: false,
     },
   };
+}
+
+export function budgetCategoryIds(
+  budget: Pick<BudgetRecord, "scope" | "categoryId" | "subcategoryIds">,
+  categories: readonly LedgerCategoryRecord[],
+): Set<string> {
+  const categoryIds = new Set<string>();
+  if (budget.scope !== "CATEGORY" || !budget.categoryId) return categoryIds;
+  if (budget.subcategoryIds.length) {
+    budget.subcategoryIds.forEach((id) => categoryIds.add(id));
+    return categoryIds;
+  }
+  categoryIds.add(budget.categoryId);
+  categories
+    .filter((category) => category.parentCategoryId === budget.categoryId)
+    .forEach((category) => categoryIds.add(category.id));
+  return categoryIds;
+}
+
+export interface BudgetCategorySpend {
+  readonly categoryId: string;
+  readonly spendMinor: bigint;
+}
+
+export function summarizeBudgetCategorySpend(
+  summary: BudgetSummary,
+  transactions: readonly LedgerTransactionRecord[],
+  categories: readonly LedgerCategoryRecord[],
+): BudgetCategorySpend[] {
+  if (!summary.activeForPeriod) return [];
+  const { budget } = summary;
+  const period = summarizePeriod(
+    transactions.filter(isUserFacingLedgerTransaction),
+    { start: summary.periodStart, end: summary.periodEnd },
+    { currency: budget.currency, statuses: ["POSTED"] },
+  );
+  const categoryIds = budgetCategoryIds(budget, categories);
+  return period.categories
+    .filter((entry) => budget.scope === "OVERALL" || categoryIds.has(entry.id))
+    .map((entry) => ({ categoryId: entry.id, spendMinor: entry.spending.minor }))
+    .filter((entry) => entry.spendMinor !== 0n);
 }
 
 export function summarizeSavingsGoal(

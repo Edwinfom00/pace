@@ -19,6 +19,16 @@ import {
   getAssistantOverviewSummary,
   getAssistantRecentTransactions,
 } from "@/modules/pace-assistant/server/read-tools";
+import { createPlansAgent } from "@/modules/plans/agent/plans-agent";
+import {
+  getServerAgentBudget,
+  getServerAgentForecast,
+  getServerAgentGoal,
+  getServerAgentRule,
+  listServerAgentBudgets,
+  listServerAgentGoals,
+  listServerAgentRules,
+} from "@/modules/plans/server/agent-plans-reads";
 import { createRecurringAgent } from "@/modules/recurring/agent/recurring-agent";
 import {
   getServerAgentRecurring,
@@ -61,6 +71,13 @@ export function getPaceDomainServices(): PaceDomainServices {
     getUpcomingRecurring: (scope, query) => getServerAgentUpcomingRecurring(scope, query),
     getInboxItems: (scope, query) => listServerAgentInbox(scope, query),
     getInboxItem: (scope, reference) => getServerAgentInboxItem(scope, reference),
+    getBudgets: (scope, query) => listServerAgentBudgets(scope, query),
+    getBudget: (scope, reference) => getServerAgentBudget(scope, reference),
+    getSavingsGoals: (scope, query) => listServerAgentGoals(scope, query),
+    getSavingsGoal: (scope, reference) => getServerAgentGoal(scope, reference),
+    getForecast: (scope, query) => getServerAgentForecast(scope, query),
+    getRules: (scope, query) => listServerAgentRules(scope, query),
+    getRule: (scope, reference) => getServerAgentRule(scope, reference),
     async getAccounts(scope) {
       const ledger = getLedgerService();
       const [accounts, balances] = await Promise.all([
@@ -78,7 +95,7 @@ export function getPaceDomainServices(): PaceDomainServices {
       return {
         workspaceId: scope.workspaceId,
         insights: refreshed.insights.map((insight) => presentInsight(insight, language)),
-        mutationLifecycle: ["get_plan_context", "create_plan_draft", "submit_plan_draft"],
+        mutationLifecycle: ["get_budgets", "create_budget_draft", "submit_plan_draft"],
       };
     },
   };
@@ -97,6 +114,7 @@ export function getPaceOrchestrator() {
       accounts: createAccountsAgent({ model }),
       recurring: createRecurringAgent({ model }),
       inbox: createInboxAgent({ model }),
+      plans: createPlansAgent({ model }),
     },
   });
 }

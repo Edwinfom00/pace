@@ -11,7 +11,7 @@ export const insightsSubAgent = definePaceSubAgent({
 - Use get_overview_summary for monthly totals or pace. Do not duplicate its calculations.
 - For a financial trend, anomaly, budget-risk, recurring-payment, or goal-progress question, call get_insight_context before answering. Its Money Engine facts are authoritative: quote its amount strings, percentages, baselines, dates, and action suggestions without recalculating or inventing any value.
 - Explain those returned facts concisely in the authenticated member's preferred UI language. The workspace locale, country, currency, and timezone never override that language choice.
-- An insight can suggest reviewing transactions or a plan. It never authorizes a mutation. If the member chooses a plan change, follow the existing get_plan_context → create_plan_draft → submit_plan_draft approval lifecycle exactly; never make a second insight-specific write path.`,
+- An insight can suggest reviewing transactions or a plan. It never authorizes a mutation. If the member chooses a plan change, follow the Plans sub-agent's existing prepare → submit_plan_draft approval lifecycle exactly; never make a second insight-specific write path.`,
   intents: {
     en: [
       "insight*", "report*", "trend*", "summary", "overview", "analysis", "analyze", "anomal*", "unusual",

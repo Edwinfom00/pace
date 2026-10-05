@@ -231,6 +231,13 @@ async function createFixture() {
     getUpcomingRecurring: unused,
     getInboxItems: unused,
     getInboxItem: unused,
+    getBudgets: unused,
+    getBudget: unused,
+    getSavingsGoals: unused,
+    getSavingsGoal: unused,
+    getForecast: unused,
+    getRules: unused,
+    getRule: unused,
     getInsightContext: unused,
   };
 

@@ -171,7 +171,7 @@ test("plan-oriented insights reuse the established M3 approval flow rather than 
   const goalInsight = result.insights.find((insight) => insight.type === "GOAL_OFF_TRACK");
   assert.ok(goalInsight);
   assert.equal(presentInsight(goalInsight, "en").suggestedAction, "REVIEW_PLAN");
-  assert.match(insightsSubAgent.instructions, /get_plan_context → create_plan_draft → submit_plan_draft/);
+  assert.match(insightsSubAgent.instructions, /prepare → submit_plan_draft approval lifecycle/);
   // The service constructor accepts only list methods from PlansRepository. TypeScript prevents an insight from bypassing M3.
   assert.equal(typeof service.refreshWorkspace, "function");
 });

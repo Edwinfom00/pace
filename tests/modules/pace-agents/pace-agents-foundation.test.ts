@@ -117,6 +117,13 @@ async function createFixture() {
     getUpcomingRecurring: read("getUpcomingRecurring", () => ({ basis: "PROJECTION", occurrences: [] })),
     getInboxItems: read("getInboxItems", () => ({ unresolvedCount: 1, items: [{ id: "inbox-1", status: "OPEN" }] })),
     getInboxItem: read("getInboxItem", () => ({ resolved: true, item: { id: "inbox-1", status: "OPEN" } })),
+    getBudgets: read("getBudgets", () => ({ budgets: [{ id: "budget-1", label: "Dining", spent: money("42500") }] })),
+    getBudget: read("getBudget", () => ({ resolved: true, budget: { id: "budget-1", label: "Dining" } })),
+    getSavingsGoals: read("getSavingsGoals", () => ({ goals: [{ id: "goal-1", name: "Canada" }] })),
+    getSavingsGoal: read("getSavingsGoal", () => ({ resolved: true, goal: { id: "goal-1", name: "Canada" } })),
+    getForecast: read("getForecast", () => ({ resolved: true, basis: "PROJECTION", currencies: [] })),
+    getRules: read("getRules", () => ({ rules: [{ id: "rule-1", name: "Carrefour" }] })),
+    getRule: read("getRule", () => ({ resolved: true, rule: { id: "rule-1", name: "Carrefour" } })),
     getInsightContext: read("getInsightContext", (workspaceId) => ({ workspaceId, insights: [] })),
   };
 
@@ -148,7 +155,7 @@ const readAll: Record<string, PaceSubAgentExecutor> = {
     await toolbox.call("get_inbox_items", {});
   },
   plans: async (_task, toolbox) => {
-    await toolbox.call("get_plan_status", {});
+    await toolbox.call("get_budgets", {});
   },
   insights: async (_task, toolbox) => {
     await toolbox.call("get_overview_summary", {});
@@ -297,7 +304,7 @@ test("a viewer can read through sub-agents but every write capability is refused
   const attempts = [
     ["transactions", "create_transaction_draft", { kind: "EXPENSE", amountText: "3500", sourceText: "taxi 3500" }],
     ["transactions", "submit_transaction_draft", { actionId: crypto.randomUUID() }],
-    ["plans", "create_plan_draft", { actionType: "BUDGET_CREATE", sourceText: "budget 80k" }],
+    ["plans", "create_budget_draft", { operation: "CREATE", categoryName: "Dining", amountText: "80k", sourceText: "budget 80k" }],
     ["plans", "submit_plan_draft", { actionId: crypto.randomUUID() }],
   ] as const;
   for (const [agentId, tool, input] of attempts) {
@@ -447,8 +454,13 @@ test("a sub-agent cannot reach data except through its own capabilities and thei
     get_inbox_item: { merchantName: "Carrefour" },
     create_inbox_resolution_draft: { operation: "CHOOSE_CATEGORY", merchantName: "Carrefour", categoryName: "Groceries", sourceText: "categorize Carrefour as Groceries" },
     submit_inbox_resolution_draft: { actionId: crypto.randomUUID() },
-    create_plan_draft: { actionType: "BUDGET_CREATE", sourceText: "budget 80k" },
-    edit_plan_draft: { actionId: crypto.randomUUID(), amountText: "90k" },
+    get_budget: { categoryName: "Dining" },
+    get_savings_goal: { goalName: "Canada" },
+    get_rule: { ruleName: "Carrefour" },
+    create_budget_draft: { operation: "CREATE", categoryName: "Dining", amountText: "80k", sourceText: "budget 80k" },
+    create_goal_draft: { operation: "CREATE", name: "Canada", targetAmountText: "1M", sourceText: "save 1M for Canada" },
+    create_goal_contribution_draft: { operation: "ADD", goalName: "Canada", amountText: "50,000", sourceText: "add 50,000 to Canada" },
+    create_rule_draft: { operation: "DISABLE", ruleName: "Carrefour", sourceText: "disable my Carrefour rule" },
     submit_plan_draft: { actionId: crypto.randomUUID() },
   };
   for (const agent of paceSubAgentRegistry.agents) {
@@ -555,7 +567,7 @@ test("tool results and traces propagate deterministically from service to orches
   assert.deepEqual(first.result.toolsUsed, [
     { agentId: "insights", tool: "get_overview_summary", callId: "insights:1" },
     { agentId: "accounts", tool: "get_accounts", callId: "accounts:1" },
-    { agentId: "plans", tool: "get_plan_status", callId: "plans:1" },
+    { agentId: "plans", tool: "get_budgets", callId: "plans:1" },
   ]);
   assert.deepEqual(first.events.map((event) => event.type), [
     "route.planned",

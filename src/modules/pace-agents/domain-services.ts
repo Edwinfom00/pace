@@ -8,6 +8,16 @@ import type {
 import type { AgentActionService } from "@/modules/agent-actions/agent-action-service";
 import type { AgentInboxListQuery, AgentInboxReference } from "@/modules/financial-inbox/agent-inbox-query";
 import type {
+  AgentBudgetFilter,
+  AgentForecastQuery,
+  AgentGoalFilter,
+  AgentPlanListQuery,
+  AgentRuleListQuery,
+  BudgetReference,
+  GoalReference,
+  RuleReference,
+} from "@/modules/plans/agent-plans-view";
+import type {
   AgentRecurringListQuery,
   AgentRecurringSpendingQuery,
   AgentUpcomingRecurringQuery,
@@ -36,11 +46,8 @@ type AgentActionMethod =
   | "createTransactionChangeDraft"
   | "editTransactionDraft"
   | "executeApprovedTransaction"
-  | "getPlanContext"
-  | "getPlanStatus"
-  | "createPlanDraft"
-  | "editPlanDraft"
-  | "executeApprovedPlan"
+  | "createPlanningDraft"
+  | "executeApprovedPlanning"
   | "createAccountDraft"
   | "executeApprovedAccount"
   | "createRecurringDraft"
@@ -78,6 +85,13 @@ export interface PaceDomainServices extends PaceAgentActionDomainServices {
   getUpcomingRecurring(scope: PaceServiceScope, query: AgentUpcomingRecurringQuery): Promise<unknown>;
   getInboxItems(scope: PaceServiceScope, query: AgentInboxListQuery): Promise<unknown>;
   getInboxItem(scope: PaceServiceScope, reference: AgentInboxReference): Promise<unknown>;
+  getBudgets(scope: PaceServiceScope, query: AgentPlanListQuery<AgentBudgetFilter>): Promise<unknown>;
+  getBudget(scope: PaceServiceScope, reference: BudgetReference): Promise<unknown>;
+  getSavingsGoals(scope: PaceServiceScope, query: AgentPlanListQuery<AgentGoalFilter>): Promise<unknown>;
+  getSavingsGoal(scope: PaceServiceScope, reference: GoalReference): Promise<unknown>;
+  getForecast(scope: PaceServiceScope, query: AgentForecastQuery): Promise<unknown>;
+  getRules(scope: PaceServiceScope, query: AgentRuleListQuery): Promise<unknown>;
+  getRule(scope: PaceServiceScope, reference: RuleReference): Promise<unknown>;
   getInsightContext(scope: PaceServiceScope, language: string | null): Promise<unknown>;
 }
 
@@ -91,11 +105,9 @@ export function createAgentActionDomainServices(actions: AgentActionService): Pa
       actions.editTransactionDraft(scope.actor, scope.workspaceId, actionId, input),
     executeApprovedTransaction: (scope, actionId) =>
       actions.executeApprovedTransaction(scope.actor, scope.workspaceId, actionId),
-    getPlanContext: (scope) => actions.getPlanContext(scope.actor, scope.workspaceId),
-    getPlanStatus: (scope) => actions.getPlanStatus(scope.actor, scope.workspaceId),
-    createPlanDraft: (scope, input) => actions.createPlanDraft(scope.actor, scope.workspaceId, input),
-    editPlanDraft: (scope, actionId, input) => actions.editPlanDraft(scope.actor, scope.workspaceId, actionId, input),
-    executeApprovedPlan: (scope, actionId) => actions.executeApprovedPlan(scope.actor, scope.workspaceId, actionId),
+    createPlanningDraft: (scope, input) => actions.createPlanningDraft(scope.actor, scope.workspaceId, input),
+    executeApprovedPlanning: (scope, actionId) =>
+      actions.executeApprovedPlanning(scope.actor, scope.workspaceId, actionId),
     createAccountDraft: (scope, input) => actions.createAccountDraft(scope.actor, scope.workspaceId, input),
     executeApprovedAccount: (scope, actionId) =>
       actions.executeApprovedAccount(scope.actor, scope.workspaceId, actionId),

@@ -302,6 +302,13 @@
       "when": 1790100000018,
       "tag": "0042_agent_inbox_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790100000019,
+      "tag": "0043_agent_planning_actions",
+      "breakpoints": true
     }
   ]
 }
