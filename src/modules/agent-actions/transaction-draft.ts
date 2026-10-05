@@ -161,7 +161,7 @@ function matchAccount(
   return !cleanOptionalText(hint) && accounts.length === 1 ? accounts[0]?.id ?? null : null;
 }
 
-function matchByName<T extends { id: string; name: string }>(
+export function matchByName<T extends { id: string; name: string }>(
   hint: string | null | undefined,
   records: readonly T[],
 ): T | null {
@@ -195,7 +195,7 @@ function determineMissingFields(input: {
   return fields;
 }
 
-function cleanOptionalText(value: string | null | undefined): string | null {
+export function cleanOptionalText(value: string | null | undefined): string | null {
   const cleaned = value?.normalize("NFKC").trim().replaceAll(/\s+/g, " ");
   return cleaned ? cleaned : null;
 }

@@ -18,8 +18,14 @@ export const AGENT_ACTION_TYPES = [
   "BUDGET_UPDATE",
   "SAVINGS_GOAL_CREATE",
   "SAVINGS_GOAL_UPDATE",
+  "TRANSACTION_UPDATE",
+  "TRANSACTION_CORRECT",
 ] as const;
 export type AgentActionType = (typeof AGENT_ACTION_TYPES)[number];
+
+export const TRANSACTION_CHANGE_ACTION_TYPES = ["TRANSACTION_UPDATE", "TRANSACTION_CORRECT"] as const;
+export type TransactionChangeActionType = (typeof TRANSACTION_CHANGE_ACTION_TYPES)[number];
+export type PlanActionType = Exclude<AgentActionType, "TRANSACTION_CREATE" | TransactionChangeActionType>;
 
 export const TRANSACTION_DRAFT_KINDS = ["EXPENSE", "INCOME", "TRANSFER"] as const;
 export type TransactionDraftKind = (typeof TRANSACTION_DRAFT_KINDS)[number];
@@ -79,8 +85,52 @@ export interface SavingsGoalDraft {
 export const SAVINGS_GOAL_DRAFT_FIELDS = ["goal", "name", "targetAmount", "currentSaved", "targetDate"] as const;
 export type SavingsGoalDraftField = (typeof SAVINGS_GOAL_DRAFT_FIELDS)[number];
 
+export const TRANSACTION_CHANGE_FIELDS = [
+  "change",
+  "amount",
+  "date",
+  "account",
+  "destinationAccount",
+  "category",
+] as const;
+export type TransactionChangeField = (typeof TRANSACTION_CHANGE_FIELDS)[number];
+
+export interface TransactionChangeSet {
+  /** Exact minor units, serialized because JSON has no bigint. */
+  readonly amountMinor?: string;
+  readonly accountId?: string;
+  readonly transferAccountId?: string;
+  readonly categoryId?: string;
+  readonly merchantName?: string;
+  readonly note?: string;
+  /** Calendar date in the workspace timezone. */
+  readonly occurredOn?: string;
+}
+
+export interface TransactionChangeDraft {
+  /** FINANCIAL changes money or accounts and must run as a ledger correction, never an in-place edit. */
+  readonly changeType: "DETAILS" | "FINANCIAL";
+  readonly transactionId: string;
+  readonly transactionKind: TransactionDraftKind;
+  /** Optimistic-lock token of the targeted ledger row when the draft was prepared. */
+  readonly expectedUpdatedAt: string;
+  readonly currency: string;
+  readonly current: {
+    readonly amountMinor: string;
+    readonly accountId: string | null;
+    readonly transferAccountId: string | null;
+    readonly categoryId: string | null;
+    readonly occurredAt: string;
+  };
+  readonly changes: TransactionChangeSet;
+  readonly amountText: string | null;
+  readonly reason: string | null;
+  readonly sourceText: string | null;
+  readonly missingFields: readonly TransactionChangeField[];
+}
+
 export type PlanDraft = BudgetDraft | SavingsGoalDraft;
-export type AgentActionDraft = TransactionDraft | PlanDraft;
+export type AgentActionDraft = TransactionDraft | TransactionChangeDraft | PlanDraft;
 
 export const TRANSACTION_DRAFT_FIELDS = [
   "amount",
@@ -104,7 +154,15 @@ export interface PlanActionResult {
   readonly verifiedAt: string;
 }
 
-export type AgentActionResult = TransactionActionResult | PlanActionResult;
+export interface TransactionChangeActionResult {
+  readonly changeType: TransactionChangeDraft["changeType"];
+  /** The current effective transaction after the change; a correction returns its replacement. */
+  readonly transactionId: string;
+  readonly originalTransactionId: string;
+  readonly verifiedAt: string;
+}
+
+export type AgentActionResult = TransactionActionResult | TransactionChangeActionResult | PlanActionResult;
 
 export interface AgentActionRecord {
   readonly id: string;
@@ -130,8 +188,14 @@ export type TransactionAgentActionRecord = AgentActionRecord & {
   readonly result: TransactionActionResult | null;
 };
 
+export type TransactionChangeAgentActionRecord = AgentActionRecord & {
+  readonly type: TransactionChangeActionType;
+  readonly draft: TransactionChangeDraft;
+  readonly result: TransactionChangeActionResult | null;
+};
+
 export type PlanAgentActionRecord = AgentActionRecord & {
-  readonly type: Exclude<AgentActionType, "TRANSACTION_CREATE">;
+  readonly type: PlanActionType;
   readonly draft: PlanDraft;
   readonly result: PlanActionResult | null;
 };
@@ -173,7 +237,12 @@ export function isPlanDraftReady(draft: PlanDraft): boolean {
   return Boolean(draft.name && draft.targetAmountMinor && draft.currentSavedMinor !== null);
 }
 
+export function isTransactionChangeDraftReady(draft: TransactionChangeDraft): boolean {
+  return draft.missingFields.length === 0 && Object.keys(draft.changes).length > 0;
+}
+
 export function isAgentActionDraftReady(draft: AgentActionDraft): boolean {
+  if ("changeType" in draft) return isTransactionChangeDraftReady(draft);
   return "kind" in draft ? isTransactionDraftReady(draft) : isPlanDraftReady(draft);
 }
 
@@ -181,6 +250,12 @@ export function isTransactionAction(action: AgentActionRecord): action is Transa
   return action.type === "TRANSACTION_CREATE" && "kind" in action.draft;
 }
 
+export function isTransactionChangeAction(action: AgentActionRecord): action is TransactionChangeAgentActionRecord {
+  return (
+    (TRANSACTION_CHANGE_ACTION_TYPES as readonly string[]).includes(action.type) && "changeType" in action.draft
+  );
+}
+
 export function isPlanAction(action: AgentActionRecord): action is PlanAgentActionRecord {
-  return action.type !== "TRANSACTION_CREATE" && "planType" in action.draft;
+  return "planType" in action.draft && !isTransactionChangeAction(action) && action.type !== "TRANSACTION_CREATE";
 }

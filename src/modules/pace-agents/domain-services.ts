@@ -1,5 +1,6 @@
 import type { AuthenticatedActor } from "@/authorization/session";
 import type { AgentActionService } from "@/modules/agent-actions/agent-action-service";
+import type { AgentTransactionSearchQuery } from "@/modules/transactions/domain/agent-transaction-query";
 
 export interface PaceServiceScope {
   readonly actor: AuthenticatedActor;
@@ -19,6 +20,7 @@ type Scoped<TMethod> = TMethod extends (
 type AgentActionMethod =
   | "getTransactionContext"
   | "createTransactionDraft"
+  | "createTransactionChangeDraft"
   | "editTransactionDraft"
   | "executeApprovedTransaction"
   | "getPlanContext"
@@ -43,6 +45,8 @@ export type PaceAgentActionDomainServices = {
 export interface PaceDomainServices extends PaceAgentActionDomainServices {
   getRecentTransactions(scope: PaceServiceScope, limit: number): Promise<unknown>;
   getExpenses(scope: PaceServiceScope, input: { period: PaceReadPeriod; limit: number }): Promise<unknown>;
+  searchTransactions(scope: PaceServiceScope, query: AgentTransactionSearchQuery): Promise<unknown>;
+  getTransactionDetail(scope: PaceServiceScope, transactionId: string): Promise<unknown>;
   getOverviewSummary(scope: PaceServiceScope, period: PaceReadPeriod): Promise<unknown>;
   getAccounts(scope: PaceServiceScope): Promise<unknown>;
   getRecurringPayments(scope: PaceServiceScope, limit: number): Promise<unknown>;
@@ -54,6 +58,8 @@ export function createAgentActionDomainServices(actions: AgentActionService): Pa
   return {
     getTransactionContext: (scope) => actions.getTransactionContext(scope.actor, scope.workspaceId),
     createTransactionDraft: (scope, input) => actions.createTransactionDraft(scope.actor, scope.workspaceId, input),
+    createTransactionChangeDraft: (scope, input) =>
+      actions.createTransactionChangeDraft(scope.actor, scope.workspaceId, input),
     editTransactionDraft: (scope, actionId, input) =>
       actions.editTransactionDraft(scope.actor, scope.workspaceId, actionId, input),
     executeApprovedTransaction: (scope, actionId) =>

@@ -97,6 +97,11 @@ async function createFixture() {
       currency: "XAF",
       expenses: [{ id: `${workspaceId}-tx-1`, merchantName: "Yango", amount: money("3500") }],
     })),
+    searchTransactions: read("searchTransactions", (workspaceId) => ({
+      currency: "XAF",
+      transactions: [{ id: `${workspaceId}-tx-1`, merchantName: "Yango", amount: money("3500") }],
+    })),
+    getTransactionDetail: read("getTransactionDetail", (workspaceId) => ({ id: `${workspaceId}-tx-1` })),
     getOverviewSummary: read("getOverviewSummary", () => ({ currency: "XAF", spending: money("248500") })),
     getAccounts: read("getAccounts", (workspaceId) => ({
       summary: [{ currency: "XAF", currentBalanceMinor: "100000", accountCount: 1 }],
@@ -415,6 +420,8 @@ test("a sub-agent cannot reach data except through its own capabilities and thei
   const sampleInputs: Record<string, unknown> = {
     create_transaction_draft: { kind: "EXPENSE", amountText: "3500", sourceText: "taxi 3500" },
     edit_transaction_draft: { actionId: crypto.randomUUID(), amountText: "4000" },
+    get_transaction: { transactionId: crypto.randomUUID() },
+    create_transaction_change_draft: { transactionId: crypto.randomUUID(), amountText: "4000", sourceText: "it was 4000" },
     submit_transaction_draft: { actionId: crypto.randomUUID() },
     create_plan_draft: { actionType: "BUDGET_CREATE", sourceText: "budget 80k" },
     edit_plan_draft: { actionId: crypto.randomUUID(), amountText: "90k" },

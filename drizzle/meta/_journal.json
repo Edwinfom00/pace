@@ -274,6 +274,13 @@
       "when": 1790100000014,
       "tag": "0038_import_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790100000015,
+      "tag": "0039_agent_transaction_changes",
+      "breakpoints": true
     }
   ]
 }

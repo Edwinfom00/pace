@@ -30,6 +30,8 @@ export const agentActionType = pgEnum("agent_action_type", [
   "BUDGET_UPDATE",
   "SAVINGS_GOAL_CREATE",
   "SAVINGS_GOAL_UPDATE",
+  "TRANSACTION_UPDATE",
+  "TRANSACTION_CORRECT",
 ]);
 
 export const agentActions = pgTable(

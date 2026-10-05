@@ -1,3 +1,5 @@
+import { deepseek } from "@ai-sdk/deepseek";
+
 import { buildAccountsOverview } from "@/modules/accounts/domain/accounts-overview";
 import { getAgentActionService } from "@/modules/agent-actions/server";
 import { presentInsight } from "@/modules/insights/presenters";
@@ -10,11 +12,17 @@ import {
   getAssistantRecentTransactions,
   getAssistantRecurringPayments,
 } from "@/modules/pace-assistant/server/read-tools";
+import { createTransactionsAgent } from "@/modules/transactions/agent/transactions-agent";
+import {
+  getServerAgentTransactionDetail,
+  searchServerAgentTransactions,
+} from "@/modules/transactions/server/agent-transaction-reads";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 
 import { resolvePaceContextEnvelope, type ResolvePaceContextInput } from "./context";
 import { createAgentActionDomainServices, type PaceDomainServices } from "./domain-services";
 import type { PaceGatewayDependencies } from "./gateway";
+import { createPaceOrchestrator } from "./orchestrator";
 import { paceSubAgentRegistry } from "./registry";
 import { createConsolePaceTraceSink, type PaceTraceSink } from "./trace";
 
@@ -30,6 +38,8 @@ export function getPaceDomainServices(): PaceDomainServices {
     ...createAgentActionDomainServices(getAgentActionService()),
     getRecentTransactions: (scope, limit) => getAssistantRecentTransactions(scope, limit),
     getExpenses: (scope, input) => getAssistantExpenses(scope, input),
+    searchTransactions: (scope, query) => searchServerAgentTransactions(scope, query),
+    getTransactionDetail: (scope, transactionId) => getServerAgentTransactionDetail(scope, transactionId),
     getOverviewSummary: (scope, period) => getAssistantOverviewSummary(scope, period),
     getRecurringPayments: (scope, limit) => getAssistantRecurringPayments(scope, limit),
     getInboxItems: (scope, limit) => getAssistantInboxItems(scope, limit),
@@ -54,6 +64,13 @@ export function getPaceDomainServices(): PaceDomainServices {
 
 export function getPaceGatewayDependencies(): PaceGatewayDependencies {
   return { registry: paceSubAgentRegistry, services: getPaceDomainServices(), trace: traceSink };
+}
+
+export function getPaceOrchestrator() {
+  return createPaceOrchestrator({
+    ...getPaceGatewayDependencies(),
+    executors: { transactions: createTransactionsAgent({ model: deepseek("deepseek-v4-flash") }) },
+  });
 }
 
 export function resolveServerPaceContextEnvelope(input: ResolvePaceContextInput) {

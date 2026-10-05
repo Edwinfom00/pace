@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { AuthorizationError, ConflictError, NotFoundError } from "@/authorization/errors";
 import { assertWorkspacePermission } from "@/authorization/workspace-permissions";
 import type { AuthenticatedActor } from "@/authorization/session";
+import { correctTransactionSchema } from "@/modules/ledger/correct-transaction-contract";
 import type { LedgerAccountRecord, LedgerCategoryRecord, LedgerTransactionRecord } from "@/modules/ledger/domain";
+import { parseTransactionDetailsPatch } from "@/modules/ledger/update-transaction-details-contract";
 import { LedgerService } from "@/modules/ledger/ledger-service";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import type { WorkspaceMemberContext } from "@/modules/workspaces/domain";
@@ -18,20 +20,36 @@ import {
   isAgentActionDraftReady,
   isPlanAction,
   isTransactionAction,
+  isTransactionChangeAction,
+  isTransactionChangeDraftReady,
   type PlanAgentActionRecord,
   type PlanActionResult,
   type TransactionAgentActionRecord,
   type TransactionActionResult,
+  type TransactionChangeActionResult,
+  type TransactionChangeAgentActionRecord,
+  type TransactionChangeDraft,
   type TransactionDraft,
 } from "./domain";
 import { buildPlanDraft, type PlanDraftIntent } from "./plan-draft";
 import type { AgentActionRepository } from "./repositories/agent-action-repository";
+import {
+  buildTransactionChangeDraft,
+  transactionChangeDetailsPatch,
+  type TransactionChangeIntent,
+} from "./transaction-change-draft";
 import {
   buildTransactionDraft,
   type TransactionDraftIntent,
 } from "./transaction-draft";
 
 export interface CreateTransactionDraftInput extends TransactionDraftIntent {
+  idempotencyKey: string;
+  eveSessionId?: string | null;
+  eveCallId?: string | null;
+}
+
+export interface CreateTransactionChangeDraftInput extends TransactionChangeIntent {
   idempotencyKey: string;
   eveSessionId?: string | null;
   eveCallId?: string | null;
@@ -69,12 +87,17 @@ export interface TransactionActionDetail {
   transactionContext: AgentTransactionContext;
 }
 
+export interface TransactionChangeActionDetail {
+  action: TransactionChangeAgentActionRecord;
+  transactionContext: AgentTransactionContext;
+}
+
 export interface PlanActionDetail {
   action: AgentActionRecord;
   planContext: PlansContext;
 }
 
-export type AgentActionDetail = TransactionActionDetail | PlanActionDetail;
+export type AgentActionDetail = TransactionActionDetail | TransactionChangeActionDetail | PlanActionDetail;
 
 interface TransactionClassifier {
   ingestTransaction(
@@ -158,6 +181,59 @@ export class AgentActionService {
     return created;
   }
 
+  /**
+   * Prepares a change to one existing transaction. The target is resolved to
+   * its current effective version, so a superseded original is never edited,
+   * and nothing is written to the ledger until the draft is approved.
+   */
+  async createTransactionChangeDraft(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: CreateTransactionChangeDraftInput,
+  ): Promise<TransactionChangeAgentActionRecord> {
+    const existing = await this.actions.findActionByIdempotencyKey(workspaceId, input.idempotencyKey);
+    if (existing) {
+      const action = await this.requireActionInitiator(actor, workspaceId, existing.id);
+      if (!isTransactionChangeAction(action)) throw new ConflictError("Idempotency key belongs to another action type.");
+      return action;
+    }
+
+    const context = await this.requireLedgerContext(actor, workspaceId);
+    const [transaction, accounts, categories] = await Promise.all([
+      this.ledger.getCurrentEffectiveTransaction(actor, workspaceId, input.transactionId),
+      this.ledger.listAccounts(actor, workspaceId),
+      this.ledger.listCategories(actor, workspaceId),
+    ]);
+    const draft = buildTransactionChangeDraft(input, {
+      transaction,
+      timezone: context.preferences.timezone,
+      accounts,
+      categories,
+    });
+    try {
+      parseTransactionDetailsPatch(draft.transactionKind, transactionChangeDetailsPatch(draft));
+    } catch {
+      throw new ConflictError("The requested change is not valid for this transaction.");
+    }
+
+    const created = await this.actions.createAction({
+      id: randomUUID(),
+      workspaceId,
+      type: draft.changeType === "FINANCIAL" ? "TRANSACTION_CORRECT" : "TRANSACTION_UPDATE",
+      initiatedByUserId: actor.userId,
+      draft,
+      idempotencyKey: input.idempotencyKey,
+      eveSessionId: input.eveSessionId ?? null,
+      eveCallId: input.eveCallId ?? null,
+    });
+    await this.audit(created, actor.userId, "DRAFT_CREATED", null, "DRAFT", {
+      transactionId: draft.transactionId,
+      changeType: draft.changeType,
+    });
+    if (!isTransactionChangeAction(created)) throw new Error("Created action was not a transaction change.");
+    return created;
+  }
+
   async getPlanContext(actor: AuthenticatedActor, workspaceId: string): Promise<PlansContext> {
     return this.requirePlans().getContext(actor, workspaceId);
   }
@@ -215,6 +291,9 @@ export class AgentActionService {
   ): Promise<AgentActionDetail> {
     const action = await this.requireActionInitiator(actor, workspaceId, actionId);
     if (isTransactionAction(action)) {
+      return { action, transactionContext: await this.getTransactionContext(actor, workspaceId) };
+    }
+    if (isTransactionChangeAction(action)) {
       return { action, transactionContext: await this.getTransactionContext(actor, workspaceId) };
     }
     if (isPlanAction(action)) {
@@ -370,8 +449,9 @@ export class AgentActionService {
     actor: AuthenticatedActor,
     workspaceId: string,
     actionId: string,
-  ): Promise<TransactionActionResult> {
+  ): Promise<TransactionActionResult | TransactionChangeActionResult> {
     let action = await this.requireActionInitiator(actor, workspaceId, actionId);
+    if (isTransactionChangeAction(action)) return this.executeApprovedTransactionChange(actor, workspaceId, action);
     if (!isTransactionAction(action)) throw new ConflictError("This action does not create a transaction.");
     if (action.status === "COMPLETED" && action.result) return action.result;
     if (action.status !== "APPROVED" && action.status !== "EXECUTING") {
@@ -456,6 +536,144 @@ export class AgentActionService {
     } catch (error) {
       await this.failAction(actor, workspaceId, actionId, error);
       throw error;
+    }
+  }
+
+  private async executeApprovedTransactionChange(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    approved: TransactionChangeAgentActionRecord,
+  ): Promise<TransactionChangeActionResult> {
+    if (approved.status === "COMPLETED" && approved.result) return approved.result;
+    if (approved.status !== "APPROVED" && approved.status !== "EXECUTING") {
+      throw new ConflictError("Only an approved action can be executed.");
+    }
+    const actionId = approved.id;
+
+    if (approved.status === "APPROVED") {
+      const transitioned = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["APPROVED"],
+        to: "EXECUTING",
+      });
+      if (transitioned) {
+        await this.audit(transitioned, actor.userId, "EXECUTION_STARTED", "APPROVED", "EXECUTING");
+      } else {
+        const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+        if (!isTransactionChangeAction(current)) throw new ConflictError("This action does not change a transaction.");
+        if (current.status === "COMPLETED" && current.result) return current.result;
+        if (current.status !== "EXECUTING") {
+          throw new ConflictError("This action changed before it could be executed.");
+        }
+      }
+    }
+
+    try {
+      const draft = approved.draft;
+      if (!isTransactionChangeDraftReady(draft)) {
+        throw new ConflictError("The approved action has an incomplete transaction change.");
+      }
+      const transaction = await this.persistTransactionChange(actor, workspaceId, actionId, draft);
+      this.assertPersistedChangeMatches(draft, transaction);
+      const result: TransactionChangeActionResult = {
+        changeType: draft.changeType,
+        transactionId: transaction.id,
+        originalTransactionId: draft.transactionId,
+        verifiedAt: new Date().toISOString(),
+      };
+      const completed = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["EXECUTING"],
+        to: "COMPLETED",
+        result,
+        failureCode: null,
+        failureMessage: null,
+      });
+      if (completed) {
+        await this.audit(completed, actor.userId, "PERSISTENCE_VERIFIED", "EXECUTING", "COMPLETED", {
+          transactionId: transaction.id,
+          originalTransactionId: draft.transactionId,
+          changeType: draft.changeType,
+        });
+        return result;
+      }
+
+      const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+      if (isTransactionChangeAction(current) && current.status === "COMPLETED" && current.result) return current.result;
+      throw new ConflictError("This action changed while its transaction change was being verified.");
+    } catch (error) {
+      await this.failAction(actor, workspaceId, actionId, error);
+      throw error;
+    }
+  }
+
+  private async persistTransactionChange(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+    draft: TransactionChangeDraft,
+  ): Promise<LedgerTransactionRecord> {
+    const patch = transactionChangeDetailsPatch(draft);
+    if (draft.changeType === "DETAILS") {
+      const context = await this.requireLedgerContext(actor, workspaceId);
+      return this.ledger.updateTransactionDetails(
+        actor,
+        workspaceId,
+        draft.transactionId,
+        patch,
+        new Date(draft.expectedUpdatedAt),
+        context.preferences.timezone,
+      );
+    }
+
+    const { amountMinor, accountId, transferAccountId } = draft.changes;
+    // The action id is the correction's idempotency key: a retried execution
+    // replays the committed correction instead of reversing the ledger twice.
+    const correction = await this.ledger.correctTransaction(
+      actor,
+      correctTransactionSchema.parse({
+        workspaceId,
+        transactionId: draft.transactionId,
+        idempotencyKey: actionId,
+        expectedUpdatedAt: draft.expectedUpdatedAt,
+        kind: draft.transactionKind,
+        ...(draft.reason ? { reason: draft.reason.slice(0, 500) } : {}),
+        financialChanges:
+          draft.transactionKind === "TRANSFER"
+            ? {
+                ...(amountMinor === undefined ? {} : { amountMinor }),
+                ...(accountId === undefined ? {} : { fromAccountId: accountId }),
+                ...(transferAccountId === undefined ? {} : { toAccountId: transferAccountId }),
+              }
+            : {
+                ...(amountMinor === undefined ? {} : { amountMinor }),
+                ...(accountId === undefined ? {} : { accountId }),
+              },
+        ...(Object.keys(patch).length > 0 ? { details: patch } : {}),
+      }),
+    );
+    if (correction.originalTransaction.id !== draft.transactionId) {
+      throw new Error("Persisted transaction correction verification failed.");
+    }
+    return correction.replacementTransaction;
+  }
+
+  private assertPersistedChangeMatches(draft: TransactionChangeDraft, transaction: LedgerTransactionRecord): void {
+    const { changes, current } = draft;
+    const isCorrection = draft.changeType === "FINANCIAL";
+    if (
+      transaction.kind !== draft.transactionKind ||
+      transaction.currency !== draft.currency ||
+      (transaction.id === draft.transactionId) === isCorrection ||
+      transaction.amountMinor.toString() !== (changes.amountMinor ?? current.amountMinor) ||
+      transaction.accountId !== (changes.accountId ?? current.accountId) ||
+      transaction.transferAccountId !== (changes.transferAccountId ?? current.transferAccountId) ||
+      (changes.categoryId !== undefined && transaction.categoryId !== changes.categoryId) ||
+      (changes.note !== undefined && transaction.note !== changes.note)
+    ) {
+      throw new Error("Persisted transaction change verification failed.");
     }
   }
 
