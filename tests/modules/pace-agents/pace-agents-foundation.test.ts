@@ -116,6 +116,7 @@ async function createFixture() {
     getRecurringSpending: read("getRecurringSpending", () => ({ basis: "ACTUAL_TRANSACTIONS", recurringSpending: money("8500") })),
     getUpcomingRecurring: read("getUpcomingRecurring", () => ({ basis: "PROJECTION", occurrences: [] })),
     getInboxItems: read("getInboxItems", () => ({ unresolvedCount: 1, items: [{ id: "inbox-1", status: "OPEN" }] })),
+    getInboxItem: read("getInboxItem", () => ({ resolved: true, item: { id: "inbox-1", status: "OPEN" } })),
     getInsightContext: read("getInsightContext", (workspaceId) => ({ workspaceId, insights: [] })),
   };
 
@@ -170,7 +171,10 @@ test("registry declares the six sub-agents with typed capability metadata", () =
   }
   assert.deepEqual(
     metadata.flatMap((agent) => agent.capabilities).filter((capability) => capability.access === "commit").map((capability) => capability.tool),
-    ["submit_transaction_draft", "submit_account_draft", "submit_recurring_draft", "submit_plan_draft"],
+    [
+      "submit_transaction_draft", "submit_account_draft", "submit_recurring_draft", "submit_inbox_resolution_draft",
+      "submit_plan_draft",
+    ],
   );
 
   const prompt = renderSubAgentInstructions(paceSubAgentRegistry);
@@ -440,6 +444,9 @@ test("a sub-agent cannot reach data except through its own capabilities and thei
     create_recurring_draft: { direction: "EXPENSE", name: "Rent", amountText: "180,000", frequency: "monthly", sourceText: "monthly rent of 180,000" },
     create_recurring_change_draft: { operation: "PAUSE", recurringName: "Netflix", sourceText: "pause Netflix" },
     submit_recurring_draft: { actionId: crypto.randomUUID() },
+    get_inbox_item: { merchantName: "Carrefour" },
+    create_inbox_resolution_draft: { operation: "CHOOSE_CATEGORY", merchantName: "Carrefour", categoryName: "Groceries", sourceText: "categorize Carrefour as Groceries" },
+    submit_inbox_resolution_draft: { actionId: crypto.randomUUID() },
     create_plan_draft: { actionType: "BUDGET_CREATE", sourceText: "budget 80k" },
     edit_plan_draft: { actionId: crypto.randomUUID(), amountText: "90k" },
     submit_plan_draft: { actionId: crypto.randomUUID() },

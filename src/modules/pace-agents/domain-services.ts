@@ -6,6 +6,7 @@ import type {
   AgentAccountSpendabilityQuery,
 } from "@/modules/accounts/domain/agent-account-query";
 import type { AgentActionService } from "@/modules/agent-actions/agent-action-service";
+import type { AgentInboxListQuery, AgentInboxReference } from "@/modules/financial-inbox/agent-inbox-query";
 import type {
   AgentRecurringListQuery,
   AgentRecurringSpendingQuery,
@@ -44,6 +45,8 @@ type AgentActionMethod =
   | "executeApprovedAccount"
   | "createRecurringDraft"
   | "executeApprovedRecurring"
+  | "createInboxDraft"
+  | "executeApprovedInbox"
   | "requestApproval"
   | "approveAction"
   | "rejectAction"
@@ -73,7 +76,8 @@ export interface PaceDomainServices extends PaceAgentActionDomainServices {
   getRecurringPayment(scope: PaceServiceScope, reference: RecurringReference): Promise<unknown>;
   getRecurringSpending(scope: PaceServiceScope, query: AgentRecurringSpendingQuery): Promise<unknown>;
   getUpcomingRecurring(scope: PaceServiceScope, query: AgentUpcomingRecurringQuery): Promise<unknown>;
-  getInboxItems(scope: PaceServiceScope, limit: number): Promise<unknown>;
+  getInboxItems(scope: PaceServiceScope, query: AgentInboxListQuery): Promise<unknown>;
+  getInboxItem(scope: PaceServiceScope, reference: AgentInboxReference): Promise<unknown>;
   getInsightContext(scope: PaceServiceScope, language: string | null): Promise<unknown>;
 }
 
@@ -98,6 +102,8 @@ export function createAgentActionDomainServices(actions: AgentActionService): Pa
     createRecurringDraft: (scope, input) => actions.createRecurringDraft(scope.actor, scope.workspaceId, input),
     executeApprovedRecurring: (scope, actionId) =>
       actions.executeApprovedRecurring(scope.actor, scope.workspaceId, actionId),
+    createInboxDraft: (scope, input) => actions.createInboxDraft(scope.actor, scope.workspaceId, input),
+    executeApprovedInbox: (scope, actionId) => actions.executeApprovedInbox(scope.actor, scope.workspaceId, actionId),
     requestApproval: (scope, actionId) => actions.requestApproval(scope.actor, scope.workspaceId, actionId),
     approveAction: (scope, actionId) => actions.approveAction(scope.actor, scope.workspaceId, actionId),
     rejectAction: (scope, actionId) => actions.rejectAction(scope.actor, scope.workspaceId, actionId),

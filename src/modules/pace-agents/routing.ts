@@ -4,11 +4,13 @@ import type { PaceSubAgentRegistry } from "./registry";
 const WRITE_SIGNALS = [
   "add", "record", "log", "create", "set", "change", "update", "edit", "pause", "archive", "unarchive", "restore", "rename",
   "transfer", "move", "correct", "fix", "was actually", "resume", "unpause", "ignore", "confirm",
+  "categorize*", "categorise*", "accept", "resolve",
   "i spent", "i paid", "i bought", "i received", "i earned",
   "ajoute*", "enregistre*", "cree*", "creer", "modifie*", "change*", "definis", "mets",
-  "suspend*", "reprendre", "reprends", "ignore*", "confirme*",
+  "suspend*", "reprendre", "reprends", "ignore*", "confirme*", "accepte*", "resoudre", "resous",
   "j ai depense", "j ai paye", "j ai achete", "j ai recu",
   "hinzufug*", "fuge", "erstell*", "ander*", "buche*", "setze", "pausier*", "fortsetz*", "ignorier*", "bestatig*",
+  "kategorisier*", "akzeptier*",
   "ich habe",
 ] as const;
 

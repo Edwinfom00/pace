@@ -391,13 +391,13 @@ function approvalSummary(
   };
 }
 
-function formatAmount(amountMinor: string, currency: string): string {
+export function formatAmount(amountMinor: string, currency: string): string {
   const [whole, fraction] = toDecimalString(money(currency, BigInt(amountMinor))).split(".");
   const grouped = whole!.replaceAll(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${fraction ? `${grouped}.${fraction}` : grouped} ${currency}`;
 }
 
-function cadenceLabel(cadenceDays: number): string {
+export function cadenceLabel(cadenceDays: number): string {
   const frequency = frequencyForCadenceDays(cadenceDays);
   return frequency ? CADENCE_LABELS[frequency] : `${cadenceDays} days`;
 }

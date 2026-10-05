@@ -17,6 +17,15 @@ import type {
   RecurringPaymentView,
   TransactionClassificationRequest,
 } from "@/modules/financial-inbox/financial-inbox-service";
+import {
+  inboxReasonHasResolution,
+  isCategoryInboxOperation,
+} from "@/modules/financial-inbox/agent-inbox-query";
+import {
+  agentInboxUnavailableReason,
+  presentAgentInboxItem,
+  type AgentInboxStateReader,
+} from "@/modules/financial-inbox/queries/agent-inbox-reads";
 import type { PlansContext, PlansService } from "@/modules/plans/plan-service";
 import type { BudgetRecord, SavingsGoalRecord } from "@/modules/plans/domain";
 import { buildRecurringOverview } from "@/modules/recurring/domain/recurring-overview";
@@ -34,9 +43,14 @@ import {
   type AccountDraft,
   type AgentActionRecord,
   type AgentActionStatus,
+  type InboxActionResult,
+  type InboxAgentActionRecord,
+  type InboxResolutionDraft,
   isAccountAction,
   isAccountDraftReady,
   isAgentActionDraftReady,
+  isInboxAction,
+  isInboxDraftReady,
   isPlanAction,
   isRecurringAction,
   isRecurringDraftReady,
@@ -55,6 +69,15 @@ import {
   type TransactionChangeDraft,
   type TransactionDraft,
 } from "./domain";
+import {
+  assertInboxDraftCurrent,
+  buildInboxDraft,
+  inboxIdempotencyKey,
+  locateInboxDraftTarget,
+  persistedInboxResolutionMatches,
+  presentInboxResult,
+  type InboxDraftIntent,
+} from "./inbox-draft";
 import { buildPlanDraft, type PlanDraftIntent } from "./plan-draft";
 import {
   buildRecurringDraft,
@@ -98,6 +121,25 @@ export interface CreateRecurringDraftInput extends RecurringDraftIntent {
   eveSessionId?: string | null;
   eveCallId?: string | null;
 }
+
+export interface CreateInboxDraftInput extends InboxDraftIntent {
+  idempotencyKey: string;
+  eveSessionId?: string | null;
+  eveCallId?: string | null;
+}
+
+/**
+ * A reason without a canonical settlement rule never becomes an action: the
+ * member gets the explanation instead, and nothing is drafted or approved.
+ */
+export type InboxDraftOutcome =
+  | { readonly prepared: true; readonly action: InboxAgentActionRecord }
+  | {
+      readonly prepared: false;
+      readonly supported: false;
+      readonly explanation: string;
+      readonly item: ReturnType<typeof presentAgentInboxItem>;
+    };
 
 export interface EditTransactionDraftInput {
   amountText?: string | null;
@@ -149,12 +191,17 @@ export interface RecurringActionDetail {
   action: RecurringAgentActionRecord;
 }
 
+export interface InboxActionDetail {
+  action: InboxAgentActionRecord;
+}
+
 export type AgentActionDetail =
   | TransactionActionDetail
   | TransactionChangeActionDetail
   | PlanActionDetail
   | AccountActionDetail
-  | RecurringActionDetail;
+  | RecurringActionDetail
+  | InboxActionDetail;
 
 type RecurringActions = Pick<
   FinancialInboxService,
@@ -167,6 +214,14 @@ type RecurringActions = Pick<
   | "ignoreRecurring"
   | "restoreRecurring"
 >;
+
+export interface InboxActions {
+  readonly reader: AgentInboxStateReader;
+  readonly resolutions: Pick<
+    FinancialInboxService,
+    "acceptInboxCategorySuggestion" | "chooseInboxCategory" | "confirmInboxRecurring" | "ignoreInboxRecurring"
+  >;
+}
 
 interface TransactionClassifier {
   ingestTransaction(
@@ -190,6 +245,7 @@ export class AgentActionService {
     private readonly classifier?: TransactionClassifier,
     private readonly plans?: PlansService,
     private readonly recurring?: RecurringActions,
+    private readonly inbox?: InboxActions,
   ) {}
 
   async getTransactionContext(
@@ -407,6 +463,57 @@ export class AgentActionService {
     return created;
   }
 
+  /**
+   * Prepares the resolution of one open Inbox item. Nothing is resolved until
+   * the draft is approved; a resolution the canonical Inbox policy would refuse
+   * is rejected here with that policy's own reason.
+   */
+  async createInboxDraft(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: CreateInboxDraftInput,
+  ): Promise<InboxDraftOutcome> {
+    const existing = await this.actions.findActionByIdempotencyKey(workspaceId, input.idempotencyKey);
+    if (existing) {
+      const action = await this.requireActionInitiator(actor, workspaceId, existing.id);
+      if (!isInboxAction(action)) throw new ConflictError("Idempotency key belongs to another action type.");
+      return { prepared: true, action };
+    }
+
+    await this.requireLedgerContext(actor, workspaceId);
+    const [states, categories] = await Promise.all([
+      this.requireInbox().reader.listOpenItems(actor, workspaceId),
+      this.ledger.listCategories(actor, workspaceId),
+    ]);
+    const target = locateInboxDraftTarget(input, states);
+    if (target.status === "RESOLVED" && !inboxReasonHasResolution(target.state.item.reason)) {
+      return {
+        prepared: false,
+        supported: false,
+        explanation: agentInboxUnavailableReason(target.state) ?? "This Inbox item cannot be resolved.",
+        item: presentAgentInboxItem(target.state),
+      };
+    }
+    const draft = buildInboxDraft(input, { states, categories });
+
+    const created = await this.actions.createAction({
+      id: randomUUID(),
+      workspaceId,
+      type: "INBOX_RESOLVE",
+      initiatedByUserId: actor.userId,
+      draft,
+      idempotencyKey: input.idempotencyKey,
+      eveSessionId: input.eveSessionId ?? null,
+      eveCallId: input.eveCallId ?? null,
+    });
+    await this.audit(created, actor.userId, "DRAFT_CREATED", null, "DRAFT", {
+      inboxOperation: draft.inboxOperation,
+      inboxItemId: draft.inboxItemId,
+    });
+    if (!isInboxAction(created)) throw new Error("Created action was not an Inbox resolution.");
+    return { prepared: true, action: created };
+  }
+
   async getPlanContext(actor: AuthenticatedActor, workspaceId: string): Promise<PlansContext> {
     return this.requirePlans().getContext(actor, workspaceId);
   }
@@ -471,6 +578,7 @@ export class AgentActionService {
     }
     if (isAccountAction(action)) return { action };
     if (isRecurringAction(action)) return { action };
+    if (isInboxAction(action)) return { action };
     if (isPlanAction(action)) {
       return { action, planContext: await this.getPlanContext(actor, workspaceId) };
     }
@@ -1145,6 +1253,140 @@ export class AgentActionService {
     }
   }
 
+  /**
+   * Resolves an approved Inbox draft through the canonical Inbox resolution
+   * service, which owns the transaction category edit and the recurring review.
+   * The item counts as resolved only once that service succeeded and the stored
+   * item, transaction, and recurring payment were read back and match the draft.
+   */
+  async executeApprovedInbox(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+  ): Promise<InboxActionResult> {
+    const action = await this.requireActionInitiator(actor, workspaceId, actionId);
+    if (!isInboxAction(action)) throw new ConflictError("This action does not resolve an Inbox item.");
+    if (action.status === "COMPLETED" && action.result) return action.result;
+    if (action.status !== "APPROVED" && action.status !== "EXECUTING") {
+      throw new ConflictError("Only an approved action can be executed.");
+    }
+
+    let startedHere = false;
+    if (action.status === "APPROVED") {
+      const transitioned = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["APPROVED"],
+        to: "EXECUTING",
+      });
+      if (transitioned) {
+        await this.audit(transitioned, actor.userId, "EXECUTION_STARTED", "APPROVED", "EXECUTING");
+        startedHere = true;
+      } else {
+        const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+        if (!isInboxAction(current)) throw new ConflictError("This action does not resolve an Inbox item.");
+        if (current.status === "COMPLETED" && current.result) return current.result;
+        if (current.status !== "EXECUTING") {
+          throw new ConflictError("This action changed before it could be executed.");
+        }
+      }
+    }
+
+    try {
+      const draft = action.draft;
+      if (!isInboxDraftReady(draft) || !draft.inboxItemId) {
+        throw new ConflictError("The approved action has an incomplete Inbox resolution.");
+      }
+      const { reader } = this.requireInbox();
+      // A resumed execution may already have resolved the item under this
+      // action's idempotency key, so only a first attempt is compared with the
+      // prepared state; the canonical service replays or refuses a retry itself.
+      if (startedHere) {
+        const [current, categories] = await Promise.all([
+          reader.getItem(actor, workspaceId, draft.inboxItemId),
+          this.ledger.listCategories(actor, workspaceId),
+        ]);
+        assertInboxDraftCurrent(draft, current, categories);
+      }
+
+      const outcome = await this.persistInboxResolution(actor, workspaceId, actionId, draft);
+      const stored = await reader.getItem(actor, workspaceId, draft.inboxItemId);
+      if (!persistedInboxResolutionMatches(draft, stored)) {
+        throw new Error("Persisted Inbox resolution verification failed.");
+      }
+      const result = presentInboxResult(draft, stored, outcome, new Date());
+      const completed = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["EXECUTING"],
+        to: "COMPLETED",
+        result,
+        failureCode: null,
+        failureMessage: null,
+      });
+      if (completed) {
+        await this.audit(completed, actor.userId, "PERSISTENCE_VERIFIED", "EXECUTING", "COMPLETED", {
+          inboxItemId: stored.item.id,
+          inboxOperation: draft.inboxOperation,
+          transactionId: stored.transaction.id,
+          categoryId: result.category?.id ?? null,
+          recurringId: result.recurring?.id ?? null,
+          resolvedInboxItemIds: result.resolvedInboxItemIds,
+        });
+        return result;
+      }
+
+      const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+      if (isInboxAction(current) && current.status === "COMPLETED" && current.result) return current.result;
+      throw new ConflictError("This action changed while its Inbox resolution was being verified.");
+    } catch (error) {
+      await this.failAction(actor, workspaceId, actionId, error);
+      throw error;
+    }
+  }
+
+  private async persistInboxResolution(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+    draft: InboxResolutionDraft,
+  ) {
+    const { resolutions } = this.requireInbox();
+    if (!draft.inboxItemId || !draft.expectedInboxUpdatedAt) {
+      throw new ConflictError("The approved Inbox resolution has no target.");
+    }
+    const command = {
+      workspaceId,
+      inboxItemId: draft.inboxItemId,
+      expectedInboxUpdatedAt: new Date(draft.expectedInboxUpdatedAt),
+      idempotencyKey: inboxIdempotencyKey(actionId),
+    };
+    if (!isCategoryInboxOperation(draft.inboxOperation)) {
+      return draft.inboxOperation === "CONFIRM_RECURRING"
+        ? resolutions.confirmInboxRecurring(actor, command)
+        : resolutions.ignoreInboxRecurring(actor, command);
+    }
+
+    if (!draft.category || !draft.expectedTransactionUpdatedAt) {
+      throw new ConflictError("The approved Inbox resolution has no category.");
+    }
+    const categoryCommand = {
+      ...command,
+      expectedTransactionUpdatedAt: new Date(draft.expectedTransactionUpdatedAt),
+    };
+    if (draft.inboxOperation === "CHOOSE_CATEGORY") {
+      return resolutions.chooseInboxCategory(actor, { ...categoryCommand, categoryId: draft.category.id });
+    }
+    if (!draft.expectedSuggestionUpdatedAt) {
+      throw new ConflictError("The approved Inbox resolution has no suggestion to accept.");
+    }
+    return resolutions.acceptInboxCategorySuggestion(actor, {
+      ...categoryCommand,
+      expectedSuggestionCategoryId: draft.category.id,
+      expectedSuggestionUpdatedAt: new Date(draft.expectedSuggestionUpdatedAt),
+    });
+  }
+
   private async assertAccountDraftAllowed(
     actor: AuthenticatedActor,
     workspaceId: string,
@@ -1544,5 +1786,10 @@ export class AgentActionService {
   private requireRecurring(): RecurringActions {
     if (!this.recurring) throw new Error("Recurring service is unavailable.");
     return this.recurring;
+  }
+
+  private requireInbox(): InboxActions {
+    if (!this.inbox) throw new Error("Inbox service is unavailable.");
+    return this.inbox;
   }
 }

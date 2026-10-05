@@ -2,6 +2,7 @@ import { DatabaseLedgerRepository } from "@/modules/ledger/repositories/ledger-r
 import { LedgerService } from "@/modules/ledger/ledger-service";
 import { DatabaseWorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
 import { getFinancialInboxService } from "@/modules/financial-inbox/server";
+import { getServerAgentInboxStateReader } from "@/modules/financial-inbox/server/agent-inbox-reads";
 import { getPlansService } from "@/modules/plans/server";
 
 import { AgentActionService } from "./agent-action-service";
@@ -20,5 +21,6 @@ export function getAgentActionService(): AgentActionService {
     financialInbox,
     getPlansService(),
     financialInbox,
+    { reader: getServerAgentInboxStateReader(), resolutions: financialInbox },
   );
 }

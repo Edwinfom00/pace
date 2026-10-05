@@ -1,4 +1,7 @@
+import type { AgentInboxOperation } from "@/modules/financial-inbox/agent-inbox-query";
 import type {
+  InboxItemStatus,
+  InboxReason,
   RecurringPaymentDirection,
   RecurringPaymentLifecycle,
   RecurringPaymentOrigin,
@@ -30,6 +33,7 @@ export const AGENT_ACTION_TYPES = [
   "ACCOUNT_MANAGE",
   "RECURRING_CREATE",
   "RECURRING_MANAGE",
+  "INBOX_RESOLVE",
 ] as const;
 export type AgentActionType = (typeof AGENT_ACTION_TYPES)[number];
 
@@ -41,7 +45,7 @@ export const RECURRING_ACTION_TYPES = ["RECURRING_CREATE", "RECURRING_MANAGE"] a
 export type RecurringActionType = (typeof RECURRING_ACTION_TYPES)[number];
 export type PlanActionType = Exclude<
   AgentActionType,
-  "TRANSACTION_CREATE" | TransactionChangeActionType | AccountActionType | RecurringActionType
+  "TRANSACTION_CREATE" | TransactionChangeActionType | AccountActionType | RecurringActionType | "INBOX_RESOLVE"
 >;
 
 export const TRANSACTION_DRAFT_KINDS = ["EXPENSE", "INCOME", "TRANSFER"] as const;
@@ -255,8 +259,66 @@ export interface RecurringDraft {
   readonly missingFields: readonly RecurringDraftField[];
 }
 
+export const INBOX_DRAFT_FIELDS = ["item", "category"] as const;
+export type InboxDraftField = (typeof INBOX_DRAFT_FIELDS)[number];
+
+export interface InboxDraftCategory {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface InboxDraftItem {
+  readonly id: string;
+  readonly reason: InboxReason;
+  readonly issue: string;
+  readonly transactionId: string;
+  readonly merchantName: string | null;
+  /** Exact minor units, serialized because JSON has no bigint. */
+  readonly amountMinor: string;
+  readonly currency: string;
+  readonly occurredAt: string;
+}
+
+export interface InboxApprovalSummary {
+  readonly title: string;
+  readonly transaction: string;
+  readonly issue: string;
+  readonly change: string;
+  readonly effects: readonly string[];
+  readonly text: string;
+}
+
+export interface InboxResolutionDraft {
+  readonly inboxOperation: AgentInboxOperation;
+  /** Null while the member still has to choose between candidates. */
+  readonly inboxItemId: string | null;
+  readonly item: InboxDraftItem | null;
+  /** Optimistic-lock tokens of the Inbox item and its transaction when the draft was prepared. */
+  readonly expectedInboxUpdatedAt: string | null;
+  readonly expectedTransactionUpdatedAt: string | null;
+  readonly currentCategory: InboxDraftCategory | null;
+  /** The category the transaction receives; set for category operations only. */
+  readonly category: InboxDraftCategory | null;
+  /** Version of the accepted suggestion; set for ACCEPT_SUGGESTION only. */
+  readonly expectedSuggestionUpdatedAt: string | null;
+  /** The detected recurring payment under review; set for recurring operations only. */
+  readonly recurringId: string | null;
+  readonly candidates: readonly InboxDraftItem[];
+  readonly categoryCandidates: readonly InboxDraftCategory[];
+  /** Present once the draft is complete; it is what the member is asked to approve. */
+  readonly approvalSummary: InboxApprovalSummary | null;
+  readonly sourceText: string | null;
+  readonly missingFields: readonly InboxDraftField[];
+}
+
 export type PlanDraft = BudgetDraft | SavingsGoalDraft;
-export type AgentActionDraft = TransactionDraft | TransactionChangeDraft | PlanDraft | AccountDraft | RecurringDraft;
+export type AgentActionDraft =
+  | TransactionDraft
+  | TransactionChangeDraft
+  | PlanDraft
+  | AccountDraft
+  | RecurringDraft
+  | InboxResolutionDraft;
 
 export const TRANSACTION_DRAFT_FIELDS = [
   "amount",
@@ -313,12 +375,27 @@ export interface RecurringActionResult {
   readonly verifiedAt: string;
 }
 
+export interface InboxActionResult {
+  readonly inboxOperation: AgentInboxOperation;
+  readonly inboxItemId: string;
+  readonly reason: InboxReason;
+  readonly itemStatus: InboxItemStatus;
+  readonly transactionId: string;
+  readonly category: InboxDraftCategory | null;
+  readonly recurring: { readonly id: string; readonly status: RecurringPaymentStatus } | null;
+  readonly resolvedInboxItemIds: readonly string[];
+  /** Other reasons still open for the same transaction; they were not touched. */
+  readonly remainingReasons: readonly InboxReason[];
+  readonly verifiedAt: string;
+}
+
 export type AgentActionResult =
   | TransactionActionResult
   | TransactionChangeActionResult
   | PlanActionResult
   | AccountActionResult
-  | RecurringActionResult;
+  | RecurringActionResult
+  | InboxActionResult;
 
 export interface AgentActionRecord {
   readonly id: string;
@@ -366,6 +443,12 @@ export type RecurringAgentActionRecord = AgentActionRecord & {
   readonly type: RecurringActionType;
   readonly draft: RecurringDraft;
   readonly result: RecurringActionResult | null;
+};
+
+export type InboxAgentActionRecord = AgentActionRecord & {
+  readonly type: "INBOX_RESOLVE";
+  readonly draft: InboxResolutionDraft;
+  readonly result: InboxActionResult | null;
 };
 
 export interface AgentActionAuditRecord {
@@ -427,7 +510,22 @@ export function isRecurringDraftReady(draft: RecurringDraft): boolean {
   return draft.recurringOperation === "EDIT" ? Object.keys(draft.values).length > 0 : true;
 }
 
+export function isInboxDraftReady(draft: InboxResolutionDraft): boolean {
+  if (draft.missingFields.length > 0 || !draft.approvalSummary) return false;
+  if (!draft.inboxItemId || !draft.item || !draft.expectedInboxUpdatedAt) return false;
+  switch (draft.inboxOperation) {
+    case "ACCEPT_SUGGESTION":
+      return Boolean(draft.category && draft.expectedTransactionUpdatedAt && draft.expectedSuggestionUpdatedAt);
+    case "CHOOSE_CATEGORY":
+      return Boolean(draft.category && draft.expectedTransactionUpdatedAt);
+    case "CONFIRM_RECURRING":
+    case "IGNORE_RECURRING":
+      return Boolean(draft.recurringId);
+  }
+}
+
 export function isAgentActionDraftReady(draft: AgentActionDraft): boolean {
+  if ("inboxOperation" in draft) return isInboxDraftReady(draft);
   if ("recurringOperation" in draft) return isRecurringDraftReady(draft);
   if ("accountOperation" in draft) return isAccountDraftReady(draft);
   if ("changeType" in draft) return isTransactionChangeDraftReady(draft);
@@ -452,6 +550,10 @@ export function isRecurringAction(action: AgentActionRecord): action is Recurrin
   return (
     (RECURRING_ACTION_TYPES as readonly string[]).includes(action.type) && "recurringOperation" in action.draft
   );
+}
+
+export function isInboxAction(action: AgentActionRecord): action is InboxAgentActionRecord {
+  return action.type === "INBOX_RESOLVE" && "inboxOperation" in action.draft;
 }
 
 export function isPlanAction(action: AgentActionRecord): action is PlanAgentActionRecord {

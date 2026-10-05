@@ -36,6 +36,7 @@ export const agentActionType = pgEnum("agent_action_type", [
   "ACCOUNT_MANAGE",
   "RECURRING_CREATE",
   "RECURRING_MANAGE",
+  "INBOX_RESOLVE",
 ]);
 
 export const agentActions = pgTable(

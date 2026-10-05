@@ -9,12 +9,13 @@ import {
   getServerAgentAccountMovements,
 } from "@/modules/accounts/server/agent-account-reads";
 import { getAgentActionService } from "@/modules/agent-actions/server";
+import { createInboxAgent } from "@/modules/financial-inbox/agent/inbox-agent";
+import { getServerAgentInboxItem, listServerAgentInbox } from "@/modules/financial-inbox/server/agent-inbox-reads";
 import { presentInsight } from "@/modules/insights/presenters";
 import { getInsightService } from "@/modules/insights/server";
 import { getLedgerService } from "@/modules/ledger/server";
 import {
   getAssistantExpenses,
-  getAssistantInboxItems,
   getAssistantOverviewSummary,
   getAssistantRecentTransactions,
 } from "@/modules/pace-assistant/server/read-tools";
@@ -58,7 +59,8 @@ export function getPaceDomainServices(): PaceDomainServices {
     getRecurringPayment: (scope, reference) => getServerAgentRecurring(scope, reference),
     getRecurringSpending: (scope, query) => getServerAgentRecurringSpending(scope, query),
     getUpcomingRecurring: (scope, query) => getServerAgentUpcomingRecurring(scope, query),
-    getInboxItems: (scope, limit) => getAssistantInboxItems(scope, limit),
+    getInboxItems: (scope, query) => listServerAgentInbox(scope, query),
+    getInboxItem: (scope, reference) => getServerAgentInboxItem(scope, reference),
     async getAccounts(scope) {
       const ledger = getLedgerService();
       const [accounts, balances] = await Promise.all([
@@ -94,6 +96,7 @@ export function getPaceOrchestrator() {
       transactions: createTransactionsAgent({ model }),
       accounts: createAccountsAgent({ model }),
       recurring: createRecurringAgent({ model }),
+      inbox: createInboxAgent({ model }),
     },
   });
 }
