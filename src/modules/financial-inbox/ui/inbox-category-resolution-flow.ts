@@ -100,6 +100,7 @@ export function mapInboxCategoryResolutionFailure(
     case "INBOX_ACTION_NOT_ALLOWED":
     case "INBOX_ITEM_NOT_FOUND":
     case "TRANSACTION_NOT_FOUND":
+    case "TRANSACTION_EDIT_NOT_ALLOWED":
       return { error: "notAvailable", refresh: "automatic" };
     case "CATEGORY_NOT_ALLOWED":
     case "CATEGORY_NOT_FOUND":

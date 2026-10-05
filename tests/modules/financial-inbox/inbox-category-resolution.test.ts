@@ -309,6 +309,48 @@ test("concurrent category choices never silently last-write-win", async () => {
   ).length, 1);
 });
 
+test("an imported transaction can have its category confirmed while its other details stay locked", async () => {
+  const { financial, item, ledger, records, service, transaction } = await fixture();
+  const imported = { ...transaction, source: { provider: "pace-import" } };
+  records.transactions.set(transaction.id, imported);
+
+  const result = await service.chooseInboxCategory(owner, {
+    ...command({ item, transaction: imported, idempotencyKey: "choose-imported" }),
+    categoryId: SYSTEM_GROCERIES_ID,
+  });
+
+  assert.equal(result.transaction.categoryId, SYSTEM_GROCERIES_ID);
+  assert.equal(result.item.status, "RESOLVED");
+  assert.equal((await financial.findInboxItem(workspaceId, item.id))?.status, "RESOLVED");
+
+  const current = records.transactions.get(transaction.id);
+  assert.ok(current);
+  await assert.rejects(
+    ledger.updateTransactionDetails(
+      owner,
+      workspaceId,
+      transaction.id,
+      { categoryId: SYSTEM_TRANSPORT_ID },
+      current.updatedAt,
+      "Africa/Douala",
+    ),
+    (error: unknown) => error instanceof DomainConflictError && error.code === "TRANSACTION_EDIT_NOT_ALLOWED",
+  );
+  await assert.rejects(
+    ledger.updateTransactionDetails(
+      owner,
+      workspaceId,
+      transaction.id,
+      { categoryId: SYSTEM_TRANSPORT_ID, note: "Not a category confirmation" },
+      current.updatedAt,
+      "Africa/Douala",
+      { categoryConfirmation: true },
+    ),
+    (error: unknown) => error instanceof DomainConflictError && error.code === "TRANSACTION_EDIT_NOT_ALLOWED",
+  );
+  assert.equal(records.transactions.get(transaction.id)?.categoryId, SYSTEM_GROCERIES_ID);
+});
+
 test("technical reversal rows are never category-resolution targets", async () => {
   const { item, records, service, transaction } = await fixture();
   records.transactions.set(transaction.id, { ...transaction, reversalOfTransactionId: "original-transaction" });

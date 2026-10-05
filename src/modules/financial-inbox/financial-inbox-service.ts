@@ -849,6 +849,7 @@ export class FinancialInboxService {
       { categoryId },
       command.expectedTransactionUpdatedAt ?? sourceTransaction.updatedAt,
       workspace.preferences.timezone,
+      { categoryConfirmation: true },
     );
 
     const resolvedAt = new Date();

@@ -1428,6 +1428,7 @@ export class LedgerService {
     patchInput: unknown,
     expectedUpdatedAt: Date,
     timeZone: string,
+    options: { readonly categoryConfirmation?: boolean } = {},
   ): Promise<LedgerTransactionRecord> {
     const membership = await this.requireWorkspacePermission(actor.userId, workspaceId, "manage_ledger");
     const transaction = await this.requireTransaction(workspaceId, transactionId);
@@ -1445,7 +1446,11 @@ export class LedgerService {
       refundedAmountMinor,
       isCurrentEffective: transaction.reversalOfTransactionId === null && !outgoingCorrection && !existingReversal,
     });
-    if (!capabilities.canEdit) {
+    // Imported rows keep their bank-provided details locked, but classifying
+    // them is the purpose of the Inbox, so a category-only confirmation passes.
+    const isImportedCategoryConfirmation = options.categoryConfirmation === true
+      && capabilities.reasons.edit === "IMPORTED_TRANSACTION_RESTRICTED";
+    if (!capabilities.canEdit && !isImportedCategoryConfirmation) {
       throw new DomainConflictError(
         "TRANSACTION_EDIT_NOT_ALLOWED",
         "This transaction cannot be edited in its current state.",
@@ -1460,6 +1465,19 @@ export class LedgerService {
       patch,
       timeZone,
     );
+    if (
+      isImportedCategoryConfirmation
+      && (
+        resolved.merchantId !== transaction.merchantId
+        || resolved.occurredAt.getTime() !== transaction.occurredAt.getTime()
+        || resolved.note !== transaction.note
+      )
+    ) {
+      throw new DomainConflictError(
+        "TRANSACTION_EDIT_NOT_ALLOWED",
+        "Only the category of an imported transaction can be confirmed.",
+      );
+    }
 
     if (
       resolved.categoryId === transaction.categoryId
