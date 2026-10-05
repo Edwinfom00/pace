@@ -2,7 +2,7 @@ import { defineTool } from "eve/tools";
 
 import { bindPaceEveTool } from "@/modules/pace-agents/eve/tool-binding";
 
-const capability = bindPaceEveTool("get_transaction_context");
+const capability = bindPaceEveTool("get_accounts");
 
 export default defineTool({
   description: capability.description,

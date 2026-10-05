@@ -1,14 +1,11 @@
 import { defineTool } from "eve/tools";
-import { z } from "zod";
 
-import { requirePaceEveScope } from "@/modules/agent-actions/eve-context";
-import { getAssistantRecentTransactions } from "@/modules/pace-assistant/server/read-tools";
+import { bindPaceEveTool } from "@/modules/pace-agents/eve/tool-binding";
+
+const capability = bindPaceEveTool("get_recent_transactions");
 
 export default defineTool({
-  description: "Read recent authenticated-workspace transactions as safe presentation data. Use a structured transaction-list block in the final response.",
-  inputSchema: z.object({ limit: z.number().int().min(1).max(20).default(5) }).strict(),
-  async execute({ limit }, ctx) {
-    const scope = requirePaceEveScope(ctx);
-    return getAssistantRecentTransactions(scope, limit);
-  },
+  description: capability.description,
+  inputSchema: capability.inputSchema,
+  execute: (input, ctx) => capability.execute(input, ctx),
 });

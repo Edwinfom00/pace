@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { AuthorizationError } from "@/authorization/errors";
 import type { AuthenticatedActor } from "@/authorization/session";
 import type { LedgerTransactionRecord } from "@/modules/ledger/domain";
+import { insightsSubAgent } from "@/modules/insights/agent/insights-sub-agent";
 import { InsightService } from "@/modules/insights/insight-service";
 import { presentInsight } from "@/modules/insights/presenters";
 import type { WorkspaceRecord } from "@/modules/workspaces/domain";
@@ -171,8 +171,7 @@ test("plan-oriented insights reuse the established M3 approval flow rather than 
   const goalInsight = result.insights.find((insight) => insight.type === "GOAL_OFF_TRACK");
   assert.ok(goalInsight);
   assert.equal(presentInsight(goalInsight, "en").suggestedAction, "REVIEW_PLAN");
-  const instructions = await readFile("agent/instructions.md", "utf8");
-  assert.match(instructions, /get_plan_context → create_plan_draft → submit_plan_draft/);
+  assert.match(insightsSubAgent.instructions, /get_plan_context → create_plan_draft → submit_plan_draft/);
   // The service constructor accepts only list methods from PlansRepository. TypeScript prevents an insight from bypassing M3.
   assert.equal(typeof service.refreshWorkspace, "function");
 });
