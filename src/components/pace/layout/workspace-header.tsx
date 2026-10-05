@@ -7,6 +7,7 @@ import {
   HiOutlineArrowsRightLeft,
   HiOutlineBell,
   HiOutlineChartBarSquare,
+  HiOutlineChatBubbleLeftEllipsis,
   HiOutlineCreditCard,
   HiOutlineChevronRight,
   HiOutlineCog6Tooth,
@@ -50,6 +51,7 @@ const quickLinks: readonly QuickLink[] = [
   { segment: "recurring", labelKey: "navigation.recurring", icon: HiOutlineArrowPath },
   { segment: "plans", labelKey: "navigation.plans", icon: HiOutlineChartBarSquare },
   { segment: "insights", labelKey: "navigation.insights", icon: HiOutlineSparkles },
+  { segment: "pace", labelKey: "navigation.pace", icon: HiOutlineChatBubbleLeftEllipsis },
   { segment: "settings", labelKey: "navigation.settings", icon: HiOutlineCog6Tooth },
 ];
 

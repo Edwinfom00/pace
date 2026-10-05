@@ -5,6 +5,7 @@ import {
   HiOutlineArrowPath,
   HiOutlineArrowsRightLeft,
   HiOutlineChartBarSquare,
+  HiOutlineChatBubbleLeftEllipsis,
   HiOutlineCreditCard,
   HiOutlineCog6Tooth,
   HiOutlineHome,
@@ -38,6 +39,7 @@ const primaryNavigation: readonly NavigationItem[] = [
   { key: "recurring", segment: "recurring", labelKey: "navigation.recurring", icon: HiOutlineArrowPath },
   { key: "plans", segment: "plans", labelKey: "navigation.plans", icon: HiOutlineChartBarSquare },
   { key: "insights", segment: "insights", labelKey: "navigation.insights", icon: HiOutlineSparkles },
+  { key: "pace", segment: "pace", labelKey: "navigation.pace", icon: HiOutlineChatBubbleLeftEllipsis },
 ];
 
 const secondaryNavigation: readonly NavigationItem[] = [
