@@ -17,8 +17,14 @@ import {
   getAssistantInboxItems,
   getAssistantOverviewSummary,
   getAssistantRecentTransactions,
-  getAssistantRecurringPayments,
 } from "@/modules/pace-assistant/server/read-tools";
+import { createRecurringAgent } from "@/modules/recurring/agent/recurring-agent";
+import {
+  getServerAgentRecurring,
+  getServerAgentRecurringSpending,
+  getServerAgentUpcomingRecurring,
+  listServerAgentRecurring,
+} from "@/modules/recurring/server/agent-recurring-reads";
 import { createTransactionsAgent } from "@/modules/transactions/agent/transactions-agent";
 import {
   getServerAgentTransactionDetail,
@@ -48,7 +54,10 @@ export function getPaceDomainServices(): PaceDomainServices {
     searchTransactions: (scope, query) => searchServerAgentTransactions(scope, query),
     getTransactionDetail: (scope, transactionId) => getServerAgentTransactionDetail(scope, transactionId),
     getOverviewSummary: (scope, period) => getAssistantOverviewSummary(scope, period),
-    getRecurringPayments: (scope, limit) => getAssistantRecurringPayments(scope, limit),
+    getRecurringPayments: (scope, query) => listServerAgentRecurring(scope, query),
+    getRecurringPayment: (scope, reference) => getServerAgentRecurring(scope, reference),
+    getRecurringSpending: (scope, query) => getServerAgentRecurringSpending(scope, query),
+    getUpcomingRecurring: (scope, query) => getServerAgentUpcomingRecurring(scope, query),
     getInboxItems: (scope, limit) => getAssistantInboxItems(scope, limit),
     async getAccounts(scope) {
       const ledger = getLedgerService();
@@ -84,6 +93,7 @@ export function getPaceOrchestrator() {
     executors: {
       transactions: createTransactionsAgent({ model }),
       accounts: createAccountsAgent({ model }),
+      recurring: createRecurringAgent({ model }),
     },
   });
 }

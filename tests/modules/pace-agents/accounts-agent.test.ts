@@ -226,6 +226,9 @@ async function createFixture() {
     getTransactionDetail: unused,
     getOverviewSummary: unused,
     getRecurringPayments: unused,
+    getRecurringPayment: unused,
+    getRecurringSpending: unused,
+    getUpcomingRecurring: unused,
     getInboxItems: unused,
     getInsightContext: unused,
   };

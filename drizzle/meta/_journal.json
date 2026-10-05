@@ -288,6 +288,13 @@
       "when": 1790100000016,
       "tag": "0040_agent_account_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790100000017,
+      "tag": "0041_agent_recurring_actions",
+      "breakpoints": true
     }
   ]
 }

@@ -11,12 +11,14 @@ import { DatabaseAgentActionRepository } from "./repositories/agent-action-repos
 export function getAgentActionService(): AgentActionService {
   const workspaces = new DatabaseWorkspaceRepository();
   const ledgerRecords = new DatabaseLedgerRepository();
+  const financialInbox = getFinancialInboxService();
   return new AgentActionService(
     new DatabaseAgentActionRepository(),
     new LedgerService(ledgerRecords, workspaces),
     ledgerRecords,
     workspaces,
-    getFinancialInboxService(),
+    financialInbox,
     getPlansService(),
+    financialInbox,
   );
 }

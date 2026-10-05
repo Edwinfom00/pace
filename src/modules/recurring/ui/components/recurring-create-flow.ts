@@ -2,19 +2,13 @@ import { z } from "zod";
 
 import type { CurrencyCode } from "@/money/currency";
 import { parseDecimalMoney } from "@/money/money";
+import { recurringFrequencyOptions, type RecurringFrequencyKey } from "@/modules/recurring/domain/recurring-frequency";
 
 export const recurringCreateDirections = ["EXPENSE", "INCOME"] as const;
 export type RecurringCreateDirection = (typeof recurringCreateDirections)[number];
 
-export const recurringFrequencyOptions = [
-  { cadenceDays: 7, key: "weekly" },
-  { cadenceDays: 14, key: "biweekly" },
-  { cadenceDays: 30, key: "monthly" },
-  { cadenceDays: 90, key: "quarterly" },
-  { cadenceDays: 365, key: "yearly" },
-] as const;
-
-export type RecurringCreateFrequencyKey = (typeof recurringFrequencyOptions)[number]["key"];
+export { recurringFrequencyOptions };
+export type RecurringCreateFrequencyKey = RecurringFrequencyKey;
 export type RecurringCreateField = "amount" | "name" | "merchantOrSource" | "frequency" | "nextOccurrence" | "account" | "category";
 export type RecurringCreateErrorCode =
   | "nameRequired"

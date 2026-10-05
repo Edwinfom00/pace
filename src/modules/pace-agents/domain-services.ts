@@ -6,6 +6,12 @@ import type {
   AgentAccountSpendabilityQuery,
 } from "@/modules/accounts/domain/agent-account-query";
 import type { AgentActionService } from "@/modules/agent-actions/agent-action-service";
+import type {
+  AgentRecurringListQuery,
+  AgentRecurringSpendingQuery,
+  AgentUpcomingRecurringQuery,
+} from "@/modules/recurring/domain/agent-recurring-query";
+import type { RecurringReference } from "@/modules/recurring/domain/recurring-reference";
 import type { AgentTransactionSearchQuery } from "@/modules/transactions/domain/agent-transaction-query";
 
 export interface PaceServiceScope {
@@ -36,6 +42,8 @@ type AgentActionMethod =
   | "executeApprovedPlan"
   | "createAccountDraft"
   | "executeApprovedAccount"
+  | "createRecurringDraft"
+  | "executeApprovedRecurring"
   | "requestApproval"
   | "approveAction"
   | "rejectAction"
@@ -61,7 +69,10 @@ export interface PaceDomainServices extends PaceAgentActionDomainServices {
   getAccountMovements(scope: PaceServiceScope, query: AgentAccountMovementsQuery): Promise<unknown>;
   compareAccountMovements(scope: PaceServiceScope, query: AgentAccountComparisonQuery): Promise<unknown>;
   checkAccountSpendability(scope: PaceServiceScope, query: AgentAccountSpendabilityQuery): Promise<unknown>;
-  getRecurringPayments(scope: PaceServiceScope, limit: number): Promise<unknown>;
+  getRecurringPayments(scope: PaceServiceScope, query: AgentRecurringListQuery): Promise<unknown>;
+  getRecurringPayment(scope: PaceServiceScope, reference: RecurringReference): Promise<unknown>;
+  getRecurringSpending(scope: PaceServiceScope, query: AgentRecurringSpendingQuery): Promise<unknown>;
+  getUpcomingRecurring(scope: PaceServiceScope, query: AgentUpcomingRecurringQuery): Promise<unknown>;
   getInboxItems(scope: PaceServiceScope, limit: number): Promise<unknown>;
   getInsightContext(scope: PaceServiceScope, language: string | null): Promise<unknown>;
 }
@@ -84,6 +95,9 @@ export function createAgentActionDomainServices(actions: AgentActionService): Pa
     createAccountDraft: (scope, input) => actions.createAccountDraft(scope.actor, scope.workspaceId, input),
     executeApprovedAccount: (scope, actionId) =>
       actions.executeApprovedAccount(scope.actor, scope.workspaceId, actionId),
+    createRecurringDraft: (scope, input) => actions.createRecurringDraft(scope.actor, scope.workspaceId, input),
+    executeApprovedRecurring: (scope, actionId) =>
+      actions.executeApprovedRecurring(scope.actor, scope.workspaceId, actionId),
     requestApproval: (scope, actionId) => actions.requestApproval(scope.actor, scope.workspaceId, actionId),
     approveAction: (scope, actionId) => actions.approveAction(scope.actor, scope.workspaceId, actionId),
     rejectAction: (scope, actionId) => actions.rejectAction(scope.actor, scope.workspaceId, actionId),

@@ -111,7 +111,10 @@ async function createFixture() {
     getAccountMovements: read("getAccountMovements", (workspaceId) => ({ resolved: true, account: { id: `${workspaceId}-main` } })),
     compareAccountMovements: read("compareAccountMovements", () => ({ currencies: [] })),
     checkAccountSpendability: read("checkAccountSpendability", () => ({ resolved: true, canDebit: true })),
-    getRecurringPayments: read("getRecurringPayments", () => ({ payments: [{ id: "recurring-1", label: "Netflix" }] })),
+    getRecurringPayments: read("getRecurringPayments", () => ({ items: [{ id: "recurring-1", name: "Netflix" }] })),
+    getRecurringPayment: read("getRecurringPayment", () => ({ resolved: true, recurring: { id: "recurring-1" } })),
+    getRecurringSpending: read("getRecurringSpending", () => ({ basis: "ACTUAL_TRANSACTIONS", recurringSpending: money("8500") })),
+    getUpcomingRecurring: read("getUpcomingRecurring", () => ({ basis: "PROJECTION", occurrences: [] })),
     getInboxItems: read("getInboxItems", () => ({ unresolvedCount: 1, items: [{ id: "inbox-1", status: "OPEN" }] })),
     getInsightContext: read("getInsightContext", (workspaceId) => ({ workspaceId, insights: [] })),
   };
@@ -167,7 +170,7 @@ test("registry declares the six sub-agents with typed capability metadata", () =
   }
   assert.deepEqual(
     metadata.flatMap((agent) => agent.capabilities).filter((capability) => capability.access === "commit").map((capability) => capability.tool),
-    ["submit_transaction_draft", "submit_account_draft", "submit_plan_draft"],
+    ["submit_transaction_draft", "submit_account_draft", "submit_recurring_draft", "submit_plan_draft"],
   );
 
   const prompt = renderSubAgentInstructions(paceSubAgentRegistry);
@@ -433,6 +436,10 @@ test("a sub-agent cannot reach data except through its own capabilities and thei
     create_account_draft: { name: "Canada", type: "SAVINGS", sourceText: "create a savings account called Canada" },
     create_account_change_draft: { operation: "ARCHIVE", accountName: "Bank", sourceText: "archive Bank" },
     submit_account_draft: { actionId: crypto.randomUUID() },
+    get_recurring_payment: { recurringName: "Netflix" },
+    create_recurring_draft: { direction: "EXPENSE", name: "Rent", amountText: "180,000", frequency: "monthly", sourceText: "monthly rent of 180,000" },
+    create_recurring_change_draft: { operation: "PAUSE", recurringName: "Netflix", sourceText: "pause Netflix" },
+    submit_recurring_draft: { actionId: crypto.randomUUID() },
     create_plan_draft: { actionType: "BUDGET_CREATE", sourceText: "budget 80k" },
     edit_plan_draft: { actionId: crypto.randomUUID(), amountText: "90k" },
     submit_plan_draft: { actionId: crypto.randomUUID() },

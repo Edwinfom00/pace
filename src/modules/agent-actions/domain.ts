@@ -1,3 +1,9 @@
+import type {
+  RecurringPaymentDirection,
+  RecurringPaymentLifecycle,
+  RecurringPaymentOrigin,
+  RecurringPaymentStatus,
+} from "@/modules/financial-inbox/domain";
 import type { LedgerAccountType, LedgerTransactionKind } from "@/modules/ledger/domain";
 import type { BudgetScope, BudgetStatus, SavingsGoalStatus } from "@/modules/plans/domain";
 
@@ -22,6 +28,8 @@ export const AGENT_ACTION_TYPES = [
   "TRANSACTION_CORRECT",
   "ACCOUNT_CREATE",
   "ACCOUNT_MANAGE",
+  "RECURRING_CREATE",
+  "RECURRING_MANAGE",
 ] as const;
 export type AgentActionType = (typeof AGENT_ACTION_TYPES)[number];
 
@@ -29,9 +37,11 @@ export const TRANSACTION_CHANGE_ACTION_TYPES = ["TRANSACTION_UPDATE", "TRANSACTI
 export type TransactionChangeActionType = (typeof TRANSACTION_CHANGE_ACTION_TYPES)[number];
 export const ACCOUNT_ACTION_TYPES = ["ACCOUNT_CREATE", "ACCOUNT_MANAGE"] as const;
 export type AccountActionType = (typeof ACCOUNT_ACTION_TYPES)[number];
+export const RECURRING_ACTION_TYPES = ["RECURRING_CREATE", "RECURRING_MANAGE"] as const;
+export type RecurringActionType = (typeof RECURRING_ACTION_TYPES)[number];
 export type PlanActionType = Exclude<
   AgentActionType,
-  "TRANSACTION_CREATE" | TransactionChangeActionType | AccountActionType
+  "TRANSACTION_CREATE" | TransactionChangeActionType | AccountActionType | RecurringActionType
 >;
 
 export const TRANSACTION_DRAFT_KINDS = ["EXPENSE", "INCOME", "TRANSFER"] as const;
@@ -167,8 +177,86 @@ export interface AccountDraft {
   readonly missingFields: readonly AccountDraftField[];
 }
 
+export const RECURRING_DRAFT_OPERATIONS = [
+  "CREATE",
+  "EDIT",
+  "PAUSE",
+  "RESUME",
+  "CONFIRM",
+  "IGNORE",
+  "RESTORE",
+] as const;
+export type RecurringDraftOperation = (typeof RECURRING_DRAFT_OPERATIONS)[number];
+
+export const RECURRING_DRAFT_FIELDS = [
+  "recurring",
+  "direction",
+  "name",
+  "amount",
+  "frequency",
+  "nextOccurrence",
+  "account",
+  "category",
+  "currency",
+  "change",
+] as const;
+export type RecurringDraftField = (typeof RECURRING_DRAFT_FIELDS)[number];
+
+export interface RecurringDraftTarget {
+  readonly id: string;
+  readonly name: string;
+  readonly direction: RecurringPaymentDirection;
+  /** MANUAL patterns were entered by a member; DETECTED ones were inferred from real transactions. */
+  readonly provenance: RecurringPaymentOrigin;
+  readonly status: RecurringPaymentStatus;
+  readonly lifecycle: RecurringPaymentLifecycle;
+  readonly amountMinor: string;
+  readonly currency: string;
+  readonly cadenceDays: number;
+}
+
+export interface RecurringDraftValues {
+  readonly name?: string;
+  /** Exact minor units, serialized because JSON has no bigint. */
+  readonly amountMinor?: string;
+  readonly cadenceDays?: number;
+  /** Calendar date of the next projected occurrence. */
+  readonly nextOccurrenceOn?: string;
+  readonly accountId?: string;
+  readonly categoryId?: string;
+}
+
+export interface RecurringApprovalSummary {
+  readonly title: string;
+  readonly name: string;
+  readonly amount: string;
+  readonly changes: readonly string[];
+  readonly effects: readonly string[];
+  readonly text: string;
+}
+
+export interface RecurringDraft {
+  readonly recurringOperation: RecurringDraftOperation;
+  /** Null for CREATE, and while the member still has to choose between candidates. */
+  readonly recurringId: string | null;
+  /** Optimistic-lock token of the targeted recurring item when the draft was prepared. */
+  readonly expectedUpdatedAt: string | null;
+  readonly current: RecurringDraftTarget | null;
+  /** Set for CREATE only; an existing item never changes direction. */
+  readonly direction: RecurringPaymentDirection | null;
+  readonly currency: string | null;
+  /** The new pattern for CREATE, the requested future values for EDIT, empty otherwise. */
+  readonly values: RecurringDraftValues;
+  readonly amountText: string | null;
+  readonly candidates: readonly RecurringDraftTarget[];
+  /** Present once the draft is complete; it is what the member is asked to approve. */
+  readonly approvalSummary: RecurringApprovalSummary | null;
+  readonly sourceText: string | null;
+  readonly missingFields: readonly RecurringDraftField[];
+}
+
 export type PlanDraft = BudgetDraft | SavingsGoalDraft;
-export type AgentActionDraft = TransactionDraft | TransactionChangeDraft | PlanDraft | AccountDraft;
+export type AgentActionDraft = TransactionDraft | TransactionChangeDraft | PlanDraft | AccountDraft | RecurringDraft;
 
 export const TRANSACTION_DRAFT_FIELDS = [
   "amount",
@@ -210,11 +298,27 @@ export interface AccountActionResult {
   readonly verifiedAt: string;
 }
 
+export interface RecurringActionResult {
+  readonly recurringOperation: RecurringDraftOperation;
+  readonly recurringId: string;
+  readonly name: string;
+  readonly direction: RecurringPaymentDirection;
+  readonly provenance: RecurringPaymentOrigin;
+  readonly status: RecurringPaymentStatus;
+  readonly lifecycle: RecurringPaymentLifecycle;
+  readonly amountMinor: string;
+  readonly currency: string;
+  readonly cadenceDays: number;
+  readonly nextOccurrenceAt: string | null;
+  readonly verifiedAt: string;
+}
+
 export type AgentActionResult =
   | TransactionActionResult
   | TransactionChangeActionResult
   | PlanActionResult
-  | AccountActionResult;
+  | AccountActionResult
+  | RecurringActionResult;
 
 export interface AgentActionRecord {
   readonly id: string;
@@ -256,6 +360,12 @@ export type AccountAgentActionRecord = AgentActionRecord & {
   readonly type: AccountActionType;
   readonly draft: AccountDraft;
   readonly result: AccountActionResult | null;
+};
+
+export type RecurringAgentActionRecord = AgentActionRecord & {
+  readonly type: RecurringActionType;
+  readonly draft: RecurringDraft;
+  readonly result: RecurringActionResult | null;
 };
 
 export interface AgentActionAuditRecord {
@@ -307,7 +417,18 @@ export function isAccountDraftReady(draft: AccountDraft): boolean {
   return draft.accountOperation === "CHANGE_TYPE" ? Boolean(draft.type) : true;
 }
 
+export function isRecurringDraftReady(draft: RecurringDraft): boolean {
+  if (draft.missingFields.length > 0 || !draft.approvalSummary) return false;
+  if (draft.recurringOperation === "CREATE") {
+    const { name, amountMinor, cadenceDays, nextOccurrenceOn } = draft.values;
+    return Boolean(draft.direction && draft.currency && name && amountMinor && cadenceDays && nextOccurrenceOn);
+  }
+  if (!draft.recurringId || !draft.expectedUpdatedAt) return false;
+  return draft.recurringOperation === "EDIT" ? Object.keys(draft.values).length > 0 : true;
+}
+
 export function isAgentActionDraftReady(draft: AgentActionDraft): boolean {
+  if ("recurringOperation" in draft) return isRecurringDraftReady(draft);
   if ("accountOperation" in draft) return isAccountDraftReady(draft);
   if ("changeType" in draft) return isTransactionChangeDraftReady(draft);
   return "kind" in draft ? isTransactionDraftReady(draft) : isPlanDraftReady(draft);
@@ -325,6 +446,12 @@ export function isTransactionChangeAction(action: AgentActionRecord): action is 
 
 export function isAccountAction(action: AgentActionRecord): action is AccountAgentActionRecord {
   return (ACCOUNT_ACTION_TYPES as readonly string[]).includes(action.type) && "accountOperation" in action.draft;
+}
+
+export function isRecurringAction(action: AgentActionRecord): action is RecurringAgentActionRecord {
+  return (
+    (RECURRING_ACTION_TYPES as readonly string[]).includes(action.type) && "recurringOperation" in action.draft
+  );
 }
 
 export function isPlanAction(action: AgentActionRecord): action is PlanAgentActionRecord {

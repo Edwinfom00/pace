@@ -45,17 +45,21 @@ export type GetRecurringDetailInput = {
 
 
 export async function getRecurringDetail(input: GetRecurringDetailInput): Promise<RecurringDetail | null> {
+  return getRecurringDetailWithReaders(input, await createRecurringDetailReaders(input.actor.userId));
+}
+
+export async function createRecurringDetailReaders(userId: string): Promise<RecurringDetailReaders> {
   const recurring = getFinancialInboxService();
-  const ledger = await getLocalizedLedgerService(input.actor.userId);
+  const ledger = await getLocalizedLedgerService(userId);
   const workspaces = new DatabaseWorkspaceRepository();
-  return getRecurringDetailWithReaders(input, {
-    findMembership: (workspaceId, userId) => workspaces.findMembership(workspaceId, userId),
+  return {
+    findMembership: (workspaceId, memberId) => workspaces.findMembership(workspaceId, memberId),
     listRecurring: (actor, workspaceId) => recurring.listRecurring(actor, workspaceId),
     listAccounts: (actor, workspaceId) => ledger.listAccounts(actor, workspaceId),
     listCategories: (actor, workspaceId) => ledger.listCategories(actor, workspaceId),
     listMerchants: (actor, workspaceId) => ledger.listMerchants(actor, workspaceId),
     listTransactions: (actor, workspaceId, filters) => ledger.listTransactions(actor, workspaceId, filters),
-  });
+  };
 }
 
 export async function getRecurringDetailWithReaders(

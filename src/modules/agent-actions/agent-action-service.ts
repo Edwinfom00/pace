@@ -12,9 +12,15 @@ import { createLedgerAccountSchema } from "@/modules/ledger/validation";
 import type { LedgerRepository } from "@/modules/ledger/repositories/ledger-repository";
 import type { WorkspaceMemberContext } from "@/modules/workspaces/domain";
 import type { WorkspaceRepository } from "@/modules/workspaces/repositories/workspace-repository";
-import type { TransactionClassificationRequest } from "@/modules/financial-inbox/financial-inbox-service";
+import type {
+  FinancialInboxService,
+  RecurringPaymentView,
+  TransactionClassificationRequest,
+} from "@/modules/financial-inbox/financial-inbox-service";
 import type { PlansContext, PlansService } from "@/modules/plans/plan-service";
 import type { BudgetRecord, SavingsGoalRecord } from "@/modules/plans/domain";
+import { buildRecurringOverview } from "@/modules/recurring/domain/recurring-overview";
+import { withRecurringDisplayNames } from "@/modules/recurring/domain/recurring-reference";
 
 import {
   accountManagementCommand,
@@ -32,11 +38,16 @@ import {
   isAccountDraftReady,
   isAgentActionDraftReady,
   isPlanAction,
+  isRecurringAction,
+  isRecurringDraftReady,
   isTransactionAction,
   isTransactionChangeAction,
   isTransactionChangeDraftReady,
   type PlanAgentActionRecord,
   type PlanActionResult,
+  type RecurringActionResult,
+  type RecurringAgentActionRecord,
+  type RecurringDraft,
   type TransactionAgentActionRecord,
   type TransactionActionResult,
   type TransactionChangeActionResult,
@@ -45,6 +56,14 @@ import {
   type TransactionDraft,
 } from "./domain";
 import { buildPlanDraft, type PlanDraftIntent } from "./plan-draft";
+import {
+  buildRecurringDraft,
+  nextOccurrenceInstant,
+  persistedRecurringMatches,
+  presentRecurringResult,
+  recurringIdempotencyKey,
+  type RecurringDraftIntent,
+} from "./recurring-draft";
 import type { AgentActionRepository } from "./repositories/agent-action-repository";
 import {
   buildTransactionChangeDraft,
@@ -69,6 +88,12 @@ export interface CreateTransactionChangeDraftInput extends TransactionChangeInte
 }
 
 export interface CreateAccountDraftInput extends AccountDraftIntent {
+  idempotencyKey: string;
+  eveSessionId?: string | null;
+  eveCallId?: string | null;
+}
+
+export interface CreateRecurringDraftInput extends RecurringDraftIntent {
   idempotencyKey: string;
   eveSessionId?: string | null;
   eveCallId?: string | null;
@@ -120,11 +145,28 @@ export interface AccountActionDetail {
   action: AccountAgentActionRecord;
 }
 
+export interface RecurringActionDetail {
+  action: RecurringAgentActionRecord;
+}
+
 export type AgentActionDetail =
   | TransactionActionDetail
   | TransactionChangeActionDetail
   | PlanActionDetail
-  | AccountActionDetail;
+  | AccountActionDetail
+  | RecurringActionDetail;
+
+type RecurringActions = Pick<
+  FinancialInboxService,
+  | "listRecurring"
+  | "createManualRecurring"
+  | "updateRecurring"
+  | "pauseRecurring"
+  | "resumeRecurring"
+  | "confirmRecurring"
+  | "ignoreRecurring"
+  | "restoreRecurring"
+>;
 
 interface TransactionClassifier {
   ingestTransaction(
@@ -147,6 +189,7 @@ export class AgentActionService {
     private readonly workspaces: Pick<WorkspaceRepository, "findMemberContext">,
     private readonly classifier?: TransactionClassifier,
     private readonly plans?: PlansService,
+    private readonly recurring?: RecurringActions,
   ) {}
 
   async getTransactionContext(
@@ -304,6 +347,66 @@ export class AgentActionService {
     return created;
   }
 
+  /**
+   * Prepares a recurring creation, edit, or state change. Nothing is written
+   * until the draft is approved; a change the canonical recurring policy would
+   * refuse is rejected here with that policy's own reason.
+   */
+  async createRecurringDraft(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    input: CreateRecurringDraftInput,
+  ): Promise<RecurringAgentActionRecord> {
+    const existing = await this.actions.findActionByIdempotencyKey(workspaceId, input.idempotencyKey);
+    if (existing) {
+      const action = await this.requireActionInitiator(actor, workspaceId, existing.id);
+      if (!isRecurringAction(action)) throw new ConflictError("Idempotency key belongs to another action type.");
+      return action;
+    }
+
+    const context = await this.requireLedgerContext(actor, workspaceId);
+    const [payments, accounts, categories, merchants] = await Promise.all([
+      this.requireRecurring().listRecurring(actor, workspaceId),
+      this.ledger.listAccounts(actor, workspaceId),
+      this.ledger.listCategories(actor, workspaceId),
+      this.ledger.listMerchants(actor, workspaceId),
+    ]);
+    const now = new Date();
+    const overview = buildRecurringOverview({
+      payments,
+      accounts,
+      categories,
+      filter: "ALL",
+      timeZone: context.preferences.timezone,
+      now,
+      workspaceRole: context.membership.role,
+    });
+    const draft = buildRecurringDraft(input, {
+      currency: context.preferences.currency,
+      now,
+      items: withRecurringDisplayNames(overview.items, payments, merchants),
+      accounts,
+      categories,
+    });
+
+    const created = await this.actions.createAction({
+      id: randomUUID(),
+      workspaceId,
+      type: draft.recurringOperation === "CREATE" ? "RECURRING_CREATE" : "RECURRING_MANAGE",
+      initiatedByUserId: actor.userId,
+      draft,
+      idempotencyKey: input.idempotencyKey,
+      eveSessionId: input.eveSessionId ?? null,
+      eveCallId: input.eveCallId ?? null,
+    });
+    await this.audit(created, actor.userId, "DRAFT_CREATED", null, "DRAFT", {
+      recurringOperation: draft.recurringOperation,
+      recurringId: draft.recurringId,
+    });
+    if (!isRecurringAction(created)) throw new Error("Created action was not a recurring action.");
+    return created;
+  }
+
   async getPlanContext(actor: AuthenticatedActor, workspaceId: string): Promise<PlansContext> {
     return this.requirePlans().getContext(actor, workspaceId);
   }
@@ -367,6 +470,7 @@ export class AgentActionService {
       return { action, transactionContext: await this.getTransactionContext(actor, workspaceId) };
     }
     if (isAccountAction(action)) return { action };
+    if (isRecurringAction(action)) return { action };
     if (isPlanAction(action)) {
       return { action, planContext: await this.getPlanContext(actor, workspaceId) };
     }
@@ -903,6 +1007,144 @@ export class AgentActionService {
     }
   }
 
+  /**
+   * Applies an approved recurring draft through the canonical Recurring
+   * service. Every operation carries the action's idempotency key, so a retry
+   * replays the same change, and none of them posts a ledger transaction.
+   */
+  async executeApprovedRecurring(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+  ): Promise<RecurringActionResult> {
+    const action = await this.requireActionInitiator(actor, workspaceId, actionId);
+    if (!isRecurringAction(action)) throw new ConflictError("This action does not change a recurring payment.");
+    if (action.status === "COMPLETED" && action.result) return action.result;
+    if (action.status !== "APPROVED" && action.status !== "EXECUTING") {
+      throw new ConflictError("Only an approved action can be executed.");
+    }
+
+    if (action.status === "APPROVED") {
+      const transitioned = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["APPROVED"],
+        to: "EXECUTING",
+      });
+      if (transitioned) {
+        await this.audit(transitioned, actor.userId, "EXECUTION_STARTED", "APPROVED", "EXECUTING");
+      } else {
+        const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+        if (!isRecurringAction(current)) throw new ConflictError("This action does not change a recurring payment.");
+        if (current.status === "COMPLETED" && current.result) return current.result;
+        if (current.status !== "EXECUTING") {
+          throw new ConflictError("This action changed before it could be executed.");
+        }
+      }
+    }
+
+    try {
+      const draft = action.draft;
+      if (!isRecurringDraftReady(draft)) {
+        throw new ConflictError("The approved action has an incomplete recurring draft.");
+      }
+      const persisted = await this.persistRecurringAction(actor, workspaceId, actionId, draft);
+      const stored = (await this.requireRecurring().listRecurring(actor, workspaceId)).find(
+        (payment) => payment.id === persisted.id,
+      );
+      if (!stored || !persistedRecurringMatches(draft, stored)) {
+        throw new Error("Persisted recurring verification failed.");
+      }
+      const result = presentRecurringResult(draft.recurringOperation, stored, new Date());
+      const completed = await this.actions.transitionAction({
+        workspaceId,
+        actionId,
+        from: ["EXECUTING"],
+        to: "COMPLETED",
+        result,
+        failureCode: null,
+        failureMessage: null,
+      });
+      if (completed) {
+        await this.audit(completed, actor.userId, "PERSISTENCE_VERIFIED", "EXECUTING", "COMPLETED", {
+          recurringId: stored.id,
+          recurringOperation: draft.recurringOperation,
+        });
+        return result;
+      }
+
+      const current = await this.requireActionInitiator(actor, workspaceId, actionId);
+      if (isRecurringAction(current) && current.status === "COMPLETED" && current.result) return current.result;
+      throw new ConflictError("This action changed while its recurring change was being verified.");
+    } catch (error) {
+      await this.failAction(actor, workspaceId, actionId, error);
+      throw error;
+    }
+  }
+
+  private async persistRecurringAction(
+    actor: AuthenticatedActor,
+    workspaceId: string,
+    actionId: string,
+    draft: RecurringDraft,
+  ): Promise<RecurringPaymentView> {
+    const recurring = this.requireRecurring();
+    const idempotencyKey = recurringIdempotencyKey(actionId);
+    const { values } = draft;
+
+    if (draft.recurringOperation === "CREATE") {
+      const { name, amountMinor, cadenceDays, nextOccurrenceOn } = values;
+      if (!draft.direction || !draft.currency || !name || !amountMinor || !cadenceDays || !nextOccurrenceOn) {
+        throw new ConflictError("The approved recurring draft is incomplete.");
+      }
+      return recurring.createManualRecurring(actor, {
+        workspaceId,
+        direction: draft.direction,
+        name,
+        amountMinor: BigInt(amountMinor),
+        currency: draft.currency,
+        cadenceDays,
+        nextOccurrenceAt: nextOccurrenceInstant(nextOccurrenceOn),
+        accountId: values.accountId ?? null,
+        categoryId: values.categoryId ?? null,
+        idempotencyKey,
+      });
+    }
+
+    if (!draft.recurringId || !draft.expectedUpdatedAt) {
+      throw new ConflictError("The approved recurring draft has no target.");
+    }
+    const command = {
+      workspaceId,
+      recurringId: draft.recurringId,
+      expectedUpdatedAt: new Date(draft.expectedUpdatedAt),
+      idempotencyKey,
+    };
+    switch (draft.recurringOperation) {
+      case "EDIT":
+        return recurring.updateRecurring(actor, {
+          ...command,
+          name: values.name,
+          amountMinor: values.amountMinor === undefined ? undefined : BigInt(values.amountMinor),
+          cadenceDays: values.cadenceDays,
+          nextOccurrenceAt:
+            values.nextOccurrenceOn === undefined ? undefined : nextOccurrenceInstant(values.nextOccurrenceOn),
+          accountId: values.accountId,
+          categoryId: values.categoryId,
+        });
+      case "PAUSE":
+        return recurring.pauseRecurring(actor, command);
+      case "RESUME":
+        return recurring.resumeRecurring(actor, command);
+      case "CONFIRM":
+        return recurring.confirmRecurring(actor, command);
+      case "IGNORE":
+        return recurring.ignoreRecurring(actor, command);
+      case "RESTORE":
+        return recurring.restoreRecurring(actor, command);
+    }
+  }
+
   private async assertAccountDraftAllowed(
     actor: AuthenticatedActor,
     workspaceId: string,
@@ -1297,5 +1539,10 @@ export class AgentActionService {
   private requirePlans(): PlansService {
     if (!this.plans) throw new Error("Plans service is unavailable.");
     return this.plans;
+  }
+
+  private requireRecurring(): RecurringActions {
+    if (!this.recurring) throw new Error("Recurring service is unavailable.");
+    return this.recurring;
   }
 }

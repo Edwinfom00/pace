@@ -34,6 +34,8 @@ export const agentActionType = pgEnum("agent_action_type", [
   "TRANSACTION_CORRECT",
   "ACCOUNT_CREATE",
   "ACCOUNT_MANAGE",
+  "RECURRING_CREATE",
+  "RECURRING_MANAGE",
 ]);
 
 export const agentActions = pgTable(
