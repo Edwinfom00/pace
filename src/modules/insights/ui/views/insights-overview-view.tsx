@@ -67,6 +67,7 @@ export function InsightsOverviewView({
                 />
                 <FinancialReportExport
                   currency={overview.currency}
+                  inProgress={overview.periodKey === currentPeriodKey}
                   language={reportLanguage}
                   periodKey={overview.periodKey}
                   workspaceSlug={workspaceSlug}
